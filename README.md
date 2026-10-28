@@ -26,3 +26,7 @@ dotnet publish src/Cli/Seiko.Cli.csproj -c Release -r win-x64 -p:PublishAot=true
 - `src/Cli` — command line.
 - `src/Mcp` — placeholder MCP server project.
 - `tests/Seiko.Core.Tests` — fixtures and sync tests.
+
+## License
+
+GPL-3.0. See [LICENSE.md](LICENSE.md).

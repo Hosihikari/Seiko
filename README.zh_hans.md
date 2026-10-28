@@ -26,3 +26,7 @@ dotnet publish src/Cli/Seiko.Cli.csproj -c Release -r win-x64 -p:PublishAot=true
 - `src/Cli`：命令行。
 - `src/Mcp`：MCP server 的占位项目。
 - `tests/Seiko.Core.Tests`：fixture 与 sync 测试。
+
+## 许可证
+
+GPL-3.0，见 [LICENSE.md](LICENSE.md)。
