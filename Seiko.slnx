@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Cli/Seiko.Cli.csproj" />
+  <Project Path="src/Core/Seiko.Core.csproj" />
+  <Project Path="src/Mcp/Seiko.Mcp.csproj" />
+  <Project Path="tests/Seiko.Core.Tests/Seiko.Core.Tests.csproj" />
+</Solution>
