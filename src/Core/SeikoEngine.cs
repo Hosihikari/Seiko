@@ -11,7 +11,7 @@ public sealed class SyncResult
 
 public sealed class SeikoEngine
 {
-    public SyncResult Sync(string root, string? storeRoot = null, bool allowPrerelease = false)
+    public SyncResult Sync(string root, string? storeRoot = null, bool allowPrerelease = false, SyncMode mode = SyncMode.Normal)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
@@ -22,9 +22,41 @@ public sealed class SeikoEngine
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
-        var resolver = new Resolver(sources, existingLock, rid, allowPrerelease);
         var specs = config.Packages.Concat(config.Components).ToList();
-        var resolved = resolver.Resolve(specs);
+
+        IReadOnlyList<ResolvedPackage> resolved;
+        SeikoLock lockFile;
+
+        if (mode == SyncMode.Frozen)
+        {
+            if (existingLock is null)
+            {
+                throw new SeikoException("--frozen requires seiko.lock.json");
+            }
+
+            resolved = LockReplay.Resolve(sources, existingLock, specs);
+            lockFile = existingLock;
+        }
+        else
+        {
+            var resolver = new Resolver(sources, existingLock, rid, allowPrerelease);
+            resolved = resolver.Resolve(specs);
+            lockFile = LockFile.FromResolution(rid, sources, resolved);
+
+            if (mode == SyncMode.Locked)
+            {
+                if (existingLock is null)
+                {
+                    throw new SeikoException("--locked requires seiko.lock.json");
+                }
+
+                var difference = LockReplay.Compare(existingLock, lockFile);
+                if (difference is not null)
+                {
+                    throw new SeikoException($"--locked: lock is out of date ({difference})");
+                }
+            }
+        }
 
         var store = new Store(storeRoot ?? DefaultStorePath());
         var stored = resolved
@@ -32,8 +64,10 @@ public sealed class SeikoEngine
             .ToList();
         var projection = Projector.Apply(root, stored, Path.Combine(root, ".seiko"));
 
-        var lockFile = LockFile.FromResolution(rid, sources, resolved);
-        LockFile.Write(lockPath, lockFile);
+        if (mode != SyncMode.Frozen)
+        {
+            LockFile.Write(lockPath, lockFile);
+        }
 
         return new SyncResult
         {

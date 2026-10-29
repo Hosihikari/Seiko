@@ -10,9 +10,10 @@ Seiko 的安装侧包管理器实现。CLI 命令是 `sk`。
 
 - `sk init`：生成 `seiko.conf` 模板。
 - `sk sync`：读 `seiko.conf`，从本地静态索引解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，投影到安装根，写 `seiko.lock.json`。
+- `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；`--locked` 在锁过期时报错。
 - `sk list`：读锁列出包。
 
-尚未实现：HTTP 源、`--frozen`/`--locked`、回滚、MCP、硬链接/重排优化、公共索引仓。
+尚未实现：HTTP 源、回滚、MCP、硬链接/重排优化、公共索引仓。
 
 ## 构建与测试
 

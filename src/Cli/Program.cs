@@ -23,7 +23,7 @@ catch (SeikoException ex)
 static int Sync(CliOptions options)
 {
     var root = options.Root ?? FindRoot();
-    var result = new SeikoEngine().Sync(root, options.Store, options.Pre);
+    var result = new SeikoEngine().Sync(root, options.Store, options.Pre, options.Mode);
     Console.WriteLine($"resolved {result.PackagesInstalled} package(s), projected {result.FilesProjected} file(s)");
     foreach (var package in result.Lock.Packages)
     {
@@ -87,7 +87,7 @@ sk - install-side package manager
 
 usage:
   sk init [--root <dir>]
-  sk sync [--root <dir>] [--store <dir>] [--pre]
+  sk sync [--root <dir>] [--store <dir>] [--pre] [--frozen|--locked]
   sk list [--root <dir>]
 
 Seiko reads <root>/seiko.conf, resolves sei packages from the configured static
@@ -123,6 +123,7 @@ internal sealed class CliOptions
     public string? Root { get; private set; }
     public string? Store { get; private set; }
     public bool Pre { get; private set; }
+    public SyncMode Mode { get; private set; } = SyncMode.Normal;
 
     public static CliOptions Parse(string[] args)
     {
@@ -139,6 +140,22 @@ internal sealed class CliOptions
                     break;
                 case "--pre":
                     options.Pre = true;
+                    break;
+                case "--frozen":
+                    if (options.Mode == SyncMode.Locked)
+                    {
+                        throw new SeikoException("--frozen and --locked are mutually exclusive");
+                    }
+
+                    options.Mode = SyncMode.Frozen;
+                    break;
+                case "--locked":
+                    if (options.Mode == SyncMode.Frozen)
+                    {
+                        throw new SeikoException("--frozen and --locked are mutually exclusive");
+                    }
+
+                    options.Mode = SyncMode.Locked;
                     break;
                 default:
                     throw new SeikoException($"unknown option '{args[i]}'");
