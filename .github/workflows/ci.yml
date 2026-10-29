@@ -63,6 +63,6 @@ jobs:
         run: dotnet publish src/Cli/Seiko.Cli.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:StripSymbols=true
       - uses: actions/upload-artifact@v7
         with:
-          name: seiko-cli-${{ matrix.rid }}
+          name: sk-cli-${{ matrix.rid }}
           path: src/Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/
           if-no-files-found: error

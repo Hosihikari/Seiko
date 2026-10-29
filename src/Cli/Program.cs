@@ -16,7 +16,7 @@ try
 }
 catch (SeikoException ex)
 {
-    Console.Error.WriteLine($"seiko: {ex.Message}");
+    Console.Error.WriteLine($"sk: {ex.Message}");
     return 1;
 }
 
@@ -39,7 +39,7 @@ static int List(CliOptions options)
     var lockFile = new SeikoEngine().ReadLock(root);
     if (lockFile is null)
     {
-        Console.WriteLine("no lock; run `seiko sync`");
+        Console.WriteLine("no lock; run `sk sync`");
         return 0;
     }
 
@@ -63,13 +63,13 @@ static int Init(CliOptions options)
     var path = Path.Combine(root, "seiko.conf");
     if (File.Exists(path))
     {
-        Console.Error.WriteLine($"seiko: {path} already exists");
+        Console.Error.WriteLine($"sk: {path} already exists");
         return 1;
     }
 
     File.WriteAllText(path, """
 # Seiko install root
-# Add a source, then run `seiko sync`.
+# Add a source, then run `sk sync`.
 sources = []
 
 # rid = "win-x64"
@@ -83,12 +83,12 @@ components = []
 static int Help()
 {
     Console.WriteLine("""
-seiko - install-side package manager
+sk - install-side package manager
 
 usage:
-  seiko init [--root <dir>]
-  seiko sync [--root <dir>] [--store <dir>] [--pre]
-  seiko list [--root <dir>]
+  sk init [--root <dir>]
+  sk sync [--root <dir>] [--store <dir>] [--pre]
+  sk list [--root <dir>]
 
 Seiko reads <root>/seiko.conf, resolves sei packages from the configured static
 index, verifies artifacts, projects files into <root>, and writes seiko.lock.json.
@@ -98,7 +98,7 @@ index, verifies artifacts, projects files into <root>, and writes seiko.lock.jso
 
 static int Unknown(string command)
 {
-    Console.Error.WriteLine($"seiko: unknown command '{command}' (try `seiko help`)");
+    Console.Error.WriteLine($"sk: unknown command '{command}' (try `sk help`)");
     return 2;
 }
 

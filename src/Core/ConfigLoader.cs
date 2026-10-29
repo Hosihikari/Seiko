@@ -10,7 +10,7 @@ public static class ConfigLoader
         var path = Path.Combine(root, "seiko.conf");
         if (!File.Exists(path))
         {
-            throw new SeikoException($"missing {path}; run `seiko init` or pass --root");
+            throw new SeikoException($"missing {path}; run `sk init` or pass --root");
         }
 
         var configuration = new ConfigurationBuilder()

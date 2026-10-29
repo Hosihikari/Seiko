@@ -4,13 +4,13 @@
 
 [![CI](https://github.com/Hosihikari/seiko/actions/workflows/ci.yml/badge.svg)](https://github.com/Hosihikari/seiko/actions/workflows/ci.yml)
 
-Seiko 的安装侧包管理器实现。
+Seiko 的安装侧包管理器实现。CLI 命令是 `sk`。
 
 当前切片：
 
-- `seiko init`：生成 `seiko.conf` 模板。
-- `seiko sync`：读 `seiko.conf`，从本地静态索引解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，投影到安装根，写 `seiko.lock.json`。
-- `seiko list`：读锁列出包。
+- `sk init`：生成 `seiko.conf` 模板。
+- `sk sync`：读 `seiko.conf`，从本地静态索引解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，投影到安装根，写 `seiko.lock.json`。
+- `sk list`：读锁列出包。
 
 尚未实现：HTTP 源、`--frozen`/`--locked`、回滚、MCP、硬链接/重排优化、公共索引仓。
 
