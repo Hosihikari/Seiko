@@ -16,8 +16,9 @@ Current slice:
 - `sk search <term>` — searches package names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
 - Sources may be a local path or an http(s) index; `tokenEnv` supplies a bearer token for private sources.
+- `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 
-Not implemented yet: MCP, hardlink/reflink projection, and the public index repository.
+Not implemented yet: hardlink/reflink projection and the public index repository.
 
 ## Build and test
 

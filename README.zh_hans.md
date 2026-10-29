@@ -16,8 +16,9 @@ Seiko 的安装侧包管理器实现。CLI 命令是 `sk`。
 - `sk search <term>`：在配置的索引里搜索包名。
 - `sk info <name>`：显示版本、依赖与构件数。
 - 源可以是本地路径或 http(s) 索引；私有源用 `tokenEnv` 提供 bearer token。
+- `seiko-mcp`：stdio 上的 MCP server；默认只读，`--allow-mutations` 才开放 `sync` 与 `rollback`。
 
-尚未实现：MCP、硬链接/重排优化、公共索引仓。
+尚未实现：硬链接/重排优化、公共索引仓。
 
 ## 构建与测试
 
