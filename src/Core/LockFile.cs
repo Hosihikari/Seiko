@@ -34,20 +34,20 @@ public static class LockFile
 
     public static SeikoLock FromResolution(
         string rid,
-        IReadOnlyList<LocalSource> sources,
+        IReadOnlyList<IPackageSource> sources,
         IReadOnlyList<ResolvedPackage> packages)
     {
         return new SeikoLock
         {
             Target = new TargetInfo { Rid = rid },
-            Sources = sources.Select(s => s.Config.Id).ToList(),
+            Sources = sources.Select(s => s.Id).ToList(),
             Packages = packages
                 .OrderBy(p => p.Name, StringComparer.Ordinal)
                 .Select(p => new LockedPackage
                 {
                     Name = p.Name,
                     Version = p.Version,
-                    Source = p.Source.Config.Id,
+                    Source = p.Source.Id,
                     Direct = p.Direct,
                     Artifact = new LockedArtifact
                     {

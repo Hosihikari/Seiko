@@ -25,9 +25,7 @@ public sealed class SeikoEngine
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-        var sources = config.Sources
-            .Select(source => new LocalSource(source, root))
-            .ToList();
+        var sources = LoadSources(config, root);
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
@@ -163,7 +161,7 @@ public sealed class SeikoEngine
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
-        var sources = config.Sources.Select(source => new LocalSource(source, root)).ToList();
+        var sources = LoadSources(config, root);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var results = new List<PackageSummary>();
 
@@ -180,7 +178,7 @@ public sealed class SeikoEngine
                 var latest = package is null ? null : LatestVersion(package);
                 if (latest is not null)
                 {
-                    results.Add(new PackageSummary(name, latest.Version, source.Config.Id));
+                    results.Add(new PackageSummary(name, latest.Version, source.Id));
                 }
             }
         }
@@ -192,7 +190,7 @@ public sealed class SeikoEngine
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
-        var sources = config.Sources.Select(source => new LocalSource(source, root)).ToList();
+        var sources = LoadSources(config, root);
 
         foreach (var source in sources)
         {
@@ -211,7 +209,7 @@ public sealed class SeikoEngine
                     entry.Dependencies,
                     entry.Artifacts.Count))
                 .ToList();
-            return new PackageInfo(name, source.Config.Id, versions);
+            return new PackageInfo(name, source.Id, versions);
         }
 
         throw new SeikoException($"package '{name}' not found in any source");
@@ -234,6 +232,20 @@ public sealed class SeikoEngine
             .FirstOrDefault();
 
         return (stable ?? candidates.OrderByDescending(item => item.Version).FirstOrDefault())?.Entry;
+    }
+
+    private static List<IPackageSource> LoadSources(SeikoConfig config, string root)
+        => config.Sources.Select(source => CreateSource(source, root)).ToList();
+
+    private static IPackageSource CreateSource(SourceConfig source, string root)
+    {
+        if (source.Index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || source.Index.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return new HttpSource(source);
+        }
+
+        return new LocalSource(source, root);
     }
 
     public SeikoLock? ReadLock(string root)

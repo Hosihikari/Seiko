@@ -5,7 +5,7 @@ namespace Seiko.Core;
 public static class LockReplay
 {
     public static IReadOnlyList<ResolvedPackage> Resolve(
-        IReadOnlyList<LocalSource> sources,
+        IReadOnlyList<IPackageSource> sources,
         SeikoLock lockFile,
         IReadOnlyList<PackageSpec> specs)
     {
@@ -52,7 +52,6 @@ public static class LockReplay
                 Source = source,
                 Direct = locked.Direct,
                 Artifact = artifact,
-                ArtifactPath = source.ResolveArtifactPath(artifact.Source),
             });
         }
 

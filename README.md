@@ -15,8 +15,9 @@ Current slice:
 - `sk rollback` — restores the previous generation from the content-addressed store.
 - `sk search <term>` — searches package names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
+- Sources may be a local path or an http(s) index; `tokenEnv` supplies a bearer token for private sources.
 
-Not implemented yet: HTTP sources, MCP, hardlink/reflink projection, and the public index repository.
+Not implemented yet: MCP, hardlink/reflink projection, and the public index repository.
 
 ## Build and test
 

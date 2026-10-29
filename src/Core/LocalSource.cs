@@ -2,9 +2,10 @@ using System.Text.Json;
 
 namespace Seiko.Core;
 
-public sealed class LocalSource
+public sealed class LocalSource : IPackageSource
 {
     public SourceConfig Config { get; }
+    public string Id => Config.Id;
     public string IndexPath { get; }
     public string BaseDirectory { get; }
     public SourceIndex Index { get; }
@@ -52,6 +53,11 @@ public sealed class LocalSource
 
         return package;
     }
+
+    public string ResolveArtifact(ArtifactSource source) => ResolveArtifactPath(source);
+
+    public void DownloadArtifact(ArtifactSource source, string destination)
+        => File.Copy(ResolveArtifactPath(source), destination, overwrite: true);
 
     public string ResolveArtifactPath(ArtifactSource source)
     {

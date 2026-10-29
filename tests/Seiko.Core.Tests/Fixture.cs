@@ -110,6 +110,17 @@ internal sealed class Fixture : IDisposable
 
     public void WriteConfig(string rid, params SpecFixture[] specs)
     {
+        var indexPath = Path.Combine(SourceDirectory, "index.json").Replace('\\', '/');
+        WriteConfigCore("local", indexPath, rid, specs);
+    }
+
+    public void WriteHttpConfig(string baseUrl, string rid, params SpecFixture[] specs)
+    {
+        WriteConfigCore("http", baseUrl.TrimEnd('/') + "/index.json", rid, specs);
+    }
+
+    private void WriteConfigCore(string sourceId, string indexUrl, string rid, SpecFixture[] specs)
+    {
         var index = new SourceIndex
         {
             GeneratedBy = "fixture",
@@ -119,11 +130,10 @@ internal sealed class Fixture : IDisposable
             Path.Combine(SourceDirectory, "index.json"),
             JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SourceIndex));
 
-        var indexPath = Path.Combine(SourceDirectory, "index.json").Replace('\\', '/');
         var lines = new List<string>
         {
             "sources = [",
-            $"  {{ id = \"local\", index = \"{indexPath}\" }}",
+            $"  {{ id = \"{sourceId}\", index = \"{indexUrl}\" }}",
             "]",
             $"rid = \"{rid}\"",
         };

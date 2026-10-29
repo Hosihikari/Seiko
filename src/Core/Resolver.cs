@@ -7,22 +7,21 @@ public sealed class ResolvedPackage
     public required string Name { get; init; }
     public required NuGetVersion ParsedVersion { get; init; }
     public required PackageVersionEntry Entry { get; init; }
-    public required LocalSource Source { get; init; }
+    public required IPackageSource Source { get; init; }
     public bool Direct { get; set; }
     public ArtifactEntry Artifact { get; set; } = null!;
-    public string ArtifactPath { get; set; } = "";
     public string Version => ParsedVersion.ToNormalizedString();
 }
 
 public sealed class Resolver
 {
-    private readonly IReadOnlyList<LocalSource> _sources;
+    private readonly IReadOnlyList<IPackageSource> _sources;
     private readonly SeikoLock? _lock;
     private readonly string _rid;
     private readonly bool _allowPrerelease;
     private readonly Dictionary<string, ResolvedPackage> _resolved = new(StringComparer.Ordinal);
 
-    public Resolver(IReadOnlyList<LocalSource> sources, SeikoLock? existingLock, string rid, bool allowPrerelease)
+    public Resolver(IReadOnlyList<IPackageSource> sources, SeikoLock? existingLock, string rid, bool allowPrerelease)
     {
         _sources = sources;
         _lock = existingLock;
@@ -75,7 +74,7 @@ public sealed class Resolver
         {
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
-                throw new SeikoException($"source '{source.Config.Id}': invalid version '{entry.Version}' for {spec.Name}");
+                throw new SeikoException($"source '{source.Id}': invalid version '{entry.Version}' for {spec.Name}");
             }
 
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
@@ -164,7 +163,6 @@ public sealed class Resolver
             }
 
             package.Artifact = top[0].Artifact;
-            package.ArtifactPath = package.Source.ResolveArtifactPath(package.Artifact.Source);
         }
     }
 
@@ -193,7 +191,7 @@ public sealed class Resolver
         return artifact.Selectors.Count;
     }
 
-    private LocalSource FindSource(string name, out PackageIndex? index)
+    private IPackageSource FindSource(string name, out PackageIndex? index)
     {
         foreach (var source in _sources)
         {

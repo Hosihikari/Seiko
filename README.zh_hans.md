@@ -15,8 +15,9 @@ Seiko 的安装侧包管理器实现。CLI 命令是 `sk`。
 - `sk rollback`：从内容寻址存储恢复上一代投影。
 - `sk search <term>`：在配置的索引里搜索包名。
 - `sk info <name>`：显示版本、依赖与构件数。
+- 源可以是本地路径或 http(s) 索引；私有源用 `tokenEnv` 提供 bearer token。
 
-尚未实现：HTTP 源、MCP、硬链接/重排优化、公共索引仓。
+尚未实现：MCP、硬链接/重排优化、公共索引仓。
 
 ## 构建与测试
 

@@ -37,33 +37,38 @@ public sealed class Store
 
     public StoredPackage Ensure(ResolvedPackage package)
     {
-        var artifactPath = package.ArtifactPath;
-        if (!File.Exists(artifactPath))
-        {
-            throw new SeikoException($"artifact not found for {package.Name} {package.Version}: {artifactPath}");
-        }
-
-        if (package.Artifact.Source.Size > 0 && new FileInfo(artifactPath).Length != package.Artifact.Source.Size)
-        {
-            throw new SeikoException(
-                $"size mismatch for {package.Name} {package.Version}: expected {package.Artifact.Source.Size}, got {new FileInfo(artifactPath).Length}");
-        }
-
-        var actual = Hashing.Sha256File(artifactPath);
-        if (!actual.Equals(package.Artifact.Source.Sha256, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new SeikoException(
-                $"checksum mismatch for {package.Name} {package.Version}: expected {package.Artifact.Source.Sha256}, got {actual}");
-        }
-
-        var directory = Path.Combine(Root, actual);
+        var expectedSha = package.Artifact.Source.Sha256.ToLowerInvariant();
+        var directory = Path.Combine(Root, expectedSha);
         var manifestPath = Path.Combine(directory, "sei.json");
-        if (!File.Exists(manifestPath))
+        if (File.Exists(manifestPath))
         {
+            return LoadStored(package, directory, manifestPath);
+        }
+
+        var tempArtifact = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-artifact-" + Guid.NewGuid().ToString("N") + ".zip");
+        try
+        {
+            package.Source.DownloadArtifact(package.Artifact.Source, tempArtifact);
+            var length = new FileInfo(tempArtifact).Length;
+            if (package.Artifact.Source.Size > 0 && length != package.Artifact.Source.Size)
+            {
+                throw new SeikoException(
+                    $"size mismatch for {package.Name} {package.Version}: expected {package.Artifact.Source.Size}, got {length}");
+            }
+
+            var actual = Hashing.Sha256File(tempArtifact);
+            if (!actual.Equals(expectedSha, StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"checksum mismatch for {package.Name} {package.Version}: expected {expectedSha}, got {actual}");
+            }
+
             var temp = Path.Combine(Root, actual + ".tmp-" + Guid.NewGuid().ToString("N"));
             try
             {
-                Extract(artifactPath, temp);
+                Extract(tempArtifact, temp);
                 if (Directory.Exists(directory))
                 {
                     Directory.Delete(directory, recursive: true);
@@ -81,9 +86,21 @@ public sealed class Store
                 throw;
             }
         }
+        finally
+        {
+            if (File.Exists(tempArtifact))
+            {
+                File.Delete(tempArtifact);
+            }
+        }
 
+        return LoadStored(package, directory, manifestPath);
+    }
+
+    private static StoredPackage LoadStored(ResolvedPackage package, string directory, string manifestPath)
+    {
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
-            ?? throw new SeikoException($"invalid sei.json in {package.ArtifactPath}");
+            ?? throw new SeikoException($"invalid sei.json for {package.Name} {package.Version}");
 
         Validate(package, manifest);
         return new StoredPackage(directory, manifest);
