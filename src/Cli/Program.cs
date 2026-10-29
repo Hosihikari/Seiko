@@ -10,6 +10,8 @@ try
         "sync" => Sync(options),
         "list" => List(options),
         "rollback" => Rollback(options),
+        "search" => Search(options),
+        "info" => Info(options),
         "init" => Init(options),
         "help" or "--help" or "-h" => Help(),
         _ => Unknown(command),
@@ -57,6 +59,50 @@ static int List(CliOptions options)
     return 0;
 }
 
+static int Search(CliOptions options)
+{
+    if (options.Arguments.Count != 1)
+    {
+        Console.Error.WriteLine("sk: search requires a term");
+        return 2;
+    }
+
+    var root = options.Root ?? FindRoot();
+    var results = new SeikoEngine().Search(root, options.Arguments[0]);
+    Console.WriteLine("NAME\tVERSION\tSOURCE");
+    foreach (var result in results)
+    {
+        Console.WriteLine($"{result.Name}\t{result.Version}\t{result.Source}");
+    }
+
+    return 0;
+}
+
+static int Info(CliOptions options)
+{
+    if (options.Arguments.Count != 1)
+    {
+        Console.Error.WriteLine("sk: info requires a package name");
+        return 2;
+    }
+
+    var root = options.Root ?? FindRoot();
+    var info = new SeikoEngine().Info(root, options.Arguments[0]);
+    Console.WriteLine($"{info.Name} ({info.Source})");
+    foreach (var version in info.Versions)
+    {
+        var flags = version.Yanked ? " yanked" : "";
+        if (!string.IsNullOrWhiteSpace(version.Deprecated))
+        {
+            flags += $" deprecated: {version.Deprecated}";
+        }
+
+        Console.WriteLine($"  {version.Version}{flags}  deps={version.Dependencies.Count} artifacts={version.ArtifactCount}");
+    }
+
+    return 0;
+}
+
 static int Rollback(CliOptions options)
 {
     var root = options.Root ?? FindRoot();
@@ -99,6 +145,8 @@ usage:
   sk sync [--root <dir>] [--store <dir>] [--pre] [--frozen|--locked]
   sk list [--root <dir>]
   sk rollback [--root <dir>] [--store <dir>] [--to <n>]
+  sk search <term> [--root <dir>]
+  sk info <name> [--root <dir>]
 
 Seiko reads <root>/seiko.conf, resolves sei packages from the configured static
 index, verifies artifacts, projects files into <root>, and writes seiko.lock.json.
@@ -135,6 +183,7 @@ internal sealed class CliOptions
     public bool Pre { get; private set; }
     public SyncMode Mode { get; private set; } = SyncMode.Normal;
     public int? ToGeneration { get; private set; }
+    public List<string> Arguments { get; } = [];
 
     public static CliOptions Parse(string[] args)
     {
@@ -178,7 +227,13 @@ internal sealed class CliOptions
                     options.ToGeneration = generation;
                     break;
                 default:
-                    throw new SeikoException($"unknown option '{args[i]}'");
+                    if (args[i].StartsWith("--", StringComparison.Ordinal))
+                    {
+                        throw new SeikoException($"unknown option '{args[i]}'");
+                    }
+
+                    options.Arguments.Add(args[i]);
+                    break;
             }
         }
 

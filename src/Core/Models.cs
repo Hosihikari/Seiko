@@ -117,3 +117,14 @@ public sealed class ProjectedFile
     public List<string> Owners { get; set; } = [];
     public string Sha256 { get; set; } = "";
 }
+
+public sealed record PackageSummary(string Name, string Version, string Source);
+
+public sealed record PackageVersionInfo(
+    string Version,
+    bool Yanked,
+    string? Deprecated,
+    IReadOnlyList<SeiDependency> Dependencies,
+    int ArtifactCount);
+
+public sealed record PackageInfo(string Name, string Source, IReadOnlyList<PackageVersionInfo> Versions);

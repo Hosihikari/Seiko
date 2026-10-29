@@ -159,6 +159,83 @@ public sealed class SeikoEngine
         };
     }
 
+    public IReadOnlyList<PackageSummary> Search(string root, string term)
+    {
+        root = Path.GetFullPath(root);
+        var config = ConfigLoader.Load(root);
+        var sources = config.Sources.Select(source => new LocalSource(source, root)).ToList();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var results = new List<PackageSummary>();
+
+        foreach (var source in sources)
+        {
+            foreach (var name in source.Index.Packages ?? new List<string>())
+            {
+                if (!name.Contains(term, StringComparison.OrdinalIgnoreCase) || !seen.Add(name))
+                {
+                    continue;
+                }
+
+                var package = source.GetPackage(name);
+                var latest = package is null ? null : LatestVersion(package);
+                if (latest is not null)
+                {
+                    results.Add(new PackageSummary(name, latest.Version, source.Config.Id));
+                }
+            }
+        }
+
+        return results.OrderBy(result => result.Name, StringComparer.Ordinal).ToList();
+    }
+
+    public PackageInfo Info(string root, string name)
+    {
+        root = Path.GetFullPath(root);
+        var config = ConfigLoader.Load(root);
+        var sources = config.Sources.Select(source => new LocalSource(source, root)).ToList();
+
+        foreach (var source in sources)
+        {
+            var package = source.GetPackage(name);
+            if (package is null)
+            {
+                continue;
+            }
+
+            var versions = package.Versions
+                .OrderByDescending(entry => NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : new NuGetVersion(0, 0, 0))
+                .Select(entry => new PackageVersionInfo(
+                    entry.Version,
+                    entry.Yanked,
+                    entry.Deprecated,
+                    entry.Dependencies,
+                    entry.Artifacts.Count))
+                .ToList();
+            return new PackageInfo(name, source.Config.Id, versions);
+        }
+
+        throw new SeikoException($"package '{name}' not found in any source");
+    }
+
+    private static PackageVersionEntry? LatestVersion(PackageIndex package)
+    {
+        var candidates = package.Versions
+            .Select(entry => new
+            {
+                Entry = entry,
+                Version = NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : null,
+            })
+            .Where(item => item.Version is not null && !item.Entry.Yanked)
+            .ToList();
+
+        var stable = candidates
+            .Where(item => !item.Version!.IsPrerelease)
+            .OrderByDescending(item => item.Version)
+            .FirstOrDefault();
+
+        return (stable ?? candidates.OrderByDescending(item => item.Version).FirstOrDefault())?.Entry;
+    }
+
     public SeikoLock? ReadLock(string root)
         => LockFile.Read(Path.Combine(Path.GetFullPath(root), "seiko.lock.json"));
 

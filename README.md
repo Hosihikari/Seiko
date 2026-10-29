@@ -13,6 +13,8 @@ Current slice:
 - `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date.
 - `sk list` — lists packages from the lock.
 - `sk rollback` — restores the previous generation from the content-addressed store.
+- `sk search <term>` — searches package names in the configured indexes.
+- `sk info <name>` — shows versions, dependencies, and artifact counts.
 
 Not implemented yet: HTTP sources, MCP, hardlink/reflink projection, and the public index repository.
 

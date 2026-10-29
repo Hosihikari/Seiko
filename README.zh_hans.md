@@ -13,6 +13,8 @@ Seiko 的安装侧包管理器实现。CLI 命令是 `sk`。
 - `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；`--locked` 在锁过期时报错。
 - `sk list`：读锁列出包。
 - `sk rollback`：从内容寻址存储恢复上一代投影。
+- `sk search <term>`：在配置的索引里搜索包名。
+- `sk info <name>`：显示版本、依赖与构件数。
 
 尚未实现：HTTP 源、MCP、硬链接/重排优化、公共索引仓。
 
