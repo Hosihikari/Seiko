@@ -25,6 +25,12 @@ public sealed record OutdatedSei(
     string? LatestInRange,
     string Latest);
 
+public sealed record CacheStatusInfo(int Artifacts, long Bytes, int PartialItems);
+
+public sealed record CacheFinding(string Severity, string Code, string Message, string? Path);
+
+public sealed record CacheCleanResult(int Removed, long Bytes);
+
 public sealed class SeikoClient
 {
     public SyncResult Sync(
@@ -381,6 +387,216 @@ public sealed class SeikoClient
         }
 
         return best?.ToNormalizedString();
+    }
+
+    public IReadOnlyList<SourceConfig> ListSources(string root)
+    {
+        root = Path.GetFullPath(root);
+        return ConfigLoader.Load(root, requireSources: false).Sources;
+    }
+
+    public IReadOnlyList<SourceConfig> SourceAdd(
+        string root,
+        string id,
+        string index,
+        int priority = 0,
+        string? tokenEnv = null)
+    {
+        root = Path.GetFullPath(root);
+        if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(index))
+        {
+            throw new SeikoException("source add requires id and index", "usage");
+        }
+
+        var config = ConfigLoader.Load(root, requireSources: false);
+        if (config.Sources.Any(source => string.Equals(source.Id, id, StringComparison.Ordinal)))
+        {
+            throw new SeikoException($"source '{id}' already exists", "config");
+        }
+
+        config.Sources.Add(new SourceConfig
+        {
+            Id = id,
+            Index = index,
+            Priority = priority,
+            TokenEnv = string.IsNullOrWhiteSpace(tokenEnv) ? null : tokenEnv,
+        });
+        ConfigWriter.WriteSources(root, config.Sources);
+        return config.Sources;
+    }
+
+    public IReadOnlyList<SourceConfig> SourceRemove(string root, string id)
+    {
+        root = Path.GetFullPath(root);
+        var config = ConfigLoader.Load(root, requireSources: false);
+        var removed = config.Sources.RemoveAll(source => string.Equals(source.Id, id, StringComparison.Ordinal));
+        if (removed == 0)
+        {
+            throw new SeikoException($"source '{id}' not found", "source");
+        }
+
+        if (config.Sources.Count == 0)
+        {
+            throw new SeikoException("at least one source is required", "config");
+        }
+
+        ConfigWriter.WriteSources(root, config.Sources);
+        return config.Sources;
+    }
+
+    public string? ConfigGet(string root, string key)
+    {
+        root = Path.GetFullPath(root);
+        if (!string.Equals(key, "rid", StringComparison.Ordinal))
+        {
+            throw new SeikoException($"unsupported config key: {key}", "config");
+        }
+
+        return ConfigLoader.Load(root, requireSources: false).Rid;
+    }
+
+    public string? ConfigSet(string root, string key, string? value)
+    {
+        root = Path.GetFullPath(root);
+        if (!string.Equals(key, "rid", StringComparison.Ordinal))
+        {
+            throw new SeikoException($"unsupported config key: {key}", "config");
+        }
+
+        ConfigWriter.WriteRid(root, value);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    public CacheStatusInfo CacheStatus(string? storeRoot = null)
+    {
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        if (!Directory.Exists(storePath))
+        {
+            return new CacheStatusInfo(0, 0, 0);
+        }
+
+        var artifacts = 0;
+        long bytes = 0;
+        foreach (var directory in ArtifactDirectories(storePath))
+        {
+            artifacts++;
+            bytes += DirectorySize(directory);
+        }
+
+        var partialRoot = Path.Combine(storePath, ".partial");
+        var partials = Directory.Exists(partialRoot)
+            ? Directory.EnumerateFileSystemEntries(partialRoot).Count()
+            : 0;
+        return new CacheStatusInfo(artifacts, bytes, partials);
+    }
+
+    public IReadOnlyList<CacheFinding> CacheVerify(string? storeRoot = null)
+    {
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        var findings = new List<CacheFinding>();
+        if (!Directory.Exists(storePath))
+        {
+            return findings;
+        }
+
+        foreach (var directory in ArtifactDirectories(storePath))
+        {
+            var manifestPath = Path.Combine(directory, "sei.json");
+            if (!File.Exists(manifestPath))
+            {
+                findings.Add(new CacheFinding("error", "cache-missing", "artifact has no sei.json", directory));
+                continue;
+            }
+
+            try
+            {
+                var manifest = JsonSerializer.Deserialize(
+                    File.ReadAllBytes(manifestPath),
+                    SeikoJsonContext.Default.SeiManifest);
+                if (manifest is null || manifest.SchemaVersion != 1 || string.IsNullOrWhiteSpace(manifest.Name))
+                {
+                    findings.Add(new CacheFinding("error", "cache-manifest", "invalid sei.json", directory));
+                }
+            }
+            catch (Exception ex)
+            {
+                findings.Add(new CacheFinding("error", "cache-manifest", ex.Message, directory));
+            }
+        }
+
+        return findings;
+    }
+
+    public CacheCleanResult CacheClean(string root, string? storeRoot = null)
+    {
+        root = Path.GetFullPath(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
+        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+            ?? throw new SeikoException("no lock; run `sk sync`", "lock");
+        var referenced = lockFile.Sei
+            .Select(sei => sei.Artifact.Sha256.ToLowerInvariant())
+            .ToHashSet(StringComparer.Ordinal);
+        var removed = 0;
+        long bytes = 0;
+        if (!Directory.Exists(storePath))
+        {
+            return new CacheCleanResult(0, 0);
+        }
+
+        foreach (var directory in ArtifactDirectories(storePath))
+        {
+            var name = Path.GetFileName(directory);
+            if (referenced.Contains(name))
+            {
+                continue;
+            }
+
+            try
+            {
+                bytes += DirectorySize(directory);
+                Directory.Delete(directory, recursive: true);
+                removed++;
+            }
+            catch (IOException ex)
+            {
+                throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+            }
+        }
+
+        return new CacheCleanResult(removed, bytes);
+    }
+
+    private static IEnumerable<string> ArtifactDirectories(string storePath)
+        => Directory.EnumerateDirectories(storePath)
+            .Where(path =>
+            {
+                var name = Path.GetFileName(path);
+                return name.Length == 64 && name.All(Uri.IsHexDigit);
+            })
+            .OrderBy(path => path, StringComparer.Ordinal);
+
+    private static long DirectorySize(string path)
+    {
+        long size = 0;
+        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                size += new FileInfo(file).Length;
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        return size;
     }
 
     public RollbackResult Rollback(string root, string? storeRoot = null, int? toGeneration = null)

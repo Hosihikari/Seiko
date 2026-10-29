@@ -245,6 +245,121 @@ outdated.SetAction(parseResult => Run(
         parseResult.GetValue(outdatedPre),
         IsJson(parseResult))));
 
+var source = new Command("source", "Manage configured sources.");
+var sourceList = new Command("list", "List configured sources.");
+var sourceListRoot = RootOption();
+sourceList.Add(sourceListRoot);
+sourceList.SetAction(parseResult => Run(
+    "source_list",
+    IsJson(parseResult),
+    () => SourceListCommand(parseResult.GetValue(sourceListRoot), IsJson(parseResult))));
+
+var sourceAdd = new Command("add", "Add a source.");
+var sourceAddRoot = RootOption();
+var sourceAddPriority = new Option<int?>("--priority") { Description = "Source priority." };
+var sourceAddTokenEnv = new Option<string?>("--token-env") { Description = "Environment variable holding a bearer token." };
+var sourceAddId = new Argument<string>("id") { Description = "Source id." };
+var sourceAddIndex = new Argument<string>("index") { Description = "Index URL or local path." };
+sourceAdd.Add(sourceAddId);
+sourceAdd.Add(sourceAddIndex);
+sourceAdd.Add(sourceAddRoot);
+sourceAdd.Add(sourceAddPriority);
+sourceAdd.Add(sourceAddTokenEnv);
+sourceAdd.SetAction(parseResult => Run(
+    "source_add",
+    IsJson(parseResult),
+    () => SourceAddCommand(
+        parseResult.GetValue(sourceAddRoot),
+        parseResult.GetValue(sourceAddId)!,
+        parseResult.GetValue(sourceAddIndex)!,
+        parseResult.GetValue(sourceAddPriority) ?? 0,
+        parseResult.GetValue(sourceAddTokenEnv),
+        IsJson(parseResult))));
+
+var sourceRemove = new Command("remove", "Remove a source.");
+var sourceRemoveRoot = RootOption();
+var sourceRemoveId = new Argument<string>("id") { Description = "Source id." };
+sourceRemove.Add(sourceRemoveId);
+sourceRemove.Add(sourceRemoveRoot);
+sourceRemove.SetAction(parseResult => Run(
+    "source_remove",
+    IsJson(parseResult),
+    () => SourceRemoveCommand(
+        parseResult.GetValue(sourceRemoveRoot),
+        parseResult.GetValue(sourceRemoveId)!,
+        IsJson(parseResult))));
+
+source.Add(sourceList);
+source.Add(sourceAdd);
+source.Add(sourceRemove);
+
+var config = new Command("config", "Read or write install-root configuration.");
+var configGet = new Command("get", "Read a configuration value.");
+var configGetRoot = RootOption();
+var configGetKey = new Argument<string>("key") { Description = "Configuration key (rid)." };
+configGet.Add(configGetKey);
+configGet.Add(configGetRoot);
+configGet.SetAction(parseResult => Run(
+    "config_get",
+    IsJson(parseResult),
+    () => ConfigGetCommand(
+        parseResult.GetValue(configGetRoot),
+        parseResult.GetValue(configGetKey)!,
+        IsJson(parseResult))));
+
+var configSet = new Command("set", "Write a configuration value.");
+var configSetRoot = RootOption();
+var configSetKey = new Argument<string>("key") { Description = "Configuration key (rid)." };
+var configSetValue = new Argument<string>("value") { Description = "Value; empty removes the key." };
+configSet.Add(configSetKey);
+configSet.Add(configSetValue);
+configSet.Add(configSetRoot);
+configSet.SetAction(parseResult => Run(
+    "config_set",
+    IsJson(parseResult),
+    () => ConfigSetCommand(
+        parseResult.GetValue(configSetRoot),
+        parseResult.GetValue(configSetKey)!,
+        parseResult.GetValue(configSetValue)!,
+        IsJson(parseResult))));
+
+config.Add(configGet);
+config.Add(configSet);
+
+var cache = new Command("cache", "Inspect or clean the content-addressed store.");
+var cacheStatus = new Command("status", "Show store artifact and partial counts.");
+var cacheStatusStore = StoreOption();
+cacheStatus.Add(cacheStatusStore);
+cacheStatus.SetAction(parseResult => Run(
+    "cache_status",
+    IsJson(parseResult),
+    () => CacheStatusCommand(parseResult.GetValue(cacheStatusStore), IsJson(parseResult))));
+
+var cacheVerify = new Command("verify", "Verify stored artifacts.");
+var cacheVerifyStore = StoreOption();
+cacheVerify.Add(cacheVerifyStore);
+cacheVerify.SetAction(parseResult => Run(
+    "cache_verify",
+    IsJson(parseResult),
+    () => CacheVerifyCommand(parseResult.GetValue(cacheVerifyStore), IsJson(parseResult))));
+
+var cacheClean = new Command("clean", "Remove artifacts not referenced by this install root.");
+var cacheCleanRoot = RootOption();
+var cacheCleanStore = StoreOption();
+cacheClean.Add(cacheCleanRoot);
+cacheClean.Add(cacheCleanStore);
+cacheClean.SetAction(parseResult => Run(
+    "cache_clean",
+    IsJson(parseResult),
+    () => CacheCleanCommand(
+        parseResult.GetValue(cacheCleanRoot),
+        parseResult.GetValue(cacheCleanStore),
+        IsJson(parseResult))));
+
+cache.Add(cacheStatus);
+cache.Add(cacheVerify);
+cache.Add(cacheClean);
+
 var help = new Command("help", "Show help.");
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
@@ -260,6 +375,9 @@ rootCommand.Add(rollback);
 rootCommand.Add(search);
 rootCommand.Add(info);
 rootCommand.Add(doctor);
+rootCommand.Add(source);
+rootCommand.Add(config);
+rootCommand.Add(cache);
 rootCommand.Add(help);
 rootCommand.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
@@ -511,6 +629,136 @@ static int Outdated(string? rootOption, string? proxy, bool pre, bool json)
         Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}");
     }
 
+    return 0;
+}
+
+static int SourceListCommand(string? rootOption, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var sources = new SeikoClient().ListSources(root);
+    PrintSources("source_list", sources, json);
+    return 0;
+}
+
+static int SourceAddCommand(
+    string? rootOption,
+    string id,
+    string index,
+    int priority,
+    string? tokenEnv,
+    bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var sources = new SeikoClient().SourceAdd(root, id, index, priority, tokenEnv);
+    PrintSources("source_add", sources, json);
+    return 0;
+}
+
+static int SourceRemoveCommand(string? rootOption, string id, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var sources = new SeikoClient().SourceRemove(root, id);
+    PrintSources("source_remove", sources, json);
+    return 0;
+}
+
+static void PrintSources(string command, IReadOnlyList<SourceConfig> sources, bool json)
+{
+    var items = sources
+        .Select(source => new SourceItem(source.Id, source.Index, source.Priority))
+        .ToList();
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.SourceEnvelope, new SourceEnvelope(1, command, items));
+        return;
+    }
+
+    Console.WriteLine("ID\tINDEX\tPRIORITY");
+    foreach (var source in items)
+    {
+        Console.WriteLine($"{source.Id}\t{source.Index}\t{source.Priority}");
+    }
+}
+
+static int ConfigGetCommand(string? rootOption, string key, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var value = new SeikoClient().ConfigGet(root, key);
+    PrintConfig("config_get", key, value, json);
+    return 0;
+}
+
+static int ConfigSetCommand(string? rootOption, string key, string value, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var stored = new SeikoClient().ConfigSet(root, key, value);
+    PrintConfig("config_set", key, stored, json);
+    return 0;
+}
+
+static void PrintConfig(string command, string key, string? value, bool json)
+{
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.ConfigEnvelope,
+            new ConfigEnvelope(1, command, new ConfigData(value)));
+        return;
+    }
+
+    Console.WriteLine(value is null ? $"{key} is not set" : $"{key} = {value}");
+}
+
+static int CacheStatusCommand(string? store, bool json)
+{
+    var status = new SeikoClient().CacheStatus(store);
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.CacheStatusEnvelope, new CacheStatusEnvelope(1, "cache_status", status));
+        return 0;
+    }
+
+    Console.WriteLine($"artifacts: {status.Artifacts}");
+    Console.WriteLine($"bytes: {status.Bytes}");
+    Console.WriteLine($"partials: {status.PartialItems}");
+    return 0;
+}
+
+static int CacheVerifyCommand(string? store, bool json)
+{
+    var findings = new SeikoClient().CacheVerify(store);
+    var hasError = findings.Any(finding => finding.Severity == "error");
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.CacheVerifyEnvelope, new CacheVerifyEnvelope(1, "cache_verify", findings.ToList()));
+        return hasError ? 1 : 0;
+    }
+
+    foreach (var finding in findings)
+    {
+        var path = finding.Path is null ? "" : $" ({finding.Path})";
+        Console.WriteLine($"{finding.Severity} {finding.Code}: {finding.Message}{path}");
+    }
+
+    if (findings.Count == 0)
+    {
+        Console.WriteLine("no problems found");
+    }
+
+    return hasError ? 1 : 0;
+}
+
+static int CacheCleanCommand(string? rootOption, string? store, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var result = new SeikoClient().CacheClean(root, store);
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.CacheCleanEnvelope, new CacheCleanEnvelope(1, "cache_clean", result));
+        return 0;
+    }
+
+    Console.WriteLine($"removed {result.Removed} artifact(s), freed {result.Bytes} bytes");
     return 0;
 }
 

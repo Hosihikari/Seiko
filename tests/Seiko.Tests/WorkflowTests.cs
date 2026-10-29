@@ -55,6 +55,34 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Cache_StatusVerifyAndClean()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        var client = new SeikoClient();
+
+        Assert.Equal(1, client.CacheStatus(fixture.StoreDirectory).Artifacts);
+        Assert.Empty(client.CacheVerify(fixture.StoreDirectory));
+
+        var stale = Path.Combine(fixture.StoreDirectory, new string('a', 64));
+        Directory.CreateDirectory(stale);
+        File.WriteAllText(Path.Combine(stale, "junk"), "junk");
+        Assert.Single(client.CacheVerify(fixture.StoreDirectory));
+
+        var result = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(1, result.Removed);
+        Assert.False(Directory.Exists(stale));
+        Assert.Equal(1, client.CacheStatus(fixture.StoreDirectory).Artifacts);
+    }
+
+    [Fact]
     public void Update_WithoutLatestKeepsRangeAndUpgrades()
     {
         using var fixture = new Fixture();

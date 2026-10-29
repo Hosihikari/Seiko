@@ -11,33 +11,65 @@ public static class ConfigWriter
             throw new SeikoException($"unsupported config section: {section}", "config");
         }
 
+        var lines = ReadLines(root);
+        ReplaceSection(lines, section, BuildSpecsBlock(section, specs));
+        WriteLines(root, lines);
+    }
+
+    public static void WriteSources(string root, IReadOnlyList<SourceConfig> sources)
+    {
+        var lines = ReadLines(root);
+        ReplaceSection(lines, "sources", BuildSourcesBlock(sources));
+        WriteLines(root, lines);
+    }
+
+    public static void WriteRid(string root, string? rid)
+    {
+        var lines = ReadLines(root);
+        var index = FindScalar(lines, "rid");
+        if (string.IsNullOrWhiteSpace(rid))
+        {
+            if (index >= 0)
+            {
+                lines.RemoveAt(index);
+            }
+        }
+        else
+        {
+            var value = $"rid = \"{Escape(rid)}\"";
+            if (index >= 0)
+            {
+                lines[index] = value;
+            }
+            else
+            {
+                var insertAt = FindSection(lines, "sources")?.Start
+                    ?? FindSection(lines, "sei")?.Start
+                    ?? lines.Count;
+                lines.Insert(insertAt, value);
+            }
+        }
+
+        WriteLines(root, lines);
+    }
+
+    private static List<string> ReadLines(string root)
+    {
         var path = Path.Combine(root, "seiko.conf");
         if (!File.Exists(path))
         {
             throw new SeikoException($"missing {path}; run `sk init`", "config");
         }
 
-        var text = File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
-        var lines = text.Split('\n').ToList();
-        var block = BuildBlock(section, specs);
-        var range = FindSection(lines, section);
-        if (range is { } found)
-        {
-            lines.RemoveRange(found.Start, found.End - found.Start + 1);
-            lines.InsertRange(found.Start, block);
-        }
-        else
-        {
-            var components = FindSection(lines, "components");
-            var insertAt = components?.Start ?? lines.Count;
-            if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)
-            {
-                lines.Add("");
-            }
+        return File.ReadAllText(path)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n')
+            .ToList();
+    }
 
-            lines.InsertRange(insertAt, block);
-        }
-
+    private static void WriteLines(string root, List<string> lines)
+    {
+        var path = Path.Combine(root, "seiko.conf");
         var output = string.Join("\n", lines);
         if (!output.EndsWith('\n'))
         {
@@ -49,7 +81,29 @@ public static class ConfigWriter
         File.Move(temp, path, overwrite: true);
     }
 
-    private static List<string> BuildBlock(string section, IReadOnlyList<SeiSpec> specs)
+    private static void ReplaceSection(List<string> lines, string section, List<string> block)
+    {
+        var range = FindSection(lines, section);
+        if (range is { } found)
+        {
+            lines.RemoveRange(found.Start, found.End - found.Start + 1);
+            lines.InsertRange(found.Start, block);
+            return;
+        }
+
+        var insertAt = FindSection(lines, "components")?.Start
+            ?? FindSection(lines, "sei")?.Start
+            ?? FindSection(lines, "sources")?.Start
+            ?? lines.Count;
+        if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)
+        {
+            lines.Add("");
+        }
+
+        lines.InsertRange(insertAt, block);
+    }
+
+    private static List<string> BuildSpecsBlock(string section, IReadOnlyList<SeiSpec> specs)
     {
         if (specs.Count == 0)
         {
@@ -74,9 +128,61 @@ public static class ConfigWriter
         return lines;
     }
 
+    private static List<string> BuildSourcesBlock(IReadOnlyList<SourceConfig> sources)
+    {
+        if (sources.Count == 0)
+        {
+            return ["sources = []"];
+        }
+
+        var lines = new List<string> { "sources = [" };
+        foreach (var source in sources)
+        {
+            var parts = new List<string>
+            {
+                $"id = \"{Escape(source.Id)}\"",
+                $"index = \"{Escape(source.Index)}\"",
+            };
+            if (source.Priority != 0)
+            {
+                parts.Add($"priority = {source.Priority}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(source.TokenEnv))
+            {
+                parts.Add($"tokenEnv = \"{Escape(source.TokenEnv)}\"");
+            }
+
+            lines.Add($"  {{ {string.Join(", ", parts)} }},");
+        }
+
+        lines.Add("]");
+        return lines;
+    }
+
     private static string Escape(string value)
         => value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static int FindScalar(List<string> lines, string key)
+    {
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (!trimmed.StartsWith(key, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var rest = trimmed[key.Length..].TrimStart();
+            if (rest.StartsWith('='))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 
     private static (int Start, int End)? FindSection(List<string> lines, string section)
     {
@@ -94,7 +200,6 @@ public static class ConfigWriter
                 continue;
             }
 
-            var bracketLine = line;
             var bracketIndex = lines[line].IndexOf('[', lines[line].IndexOf('=') + 1);
             if (bracketIndex < 0)
             {
@@ -104,9 +209,9 @@ public static class ConfigWriter
             var depth = 0;
             var inString = false;
             var escaped = false;
-            for (var current = bracketLine; current < lines.Count; current++)
+            for (var current = line; current < lines.Count; current++)
             {
-                var start = current == bracketLine ? bracketIndex : 0;
+                var start = current == line ? bracketIndex : 0;
                 for (var i = start; i < lines[current].Length; i++)
                 {
                     var ch = lines[current][i];

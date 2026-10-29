@@ -31,6 +31,25 @@ components = []
     }
 
     [Fact]
+    public void SourceAndConfigCommands_RoundTrip()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+
+        client.SourceAdd(fixture.Root, "mirror", "https://example.invalid/index.json", priority: 2);
+        Assert.Contains(client.ListSources(fixture.Root), source => source.Id == "mirror");
+        Assert.Equal("win-x64", client.ConfigGet(fixture.Root, "rid"));
+
+        client.ConfigSet(fixture.Root, "rid", "linux-x64");
+        Assert.Equal("linux-x64", client.ConfigGet(fixture.Root, "rid"));
+
+        var sources = client.SourceRemove(fixture.Root, "mirror");
+        Assert.DoesNotContain(sources, source => source.Id == "mirror");
+        Assert.Contains("linux-x64", File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")));
+    }
+
+    [Fact]
     public void AddRemoveAndUpdate_ManageDirectDeclarations()
     {
         using var fixture = new Fixture();

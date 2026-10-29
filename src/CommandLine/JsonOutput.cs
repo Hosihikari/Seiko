@@ -45,6 +45,20 @@ public sealed record WhyEnvelope(int SchemaVersion, string Command, WhyData Data
 
 public sealed record OutdatedEnvelope(int SchemaVersion, string Command, List<OutdatedSei> Data);
 
+public sealed record SourceItem(string Id, string Index, int Priority);
+
+public sealed record SourceEnvelope(int SchemaVersion, string Command, List<SourceItem> Data);
+
+public sealed record ConfigData(string? Rid);
+
+public sealed record ConfigEnvelope(int SchemaVersion, string Command, ConfigData Data);
+
+public sealed record CacheStatusEnvelope(int SchemaVersion, string Command, CacheStatusInfo Data);
+
+public sealed record CacheVerifyEnvelope(int SchemaVersion, string Command, List<CacheFinding> Data);
+
+public sealed record CacheCleanEnvelope(int SchemaVersion, string Command, CacheCleanResult Data);
+
 public sealed record DoctorEnvelope(int SchemaVersion, string Command, DoctorResult Data);
 
 public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData Error);
@@ -60,6 +74,16 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(WhyEnvelope))]
 [JsonSerializable(typeof(OutdatedEnvelope))]
 [JsonSerializable(typeof(OutdatedSei))]
+[JsonSerializable(typeof(SourceEnvelope))]
+[JsonSerializable(typeof(SourceItem))]
+[JsonSerializable(typeof(ConfigEnvelope))]
+[JsonSerializable(typeof(ConfigData))]
+[JsonSerializable(typeof(CacheStatusEnvelope))]
+[JsonSerializable(typeof(CacheStatusInfo))]
+[JsonSerializable(typeof(CacheVerifyEnvelope))]
+[JsonSerializable(typeof(CacheFinding))]
+[JsonSerializable(typeof(CacheCleanEnvelope))]
+[JsonSerializable(typeof(CacheCleanResult))]
 [JsonSerializable(typeof(DoctorEnvelope))]
 [JsonSerializable(typeof(ErrorEnvelope))]
 [JsonSerializable(typeof(InfoData))]

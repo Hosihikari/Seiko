@@ -16,8 +16,12 @@ public sealed class McpTests
         Assert.Contains("search", names);
         Assert.Contains("why", names);
         Assert.Contains("outdated", names);
+        Assert.Contains("config_get", names);
+        Assert.Contains("cache_status", names);
+        Assert.Contains("cache_verify", names);
         Assert.DoesNotContain("sync", names);
         Assert.DoesNotContain("add", names);
+        Assert.DoesNotContain("source_add", names);
     }
 
     [Fact]
@@ -30,6 +34,10 @@ public sealed class McpTests
         Assert.Contains("add", names);
         Assert.Contains("remove", names);
         Assert.Contains("update", names);
+        Assert.Contains("source_add", names);
+        Assert.Contains("source_remove", names);
+        Assert.Contains("config_set", names);
+        Assert.Contains("cache_clean", names);
     }
 
     [Fact]

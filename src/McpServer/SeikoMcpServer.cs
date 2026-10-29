@@ -92,6 +92,9 @@ public sealed class SeikoMcpServer
             Tool("info", "Show versions, dependencies, and artifact counts.", InfoSchema()),
             Tool("lock", "Return the current lock file.", RootSchema(required: false)),
             Tool("source_list", "List configured sources.", RootSchema(required: false)),
+            Tool("config_get", "Read an install-root configuration value.", ConfigGetSchema()),
+            Tool("cache_status", "Show store artifact and partial counts.", StoreSchema()),
+            Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
         };
@@ -101,6 +104,10 @@ public sealed class SeikoMcpServer
             tools.Add(Tool("add", "Add a direct sei declaration and sync.", AddSchema()));
             tools.Add(Tool("remove", "Remove a direct sei declaration and sync.", RemoveSchema()));
             tools.Add(Tool("update", "Update direct declarations and sync.", UpdateSchema()));
+            tools.Add(Tool("source_add", "Add a source.", SourceAddSchema()));
+            tools.Add(Tool("source_remove", "Remove a source.", SourceRemoveSchema()));
+            tools.Add(Tool("config_set", "Write an install-root configuration value.", ConfigSetSchema()));
+            tools.Add(Tool("cache_clean", "Remove artifacts not referenced by this root.", CacheCleanSchema()));
             tools.Add(Tool("sync", "Resolve and deploy sei.", SyncSchema()));
             tools.Add(Tool("rollback", "Restore a previous generation.", RollbackSchema()));
         }
@@ -126,11 +133,18 @@ public sealed class SeikoMcpServer
                 "info" => Info(arguments),
                 "lock" => Lock(arguments),
                 "source_list" => SourceList(arguments),
+                "config_get" => ConfigGet(arguments),
+                "cache_status" => CacheStatus(arguments),
+                "cache_verify" => CacheVerify(arguments),
                 "why" => Why(arguments),
                 "outdated" => Outdated(arguments),
                 "add" => RequireMutations(() => Add(arguments)),
                 "remove" => RequireMutations(() => Remove(arguments)),
                 "update" => RequireMutations(() => Update(arguments)),
+                "source_add" => RequireMutations(() => SourceAdd(arguments)),
+                "source_remove" => RequireMutations(() => SourceRemove(arguments)),
+                "config_set" => RequireMutations(() => ConfigSet(arguments)),
+                "cache_clean" => RequireMutations(() => CacheClean(arguments)),
                 "sync" => RequireMutations(() => Sync(arguments)),
                 "rollback" => RequireMutations(() => Rollback(arguments)),
                 _ => throw new SeikoException($"unknown tool '{name}'"),
@@ -239,6 +253,98 @@ public sealed class SeikoMcpServer
         }
 
         return sources.ToJsonString();
+    }
+
+    private static string SourcesJson(IReadOnlyList<SourceConfig> sources)
+    {
+        var array = new JsonArray();
+        foreach (var source in sources)
+        {
+            array.Add(new JsonObject
+            {
+                ["id"] = source.Id,
+                ["index"] = source.Index,
+                ["priority"] = source.Priority,
+            });
+        }
+
+        return array.ToJsonString();
+    }
+
+    private string SourceAdd(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var id = RequiredString(arguments, "id");
+        var index = RequiredString(arguments, "index");
+        var sources = _client.SourceAdd(
+            root,
+            id,
+            index,
+            Int(arguments, "priority") ?? 0,
+            OptionalString(arguments, "tokenEnv"));
+        return SourcesJson(sources);
+    }
+
+    private string SourceRemove(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var id = RequiredString(arguments, "id");
+        return SourcesJson(_client.SourceRemove(root, id));
+    }
+
+    private string ConfigGet(JsonObject arguments)
+    {
+        var root = Root(arguments, required: false);
+        var key = RequiredString(arguments, "key");
+        return new JsonObject { ["rid"] = _client.ConfigGet(root, key) }.ToJsonString();
+    }
+
+    private string ConfigSet(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var key = RequiredString(arguments, "key");
+        var value = OptionalString(arguments, "value");
+        _client.ConfigSet(root, key, value);
+        return new JsonObject { ["rid"] = value }.ToJsonString();
+    }
+
+    private string CacheStatus(JsonObject arguments)
+    {
+        var status = _client.CacheStatus(OptionalString(arguments, "store"));
+        return new JsonObject
+        {
+            ["artifacts"] = status.Artifacts,
+            ["bytes"] = status.Bytes,
+            ["partialItems"] = status.PartialItems,
+        }.ToJsonString();
+    }
+
+    private string CacheVerify(JsonObject arguments)
+    {
+        var findings = new JsonArray();
+        foreach (var finding in _client.CacheVerify(OptionalString(arguments, "store")))
+        {
+            findings.Add(new JsonObject
+            {
+                ["severity"] = finding.Severity,
+                ["code"] = finding.Code,
+                ["message"] = finding.Message,
+                ["path"] = finding.Path,
+            });
+        }
+
+        return findings.ToJsonString();
+    }
+
+    private string CacheClean(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var result = _client.CacheClean(root, OptionalString(arguments, "store"));
+        return new JsonObject
+        {
+            ["removed"] = result.Removed,
+            ["bytes"] = result.Bytes,
+        }.ToJsonString();
     }
 
     private string Why(JsonObject arguments)
@@ -483,6 +589,88 @@ public sealed class SeikoMcpServer
                 ["frozen"] = new JsonObject { ["type"] = "boolean" },
                 ["locked"] = new JsonObject { ["type"] = "boolean" },
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
+            },
+            ["required"] = new JsonArray(JsonValue.Create("root")),
+        };
+
+    private static JsonObject ConfigGetSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["key"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(JsonValue.Create("key")),
+        };
+
+    private static JsonObject StoreSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["store"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(),
+        };
+
+    private static JsonObject SourceAddSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["id"] = new JsonObject { ["type"] = "string" },
+                ["index"] = new JsonObject { ["type"] = "string" },
+                ["priority"] = new JsonObject { ["type"] = "integer" },
+                ["tokenEnv"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(
+                JsonValue.Create("root"),
+                JsonValue.Create("id"),
+                JsonValue.Create("index")),
+        };
+
+    private static JsonObject SourceRemoveSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["id"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(
+                JsonValue.Create("root"),
+                JsonValue.Create("id")),
+        };
+
+    private static JsonObject ConfigSetSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["key"] = new JsonObject { ["type"] = "string" },
+                ["value"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(
+                JsonValue.Create("root"),
+                JsonValue.Create("key")),
+        };
+
+    private static JsonObject CacheCleanSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };

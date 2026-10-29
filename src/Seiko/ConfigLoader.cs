@@ -5,7 +5,7 @@ namespace Seiko;
 
 public static class ConfigLoader
 {
-    public static SeikoConfig Load(string root)
+    public static SeikoConfig Load(string root, bool requireSources = true)
     {
         var path = Path.Combine(root, "seiko.conf");
         if (!File.Exists(path))
@@ -48,7 +48,7 @@ public static class ConfigLoader
             });
         }
 
-        if (config.Sources.Count == 0)
+        if (requireSources && config.Sources.Count == 0)
         {
             throw new SeikoException($"{path}: at least one source is required", "config");
         }
