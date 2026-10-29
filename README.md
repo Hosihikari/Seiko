@@ -46,6 +46,7 @@ Current slice:
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
 - `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.
+- `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 
 Not implemented yet: hardlink/reflink deployment and the public index repository.

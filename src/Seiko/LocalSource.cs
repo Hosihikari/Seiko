@@ -57,6 +57,7 @@ public sealed class LocalSource : ISeiSource
     public string ResolveArtifact(ArtifactLocation source) => ResolveArtifactPath(source);
 
     public async Task DownloadAsync(
+        string name,
         ArtifactLocation source,
         string directory,
         DownloadSession session,
@@ -94,6 +95,8 @@ public sealed class LocalSource : ISeiSource
             have = 0;
         }
 
+        session.Log?.Invoke($"{name}: copying {sourcePath} ({size} bytes)");
+        session.ReportDownloading(name, have, size);
         await using var input = new FileStream(
             sourcePath,
             FileMode.Open,
@@ -111,7 +114,19 @@ public sealed class LocalSource : ISeiSource
             useAsync: true);
         output.SetLength(have);
         output.Position = have;
-        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        var buffer = new byte[81920];
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            have += read;
+            session.ReportDownloading(name, have, size);
+        }
     }
 
     public string ResolveArtifactPath(ArtifactLocation source)

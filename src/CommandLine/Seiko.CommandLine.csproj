@@ -15,6 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Ben.Demystifier" Version="0.4.1" />
+    <PackageReference Include="ShellProgressBar" Version="5.2.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.14" />
   </ItemGroup>
 

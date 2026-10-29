@@ -47,6 +47,7 @@ public sealed class Store
         var manifestPath = Path.Combine(directory, "sei.json");
         if (File.Exists(manifestPath))
         {
+            session.ReportCompleted(sei.Name, sei.Artifact.Source.Size);
             return LoadStored(sei, directory, manifestPath);
         }
 
@@ -66,7 +67,12 @@ public sealed class Store
         Directory.CreateDirectory(partialDirectory);
         try
         {
-            await sei.Source.DownloadAsync(sei.Artifact.Source, partialDirectory, session, cancellationToken)
+            await sei.Source.DownloadAsync(
+                    sei.Name,
+                    sei.Artifact.Source,
+                    partialDirectory,
+                    session,
+                    cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -117,6 +123,7 @@ public sealed class Store
             }
 
             TryDeleteDirectory(partialDirectory);
+            session.ReportCompleted(sei.Name, sei.Artifact.Source.Size);
             return LoadStored(sei, directory, manifestPath);
         }
         catch (SeikoException ex) when (ex.Code == "checksum")

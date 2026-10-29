@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Seiko;
@@ -10,7 +11,19 @@ var jsonOption = new Option<bool>("--json")
     Description = "Emit machine-readable JSON.",
     Recursive = true,
 };
+var verboseOption = new Option<bool>("--verbose", "-v")
+{
+    Description = "Show debug logs and full stack traces.",
+    Recursive = true,
+};
+var quietOption = new Option<bool>("--quiet", "-q")
+{
+    Description = "Suppress progress and non-error output.",
+    Recursive = true,
+};
 rootCommand.Add(jsonOption);
+rootCommand.Add(verboseOption);
+rootCommand.Add(quietOption);
 
 var init = new Command("init", "Write a seiko.conf template.");
 var initRoot = RootOption();
@@ -134,6 +147,8 @@ rootCommand.Add(help);
 rootCommand.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
 var parseResult = rootCommand.Parse(args);
+Log.Verbose = parseResult.GetValue<bool>("--verbose");
+Log.Quiet = parseResult.GetValue<bool>("--quiet");
 if (parseResult.Errors.Count > 0)
 {
     if (args.Contains("--json", StringComparer.Ordinal))
@@ -169,16 +184,27 @@ static int Run(string command, bool json, Func<int> action)
     }
     catch (IOException ex)
     {
-        return Fail(command, json, "io", ex.Message, 1);
+        return FailException(command, json, "io", ex);
     }
     catch (UnauthorizedAccessException ex)
     {
-        return Fail(command, json, "io", ex.Message, 1);
+        return FailException(command, json, "io", ex);
     }
     catch (Exception ex)
     {
-        return Fail(command, json, "internal", ex.Message, 1);
+        return FailException(command, json, "internal", ex);
     }
+}
+
+static int FailException(string command, bool json, string code, Exception ex)
+{
+    if (Log.Verbose && !json)
+    {
+        Console.Error.WriteLine(ex.Demystify());
+        return 1;
+    }
+
+    return Fail(command, json, code, ex.Message, 1);
 }
 
 static int Fail(string command, bool json, string code, string message, int exitCode)
@@ -229,7 +255,17 @@ static int Sync(
 
     var root = rootOption ?? FindRoot();
     var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
-    var result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy);
+    var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
+    SyncResult result;
+    if (showProgress)
+    {
+        using var display = new ProgressDisplay();
+        result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy, display, Log.Debug);
+    }
+    else
+    {
+        result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy, log: Log.Debug);
+    }
     if (json)
     {
         WriteJson(

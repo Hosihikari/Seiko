@@ -28,6 +28,8 @@ public sealed class SeikoClient
         SyncMode mode = SyncMode.Normal,
         int jobs = DownloadSession.DefaultJobs,
         string? proxy = null,
+        IProgress<SyncProgress>? progress = null,
+        Action<string>? log = null,
         CancellationToken cancellationToken = default)
     {
         root = Path.GetFullPath(root);
@@ -36,7 +38,11 @@ public sealed class SeikoClient
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using var session = new DownloadSession(jobs, downloadCts.Token);
+        using var session = new DownloadSession(jobs, downloadCts.Token)
+        {
+            Progress = progress,
+            Log = log,
+        };
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
         var sources = LoadSources(config, root, proxy, session);
         using var sourceScope = new SourceScope(sources);
@@ -79,8 +85,20 @@ public sealed class SeikoClient
             }
         }
 
+        var totalBytes = resolved.Sum(sei => Math.Max(0L, sei.Artifact.Source.Size));
+        session.SeiTotal = resolved.Count;
+        session.TotalBytes = totalBytes;
+        progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
+
         var store = new Store(storeRoot ?? DefaultStorePath());
         var stored = DownloadAll(store, resolved, session, downloadCts);
+        progress?.Report(new SyncProgress(
+            SyncPhase.Deploying,
+            null,
+            totalBytes,
+            totalBytes,
+            resolved.Count,
+            resolved.Count));
         var deployedSei = stored
             .Select(item => new DeployedSei(
                 item.Sei.Name,

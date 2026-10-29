@@ -32,6 +32,36 @@ public sealed class DownloadSession : IDisposable
     public long ChunkThreshold { get; }
     public SemaphoreSlim HttpSlots { get; }
     public SemaphoreSlim ExtractSlots { get; }
+    public IProgress<SyncProgress>? Progress { get; set; }
+    public Action<string>? Log { get; set; }
+    public int SeiTotal { get; set; }
+    public long TotalBytes { get; set; }
+    public int SeiCompleted => Volatile.Read(ref _seiCompleted);
+
+    private int _seiCompleted;
+
+    public void ReportDownloading(string name, long downloaded, long total)
+    {
+        Progress?.Report(new SyncProgress(
+            SyncPhase.Downloading,
+            name,
+            downloaded,
+            total,
+            SeiCompleted,
+            SeiTotal));
+    }
+
+    public void ReportCompleted(string name, long total)
+    {
+        var completed = Interlocked.Increment(ref _seiCompleted);
+        Progress?.Report(new SyncProgress(
+            SyncPhase.Completed,
+            name,
+            total,
+            total,
+            completed,
+            SeiTotal));
+    }
 
     public void Dispose()
     {

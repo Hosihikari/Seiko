@@ -68,6 +68,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             using var response = await SendWithRetryAsync(
                 () => NewRequest(HttpMethod.Get, uri),
                 "source",
+                $"GET {SafeUri(uri)}",
                 _session.CancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.NotFound)
@@ -104,6 +105,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
     public string ResolveArtifact(ArtifactLocation source) => new Uri(_baseUri, source.Url).AbsoluteUri;
 
     public async Task DownloadAsync(
+        string name,
         ArtifactLocation artifact,
         string directory,
         DownloadSession session,
@@ -145,12 +147,30 @@ public sealed class HttpSource : ISeiSource, IDisposable
             SegmentSize = segmentSize,
         };
         PartialArtifactStateFile.Write(statePath, state);
+        session.Log?.Invoke($"{name}: downloading {SafeUri(new Uri(uri))} ({size} bytes, {state.SegmentCount} segment(s))");
+
+        long downloaded = 0;
+        for (var i = 0; i < state.SegmentCount; i++)
+        {
+            var segmentPath = Path.Combine(directory, $"seg-{i}");
+            if (File.Exists(segmentPath))
+            {
+                downloaded += new FileInfo(segmentPath).Length;
+            }
+        }
+
+        session.ReportDownloading(name, downloaded, size);
+        void OnRead(int bytes)
+        {
+            var current = Interlocked.Add(ref downloaded, bytes);
+            session.ReportDownloading(name, current, size);
+        }
 
         var segments = new Task[state.SegmentCount];
         for (var i = 0; i < segments.Length; i++)
         {
             var index = i;
-            segments[i] = DownloadSegmentAsync(uri, state, index, directory, session, cancellationToken);
+            segments[i] = DownloadSegmentAsync(uri, state, index, directory, session, OnRead, cancellationToken);
         }
 
         await Task.WhenAll(segments).ConfigureAwait(false);
@@ -169,6 +189,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             using var response = await SendWithRetryAsync(
                 () => NewRequest(HttpMethod.Head, new Uri(uri)),
                 "download",
+                $"HEAD {SafeUri(new Uri(uri))}",
                 cancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.NotFound)
@@ -207,6 +228,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         int index,
         string directory,
         DownloadSession session,
+        Action<int> onRead,
         CancellationToken cancellationToken)
     {
         var segmentPath = Path.Combine(directory, $"seg-{index}");
@@ -241,6 +263,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
                     using var response = await SendWithRetryAsync(
                         () => CreateRangeRequest(uri, state, start, end, have, usesRange),
                         "download",
+                        $"GET {SafeUri(new Uri(uri))} [{index}]",
                         cancellationToken).ConfigureAwait(false);
 
                     if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable
@@ -261,7 +284,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
                             "download");
                     }
 
-                    await AppendBodyAsync(response, segmentPath, cancellationToken).ConfigureAwait(false);
+                    await AppendBodyAsync(response, segmentPath, onRead, cancellationToken).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -306,9 +329,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
         return request;
     }
 
-    private async Task AppendBodyAsync(
+    private static async Task AppendBodyAsync(
         HttpResponseMessage response,
         string segmentPath,
+        Action<int> onRead,
         CancellationToken cancellationToken)
     {
         await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -329,6 +353,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             }
 
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            onRead(read);
         }
     }
 
@@ -403,6 +428,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         Func<HttpRequestMessage> requestFactory,
         string errorCode,
+        string description,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -419,11 +445,13 @@ public sealed class HttpSource : ISeiSource, IDisposable
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < MaxAttempts)
             {
+                _session.Log?.Invoke($"{description}: timed out, retrying (attempt {attempt})");
                 await Task.Delay(Backoff(attempt), cancellationToken).ConfigureAwait(false);
                 continue;
             }
-            catch (HttpRequestException) when (attempt < MaxAttempts)
+            catch (HttpRequestException ex) when (attempt < MaxAttempts)
             {
+                _session.Log?.Invoke($"{description}: {ex.Message}, retrying (attempt {attempt})");
                 await Task.Delay(Backoff(attempt), cancellationToken).ConfigureAwait(false);
                 continue;
             }
@@ -439,6 +467,8 @@ public sealed class HttpSource : ISeiSource, IDisposable
             if (IsRetryable(response.StatusCode) && attempt < MaxAttempts)
             {
                 var delay = RetryDelay(response, attempt);
+                _session.Log?.Invoke(
+                    $"{description}: HTTP {(int)response.StatusCode}, retrying (attempt {attempt})");
                 response.Dispose();
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 continue;
@@ -511,6 +541,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             using var response = SendWithRetryAsync(
                 () => NewRequest(HttpMethod.Get, uri),
                 "source",
+                $"GET {SafeUri(uri)}",
                 CancellationToken.None).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
@@ -542,6 +573,8 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
         return token;
     }
+
+    private static string SafeUri(Uri uri) => uri.GetLeftPart(UriPartial.Path);
 
     private sealed record RemoteInfo(long Size, bool AcceptRanges, string? ETag, string? LastModified);
 }

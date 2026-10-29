@@ -31,6 +31,7 @@ public sealed class DownloadTests
         var sha = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
 
         await source.DownloadAsync(
+            "hello",
             new ArtifactLocation { Url = "artifacts/blob.bin", Sha256 = sha, Size = data.Length },
             downloadDirectory,
             session,
@@ -78,6 +79,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(Path.Combine(downloadDirectory, "seg-0"), data[..600]);
 
         await source.DownloadAsync(
+            "hello",
             new ArtifactLocation
             {
                 Url = "artifacts/blob.bin",
@@ -89,6 +91,29 @@ public sealed class DownloadTests
             CancellationToken.None);
 
         Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(downloadDirectory, "artifact")));
+    }
+
+    [Fact]
+    public void Sync_ReportsProgressEvents()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var events = new List<SyncProgress>();
+
+        new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            progress: new InlineProgress<SyncProgress>(events.Add));
+
+        Assert.Contains(events, item => item.Phase == SyncPhase.Resolved && item.SeiTotal == 1);
+        Assert.Contains(events, item => item.Phase == SyncPhase.Downloading && item.Name == "hello");
+        Assert.Contains(events, item => item.Phase == SyncPhase.Completed && item.SeiCompleted == 1);
+        Assert.Contains(events, item => item.Phase == SyncPhase.Deploying);
     }
 
     [Fact]
@@ -116,5 +141,10 @@ public sealed class DownloadTests
     {
         var error = Assert.Throws<SeikoException>(() => new DownloadSession(0, CancellationToken.None));
         Assert.Equal("usage", error.Code);
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 }
