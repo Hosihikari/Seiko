@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh_hans.md)
 
+[![CI](https://github.com/Hosihikari/seiko/actions/workflows/ci.yml/badge.svg)](https://github.com/Hosihikari/seiko/actions/workflows/ci.yml)
+
 Seiko 的安装侧包管理器实现。
 
 当前切片：

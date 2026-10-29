@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - name: Restore
@@ -44,8 +44,8 @@ jobs:
           - rid: linux-x64
             os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - name: Install NativeAOT prerequisites
@@ -61,7 +61,7 @@ jobs:
           }
       - name: Publish
         run: dotnet publish src/Cli/Seiko.Cli.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:StripSymbols=true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: seiko-cli-${{ matrix.rid }}
           path: src/Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/
