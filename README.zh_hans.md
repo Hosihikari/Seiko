@@ -27,7 +27,7 @@ Linux 二进制要求 glibc（Ubuntu 22.04 及以上）；本版本不支持 mus
 校验下载的归档：
 
 ```bash
-gh attestation verify sk-0.1.1-linux-x64.tar.gz --repo Hosihikari/Seiko
+gh attestation verify sk-0.1.2-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
