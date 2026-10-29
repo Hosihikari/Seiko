@@ -12,8 +12,9 @@ Current slice:
 - `sk sync` — reads `seiko.conf`, resolves seis from a local static index, selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, projects files into the install root, and writes `seiko.lock.json`.
 - `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date.
 - `sk list` — lists packages from the lock.
+- `sk rollback` — restores the previous generation from the content-addressed store.
 
-Not implemented yet: HTTP sources, rollback, MCP, hardlink/reflink projection, and the public index repository.
+Not implemented yet: HTTP sources, MCP, hardlink/reflink projection, and the public index repository.
 
 ## Build and test
 

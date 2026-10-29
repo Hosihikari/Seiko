@@ -9,6 +9,7 @@ try
     {
         "sync" => Sync(options),
         "list" => List(options),
+        "rollback" => Rollback(options),
         "init" => Init(options),
         "help" or "--help" or "-h" => Help(),
         _ => Unknown(command),
@@ -56,6 +57,14 @@ static int List(CliOptions options)
     return 0;
 }
 
+static int Rollback(CliOptions options)
+{
+    var root = options.Root ?? FindRoot();
+    var result = new SeikoEngine().Rollback(root, options.Store, options.ToGeneration);
+    Console.WriteLine($"rolled back to generation {result.Generation}: {result.PackagesInstalled} package(s), {result.FilesProjected} file(s)");
+    return 0;
+}
+
 static int Init(CliOptions options)
 {
     var root = Path.GetFullPath(options.Root ?? Directory.GetCurrentDirectory());
@@ -89,6 +98,7 @@ usage:
   sk init [--root <dir>]
   sk sync [--root <dir>] [--store <dir>] [--pre] [--frozen|--locked]
   sk list [--root <dir>]
+  sk rollback [--root <dir>] [--store <dir>] [--to <n>]
 
 Seiko reads <root>/seiko.conf, resolves sei packages from the configured static
 index, verifies artifacts, projects files into <root>, and writes seiko.lock.json.
@@ -124,6 +134,7 @@ internal sealed class CliOptions
     public string? Store { get; private set; }
     public bool Pre { get; private set; }
     public SyncMode Mode { get; private set; } = SyncMode.Normal;
+    public int? ToGeneration { get; private set; }
 
     public static CliOptions Parse(string[] args)
     {
@@ -156,6 +167,15 @@ internal sealed class CliOptions
                     }
 
                     options.Mode = SyncMode.Locked;
+                    break;
+                case "--to":
+                    var value = Next(args, ref i, "--to");
+                    if (!int.TryParse(value, out var generation) || generation < 1)
+                    {
+                        throw new SeikoException("--to requires a positive generation number");
+                    }
+
+                    options.ToGeneration = generation;
                     break;
                 default:
                     throw new SeikoException($"unknown option '{args[i]}'");

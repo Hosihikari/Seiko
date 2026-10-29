@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using NuGet.Versioning;
 
 namespace Seiko.Core;
 
@@ -7,6 +9,13 @@ public sealed class SyncResult
     public required SeikoLock Lock { get; init; }
     public required int FilesProjected { get; init; }
     public int PackagesInstalled => Lock.Packages.Count;
+}
+
+public sealed class RollbackResult
+{
+    public required int Generation { get; init; }
+    public required int PackagesInstalled { get; init; }
+    public required int FilesProjected { get; init; }
 }
 
 public sealed class SeikoEngine
@@ -60,9 +69,20 @@ public sealed class SeikoEngine
 
         var store = new Store(storeRoot ?? DefaultStorePath());
         var stored = resolved
-            .Select(package => new StoredResolved(package, store.Ensure(package)))
+            .Select(package => (Package: package, Stored: store.Ensure(package)))
             .ToList();
-        var projection = Projector.Apply(root, stored, Path.Combine(root, ".seiko"));
+        var projectionPackages = stored
+            .Select(item => new ProjectionPackage(
+                item.Package.Name,
+                item.Package.Version,
+                item.Stored.Directory,
+                item.Stored.Manifest))
+            .ToList();
+        var projection = Projector.Apply(
+            root,
+            projectionPackages,
+            Path.Combine(root, ".seiko"),
+            lockFile);
 
         if (mode != SyncMode.Frozen)
         {
@@ -72,6 +92,69 @@ public sealed class SeikoEngine
         return new SyncResult
         {
             Lock = lockFile,
+            FilesProjected = projection.FileCount,
+        };
+    }
+
+    public RollbackResult Rollback(string root, string? storeRoot = null, int? toGeneration = null)
+    {
+        root = Path.GetFullPath(root);
+        var stateDirectory = Path.Combine(root, ".seiko");
+        var statePath = Path.Combine(stateDirectory, "state.json");
+        if (!File.Exists(statePath))
+        {
+            throw new SeikoException("no local state; run `sk sync` first");
+        }
+
+        var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
+            ?? throw new SeikoException("invalid local state");
+
+        var target = toGeneration ?? state.Generation - 1;
+        if (target < 1)
+        {
+            throw new SeikoException("no previous generation to roll back to");
+        }
+
+        var snapshotLockPath = Path.Combine(stateDirectory, "generations", target.ToString(), "lock.json");
+        if (!File.Exists(snapshotLockPath))
+        {
+            throw new SeikoException($"generation {target} not found");
+        }
+
+        var snapshotLock = LockFile.Read(snapshotLockPath)
+            ?? throw new SeikoException($"generation {target} has no lock");
+
+        var store = new Store(storeRoot ?? DefaultStorePath());
+        var packages = new List<ProjectionPackage>();
+        foreach (var locked in snapshotLock.Packages)
+        {
+            var stored = store.TryGet(locked.Artifact.Sha256)
+                ?? throw new SeikoException(
+                    $"rollback: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in the store");
+
+            if (!string.Equals(stored.Manifest.Name, locked.Name, StringComparison.Ordinal)
+                || !NuGetVersion.TryParse(stored.Manifest.Version, out var storedVersion)
+                || !NuGetVersion.TryParse(locked.Version, out var lockedVersion)
+                || !storedVersion.Equals(lockedVersion))
+            {
+                throw new SeikoException($"rollback: stored manifest mismatch for {locked.Name} {locked.Version}");
+            }
+
+            packages.Add(new ProjectionPackage(locked.Name, locked.Version, stored.Directory, stored.Manifest));
+        }
+
+        var projection = Projector.Apply(
+            root,
+            packages,
+            stateDirectory,
+            snapshotLock,
+            generationOverride: target);
+        LockFile.Write(Path.Combine(root, "seiko.lock.json"), snapshotLock);
+
+        return new RollbackResult
+        {
+            Generation = target,
+            PackagesInstalled = snapshotLock.Packages.Count,
             FilesProjected = projection.FileCount,
         };
     }

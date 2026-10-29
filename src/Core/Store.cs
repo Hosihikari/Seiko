@@ -15,6 +15,26 @@ public sealed class Store
         Directory.CreateDirectory(Root);
     }
 
+    public StoredPackage? TryGet(string sha256)
+    {
+        var directory = Path.Combine(Root, sha256);
+        var manifestPath = Path.Combine(directory, "sei.json");
+        if (!File.Exists(manifestPath))
+        {
+            return null;
+        }
+
+        var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
+            ?? throw new SeikoException($"invalid sei.json in {directory}");
+
+        if (manifest.SchemaVersion != 1)
+        {
+            throw new SeikoException($"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}");
+        }
+
+        return new StoredPackage(directory, manifest);
+    }
+
     public StoredPackage Ensure(ResolvedPackage package)
     {
         var artifactPath = package.ArtifactPath;

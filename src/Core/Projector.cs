@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Seiko.Core;
 
-public sealed record StoredResolved(ResolvedPackage Resolved, StoredPackage Stored);
+public sealed record ProjectionPackage(string Name, string Version, string Directory, SeiManifest Manifest);
 
 public sealed class ProjectionResult
 {
@@ -12,14 +12,19 @@ public sealed class ProjectionResult
 
 public static class Projector
 {
-    public static ProjectionResult Apply(string root, IReadOnlyList<StoredResolved> packages, string stateDirectory)
+    public static ProjectionResult Apply(
+        string root,
+        IReadOnlyList<ProjectionPackage> packages,
+        string stateDirectory,
+        SeikoLock lockFile,
+        int? generationOverride = null)
     {
         var desired = new Dictionary<string, DesiredFile>(StringComparer.Ordinal);
         foreach (var package in packages)
         {
-            foreach (var file in Directory.EnumerateFiles(package.Stored.Directory, "*", SearchOption.AllDirectories))
+            foreach (var file in Directory.EnumerateFiles(package.Directory, "*", SearchOption.AllDirectories))
             {
-                var relative = Path.GetRelativePath(package.Stored.Directory, file).Replace('\\', '/');
+                var relative = Path.GetRelativePath(package.Directory, file).Replace('\\', '/');
                 if (relative is "sei.json" or "tooth.json")
                 {
                     continue;
@@ -31,10 +36,10 @@ public static class Projector
                     if (!string.Equals(existing.Sha256, hash, StringComparison.Ordinal))
                     {
                         throw new SeikoException(
-                            $"file conflict: {relative} differs between {existing.Owners[0]} and {package.Resolved.Name}");
+                            $"file conflict: {relative} differs between {existing.Owners[0]} and {package.Name}");
                     }
 
-                    existing.Owners.Add(package.Resolved.Name);
+                    existing.Owners.Add(package.Name);
                     continue;
                 }
 
@@ -42,8 +47,8 @@ public static class Projector
                 {
                     SourcePath = file,
                     Sha256 = hash,
-                    Owners = [package.Resolved.Name],
-                    Modes = package.Stored.Manifest.Modes,
+                    Owners = [package.Name],
+                    Modes = package.Manifest.Modes,
                 };
             }
         }
@@ -93,7 +98,7 @@ public static class Projector
         Directory.CreateDirectory(stateDirectory);
         var newState = new LocalState
         {
-            Generation = state.Generation + 1,
+            Generation = generationOverride ?? state.Generation + 1,
             Files = desired.ToDictionary(
                 pair => pair.Key,
                 pair => new ProjectedFile
@@ -105,38 +110,39 @@ public static class Projector
         };
 
         WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
-        WriteGeneration(stateDirectory, newState);
+        WriteGeneration(stateDirectory, newState, lockFile);
         WriteInstalledManifests(stateDirectory, packages);
         return new ProjectionResult { FileCount = desired.Count };
     }
 
-    private static void WriteGeneration(string stateDirectory, LocalState state)
+    private static void WriteGeneration(string stateDirectory, LocalState state, SeikoLock lockFile)
     {
         var generations = Path.Combine(stateDirectory, "generations");
-        Directory.CreateDirectory(generations);
-        var path = Path.Combine(generations, state.Generation + ".json");
-        WriteAtomic(path, JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState));
+        var directory = Path.Combine(generations, state.Generation.ToString());
+        Directory.CreateDirectory(directory);
+        WriteAtomic(
+            Path.Combine(directory, "state.json"),
+            JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState));
+        LockFile.Write(Path.Combine(directory, "lock.json"), lockFile);
 
-        var stale = Directory.EnumerateFiles(generations, "*.json")
-            .Select(file => (File: file, Name: Path.GetFileNameWithoutExtension(file)))
-            .Where(item => int.TryParse(item.Name, out var generation) && generation <= state.Generation - 3)
-            .Select(item => item.File)
-            .ToList();
-
-        foreach (var file in stale)
+        foreach (var path in Directory.EnumerateDirectories(generations))
         {
-            File.Delete(file);
+            var name = Path.GetFileName(path);
+            if (int.TryParse(name, out var generation) && generation <= state.Generation - 3)
+            {
+                Directory.Delete(path, recursive: true);
+            }
         }
     }
 
-    private static void WriteInstalledManifests(string stateDirectory, IReadOnlyList<StoredResolved> packages)
+    private static void WriteInstalledManifests(string stateDirectory, IReadOnlyList<ProjectionPackage> packages)
     {
         foreach (var package in packages)
         {
-            var directory = Path.Combine(stateDirectory, "installed", package.Resolved.Name, package.Resolved.Version);
+            var directory = Path.Combine(stateDirectory, "installed", package.Name, package.Version);
             Directory.CreateDirectory(directory);
             File.Copy(
-                Path.Combine(package.Stored.Directory, "sei.json"),
+                Path.Combine(package.Directory, "sei.json"),
                 Path.Combine(directory, "sei.json"),
                 overwrite: true);
         }
