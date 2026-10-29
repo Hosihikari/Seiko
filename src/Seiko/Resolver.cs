@@ -51,7 +51,7 @@ public sealed class Resolver
     {
         if (path.Contains(spec.Name))
         {
-            throw new SeikoException($"dependency cycle: {string.Join(" -> ", path)} -> {spec.Name}");
+            throw Fail($"dependency cycle: {string.Join(" -> ", path)} -> {spec.Name}");
         }
 
         var range = ParseRange(spec.Version, spec.Name);
@@ -62,7 +62,7 @@ public sealed class Resolver
                 return;
             }
 
-            throw new SeikoException(
+            throw Fail(
                 $"version conflict for {spec.Name}: resolved {existing.Version}, but {range} is required");
         }
 
@@ -74,7 +74,7 @@ public sealed class Resolver
         {
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
-                throw new SeikoException($"source '{source.Id}': invalid version '{entry.Version}' for {spec.Name}");
+                throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {spec.Name}");
             }
 
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
@@ -97,7 +97,7 @@ public sealed class Resolver
 
         if (candidates.Count == 0)
         {
-            throw new SeikoException($"no version of {spec.Name} satisfies {range}");
+            throw Fail($"no version of {spec.Name} satisfies {range}");
         }
 
         var chosen = candidates.OrderByDescending(c => c.Version).First();
@@ -150,7 +150,7 @@ public sealed class Resolver
 
             if (scored.Count == 0)
             {
-                throw new SeikoException(
+                throw Fail(
                     $"no artifact of {sei.Name} {sei.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames.OrderBy(n => n, StringComparer.Ordinal))}]");
             }
 
@@ -158,7 +158,7 @@ public sealed class Resolver
             var top = scored.Where(s => s.Score == best).ToList();
             if (top.Count > 1)
             {
-                throw new SeikoException(
+                throw Fail(
                     $"ambiguous artifact for {sei.Name} {sei.Version}: {top.Count} artifacts match at specificity {best}");
             }
 
@@ -202,7 +202,7 @@ public sealed class Resolver
             }
         }
 
-        throw new SeikoException($"sei '{name}' not found in any source");
+        throw Fail($"sei '{name}' not found in any source");
     }
 
     private NuGetVersion? GetLockedVersion(string name)
@@ -225,9 +225,11 @@ public sealed class Resolver
 
         if (!VersionRange.TryParse(text, out var range))
         {
-            throw new SeikoException($"invalid version range '{text}' for {sei}");
+            throw Fail($"invalid version range '{text}' for {sei}");
         }
 
         return range;
     }
+
+    private static SeikoException Fail(string message) => new(message, "resolve");
 }

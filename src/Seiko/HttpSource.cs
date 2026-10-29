@@ -29,7 +29,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         if (!Uri.TryCreate(config.Index, UriKind.Absolute, out var indexUri)
             || (indexUri.Scheme != Uri.UriSchemeHttp && indexUri.Scheme != Uri.UriSchemeHttps))
         {
-            throw new SeikoException($"source '{Id}': invalid http index '{config.Index}'");
+            throw new SeikoException($"source '{Id}': invalid http index '{config.Index}'", "config");
         }
 
         var handler = new SocketsHttpHandler
@@ -537,7 +537,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         var token = Environment.GetEnvironmentVariable(config.TokenEnv);
         if (string.IsNullOrWhiteSpace(token))
         {
-            throw new SeikoException($"source '{config.Id}': tokenEnv '{config.TokenEnv}' is not set");
+            throw new SeikoException($"source '{config.Id}': tokenEnv '{config.TokenEnv}' is not set", "config");
         }
 
         return token;

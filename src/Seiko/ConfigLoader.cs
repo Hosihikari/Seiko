@@ -10,12 +10,20 @@ public static class ConfigLoader
         var path = Path.Combine(root, "seiko.conf");
         if (!File.Exists(path))
         {
-            throw new SeikoException($"missing {path}; run `sk init` or pass --root");
+            throw new SeikoException($"missing {path}; run `sk init` or pass --root", "config");
         }
 
-        var configuration = new ConfigurationBuilder()
-            .AddHoconFile(path, optional: false)
-            .Build();
+        IConfiguration configuration;
+        try
+        {
+            configuration = new ConfigurationBuilder()
+                .AddHoconFile(path, optional: false)
+                .Build();
+        }
+        catch (Exception ex)
+        {
+            throw new SeikoException($"{path}: {ex.Message}", "config", ex);
+        }
 
         var config = new SeikoConfig
         {
@@ -28,7 +36,7 @@ public static class ConfigLoader
             var index = child["index"];
             if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(index))
             {
-                throw new SeikoException($"{path}: each source needs id and index");
+                throw new SeikoException($"{path}: each source needs id and index", "config");
             }
 
             config.Sources.Add(new SourceConfig
@@ -42,7 +50,7 @@ public static class ConfigLoader
 
         if (config.Sources.Count == 0)
         {
-            throw new SeikoException($"{path}: at least one source is required");
+            throw new SeikoException($"{path}: at least one source is required", "config");
         }
 
         ReadSpecs(configuration.GetSection("sei"), config.Sei);

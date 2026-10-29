@@ -44,6 +44,8 @@ Current slice:
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
 - Sources may be a local path or an http(s) index; `tokenEnv` supplies a bearer token for private sources.
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
+- `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
+- `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 
 Not implemented yet: hardlink/reflink deployment and the public index repository.

@@ -13,11 +13,11 @@ public static class LockFile
         }
 
         var value = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeikoLock)
-            ?? throw new SeikoException($"invalid lock file: {path}");
+            ?? throw new SeikoException($"invalid lock file: {path}", "lock");
 
         if (value.SchemaVersion != 1)
         {
-            throw new SeikoException($"unsupported lock schemaVersion {value.SchemaVersion}");
+            throw new SeikoException($"unsupported lock schemaVersion {value.SchemaVersion}", "lock");
         }
 
         return value;

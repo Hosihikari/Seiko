@@ -14,13 +14,13 @@ public static class LockReplay
             var locked = lockFile.Sei.FirstOrDefault(p => string.Equals(p.Name, spec.Name, StringComparison.Ordinal));
             if (locked is null)
             {
-                throw new SeikoException($"--frozen: {spec.Name} is not in the lock");
+                throw Fail($"--frozen: {spec.Name} is not in the lock");
             }
 
             var range = ParseRange(spec.Version, spec.Name);
             if (!NuGetVersion.TryParse(locked.Version, out var version) || !range.Satisfies(version))
             {
-                throw new SeikoException($"--frozen: locked {spec.Name} {locked.Version} does not satisfy {range}");
+                throw Fail($"--frozen: locked {spec.Name} {locked.Version} does not satisfy {range}");
             }
         }
 
@@ -28,20 +28,20 @@ public static class LockReplay
         foreach (var locked in lockFile.Sei.OrderBy(p => p.Name, StringComparer.Ordinal))
         {
             var source = sources.FirstOrDefault(s => s.GetSei(locked.Name) is not null)
-                ?? throw new SeikoException($"--frozen: source for {locked.Name} not found");
+                ?? throw Fail($"--frozen: source for {locked.Name} not found");
 
             var index = source.GetSei(locked.Name)!;
             var entry = index.Versions.FirstOrDefault(v => string.Equals(v.Version, locked.Version, StringComparison.Ordinal))
-                ?? throw new SeikoException($"--frozen: {locked.Name} {locked.Version} not found in source");
+                ?? throw Fail($"--frozen: {locked.Name} {locked.Version} not found in source");
 
             var artifact = entry.Artifacts.FirstOrDefault(a =>
                     string.Equals(a.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase))
-                ?? throw new SeikoException(
+                ?? throw Fail(
                     $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} not found in source");
 
             if (!NuGetVersion.TryParse(locked.Version, out var version))
             {
-                throw new SeikoException($"--frozen: invalid locked version '{locked.Version}' for {locked.Name}");
+                throw Fail($"--frozen: invalid locked version '{locked.Version}' for {locked.Name}");
             }
 
             result.Add(new ResolvedSei
@@ -124,9 +124,11 @@ public static class LockReplay
 
         if (!VersionRange.TryParse(text, out var range))
         {
-            throw new SeikoException($"invalid version range '{text}' for {sei}");
+            throw Fail($"invalid version range '{text}' for {sei}");
         }
 
         return range;
     }
+
+    private static SeikoException Fail(string message) => new(message, "lock");
 }

@@ -1,12 +1,24 @@
 using System.CommandLine;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Seiko;
+using Seiko.CommandLine;
 
 var rootCommand = new RootCommand("sk - Seiko general-purpose package manager (sk is short for Seiko)");
+var jsonOption = new Option<bool>("--json")
+{
+    Description = "Emit machine-readable JSON.",
+    Recursive = true,
+};
+rootCommand.Add(jsonOption);
 
 var init = new Command("init", "Write a seiko.conf template.");
 var initRoot = RootOption();
 init.Add(initRoot);
-init.SetAction(parseResult => Run(() => Init(parseResult.GetValue(initRoot))));
+init.SetAction(parseResult => Run(
+    "init",
+    IsJson(parseResult),
+    () => Init(parseResult.GetValue(initRoot), IsJson(parseResult))));
 
 var sync = new Command("sync", "Resolve sei and deploy files into the install root.");
 var syncRoot = RootOption();
@@ -15,7 +27,7 @@ var syncPre = new Option<bool>("--pre") { Description = "Allow prerelease versio
 var syncFrozen = new Option<bool>("--frozen") { Description = "Replay seiko.lock.json without resolving." };
 var syncLocked = new Option<bool>("--locked") { Description = "Fail if the lock is out of date." };
 var syncJobs = new Option<int?>("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
-var syncProxy = new Option<string?>("--proxy") { Description = "HTTP proxy URL; defaults to the system proxy." };
+var syncProxy = ProxyOption();
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
@@ -23,19 +35,26 @@ sync.Add(syncFrozen);
 sync.Add(syncLocked);
 sync.Add(syncJobs);
 sync.Add(syncProxy);
-sync.SetAction(parseResult => Run(() => Sync(
-    parseResult.GetValue(syncRoot),
-    parseResult.GetValue(syncStore),
-    parseResult.GetValue(syncPre),
-    parseResult.GetValue(syncFrozen),
-    parseResult.GetValue(syncLocked),
-    parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
-    parseResult.GetValue(syncProxy))));
+sync.SetAction(parseResult => Run(
+    "sync",
+    IsJson(parseResult),
+    () => Sync(
+        parseResult.GetValue(syncRoot),
+        parseResult.GetValue(syncStore),
+        parseResult.GetValue(syncPre),
+        parseResult.GetValue(syncFrozen),
+        parseResult.GetValue(syncLocked),
+        parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
+        parseResult.GetValue(syncProxy),
+        IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
 var listRoot = RootOption();
 list.Add(listRoot);
-list.SetAction(parseResult => Run(() => List(parseResult.GetValue(listRoot))));
+list.SetAction(parseResult => Run(
+    "list",
+    IsJson(parseResult),
+    () => List(parseResult.GetValue(listRoot), IsJson(parseResult))));
 
 var rollback = new Command("rollback", "Restore a previous generation.");
 var rollbackRoot = RootOption();
@@ -44,10 +63,14 @@ var rollbackTo = new Option<int?>("--to") { Description = "Generation number to 
 rollback.Add(rollbackRoot);
 rollback.Add(rollbackStore);
 rollback.Add(rollbackTo);
-rollback.SetAction(parseResult => Run(() => Rollback(
-    parseResult.GetValue(rollbackRoot),
-    parseResult.GetValue(rollbackStore),
-    parseResult.GetValue(rollbackTo))));
+rollback.SetAction(parseResult => Run(
+    "rollback",
+    IsJson(parseResult),
+    () => Rollback(
+        parseResult.GetValue(rollbackRoot),
+        parseResult.GetValue(rollbackStore),
+        parseResult.GetValue(rollbackTo),
+        IsJson(parseResult))));
 
 var search = new Command("search", "Search sei names in the configured indexes.");
 var searchRoot = RootOption();
@@ -56,10 +79,14 @@ var searchTerm = new Argument<string>("term") { Description = "Name fragment to 
 search.Add(searchTerm);
 search.Add(searchRoot);
 search.Add(searchProxy);
-search.SetAction(parseResult => Run(() => Search(
-    parseResult.GetValue(searchRoot),
-    parseResult.GetValue(searchTerm)!,
-    parseResult.GetValue(searchProxy))));
+search.SetAction(parseResult => Run(
+    "search",
+    IsJson(parseResult),
+    () => Search(
+        parseResult.GetValue(searchRoot),
+        parseResult.GetValue(searchTerm)!,
+        parseResult.GetValue(searchProxy),
+        IsJson(parseResult))));
 
 var info = new Command("info", "Show versions, dependencies, and artifact counts.");
 var infoRoot = RootOption();
@@ -68,10 +95,30 @@ var infoName = new Argument<string>("name") { Description = "Sei name." };
 info.Add(infoName);
 info.Add(infoRoot);
 info.Add(infoProxy);
-info.SetAction(parseResult => Run(() => Info(
-    parseResult.GetValue(infoRoot),
-    parseResult.GetValue(infoName)!,
-    parseResult.GetValue(infoProxy))));
+info.SetAction(parseResult => Run(
+    "info",
+    IsJson(parseResult),
+    () => Info(
+        parseResult.GetValue(infoRoot),
+        parseResult.GetValue(infoName)!,
+        parseResult.GetValue(infoProxy),
+        IsJson(parseResult))));
+
+var doctor = new Command("doctor", "Check the lock, store, deployment, and partial downloads.");
+var doctorRoot = RootOption();
+var doctorStore = StoreOption();
+var doctorClean = new Option<bool>("--clean") { Description = "Delete all partial downloads." };
+doctor.Add(doctorRoot);
+doctor.Add(doctorStore);
+doctor.Add(doctorClean);
+doctor.SetAction(parseResult => Run(
+    "doctor",
+    IsJson(parseResult),
+    () => RunDoctor(
+        parseResult.GetValue(doctorRoot),
+        parseResult.GetValue(doctorStore),
+        parseResult.GetValue(doctorClean),
+        IsJson(parseResult))));
 
 var help = new Command("help", "Show help.");
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
@@ -82,15 +129,25 @@ rootCommand.Add(list);
 rootCommand.Add(rollback);
 rootCommand.Add(search);
 rootCommand.Add(info);
+rootCommand.Add(doctor);
 rootCommand.Add(help);
 rootCommand.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
 var parseResult = rootCommand.Parse(args);
 if (parseResult.Errors.Count > 0)
 {
-    foreach (var error in parseResult.Errors)
+    if (args.Contains("--json", StringComparer.Ordinal))
     {
-        Console.Error.WriteLine($"sk: {error.Message}");
+        WriteJson(
+            CliJsonContext.Default.ErrorEnvelope,
+            new ErrorEnvelope(1, FirstCommand(args), new ErrorData("usage", parseResult.Errors[0].Message)));
+    }
+    else
+    {
+        foreach (var error in parseResult.Errors)
+        {
+            Console.Error.WriteLine($"sk: {error.Message}");
+        }
     }
 
     return 2;
@@ -98,7 +155,9 @@ if (parseResult.Errors.Count > 0)
 
 return parseResult.Invoke();
 
-static int Run(Func<int> action)
+static bool IsJson(ParseResult parseResult) => parseResult.GetValue<bool>("--json");
+
+static int Run(string command, bool json, Func<int> action)
 {
     try
     {
@@ -106,10 +165,43 @@ static int Run(Func<int> action)
     }
     catch (SeikoException ex)
     {
-        Console.Error.WriteLine($"sk: {ex.Message}");
-        return ex.Code == "usage" ? 2 : 1;
+        return Fail(command, json, ex.Code ?? "internal", ex.Message, ex.Code == "usage" ? 2 : 1);
+    }
+    catch (IOException ex)
+    {
+        return Fail(command, json, "io", ex.Message, 1);
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        return Fail(command, json, "io", ex.Message, 1);
+    }
+    catch (Exception ex)
+    {
+        return Fail(command, json, "internal", ex.Message, 1);
     }
 }
+
+static int Fail(string command, bool json, string code, string message, int exitCode)
+{
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.ErrorEnvelope,
+            new ErrorEnvelope(1, command, new ErrorData(code, message)));
+    }
+    else
+    {
+        Console.Error.WriteLine($"sk: {message}");
+    }
+
+    return exitCode;
+}
+
+static void WriteJson<T>(JsonTypeInfo<T> typeInfo, T value)
+    => Console.WriteLine(JsonSerializer.Serialize(value, typeInfo));
+
+static string FirstCommand(string[] arguments)
+    => arguments.FirstOrDefault(argument => !argument.StartsWith("-", StringComparison.Ordinal)) ?? "sk";
 
 static Option<string?> RootOption()
     => new("--root") { Description = "Install root (defaults to the nearest seiko.conf)." };
@@ -127,16 +219,25 @@ static int Sync(
     bool frozen,
     bool locked,
     int jobs,
-    string? proxy)
+    string? proxy,
+    bool json)
 {
     if (frozen && locked)
     {
-        throw new SeikoException("--frozen and --locked are mutually exclusive");
+        throw new SeikoException("--frozen and --locked are mutually exclusive", "usage");
     }
 
     var root = rootOption ?? FindRoot();
     var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
     var result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy);
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.SyncEnvelope,
+            new SyncEnvelope(1, "sync", new SyncData(result.SeiInstalled, result.FilesDeployed, mode.ToString())));
+        return 0;
+    }
+
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
     foreach (var sei in result.Lock.Sei)
     {
@@ -146,10 +247,30 @@ static int Sync(
     return 0;
 }
 
-static int List(string? rootOption)
+static int List(string? rootOption, bool json)
 {
     var root = rootOption ?? FindRoot();
     var lockFile = new SeikoClient().ReadLock(root);
+    var items = new List<ListItem>();
+    if (lockFile is not null)
+    {
+        foreach (var sei in lockFile.Sei)
+        {
+            var selectors = sei.Artifact.Selectors is null
+                ? null
+                : sei.Artifact.Selectors
+                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            items.Add(new ListItem(sei.Name, sei.Version, sei.Source, sei.Direct, selectors));
+        }
+    }
+
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.ListEnvelope, new ListEnvelope(1, "list", items));
+        return 0;
+    }
+
     if (lockFile is null)
     {
         Console.WriteLine("no lock; run `sk sync`");
@@ -169,10 +290,16 @@ static int List(string? rootOption)
     return 0;
 }
 
-static int Search(string? rootOption, string term, string? proxy)
+static int Search(string? rootOption, string term, string? proxy, bool json)
 {
     var root = rootOption ?? FindRoot();
     var results = new SeikoClient().Search(root, term, proxy);
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.SearchEnvelope, new SearchEnvelope(1, "search", results.ToList()));
+        return 0;
+    }
+
     Console.WriteLine("NAME\tVERSION\tSOURCE");
     foreach (var result in results)
     {
@@ -182,10 +309,27 @@ static int Search(string? rootOption, string term, string? proxy)
     return 0;
 }
 
-static int Info(string? rootOption, string name, string? proxy)
+static int Info(string? rootOption, string name, string? proxy, bool json)
 {
     var root = rootOption ?? FindRoot();
     var info = new SeikoClient().Info(root, name, proxy);
+    if (json)
+    {
+        var data = new InfoData(
+            info.Name,
+            info.Source,
+            info.Versions
+                .Select(version => new InfoVersion(
+                    version.Version,
+                    version.Yanked,
+                    version.Deprecated,
+                    version.ArtifactCount,
+                    version.Dependencies.ToList()))
+                .ToList());
+        WriteJson(CliJsonContext.Default.InfoEnvelope, new InfoEnvelope(1, "info", data));
+        return 0;
+    }
+
     Console.WriteLine($"{info.Name} ({info.Source})");
     foreach (var version in info.Versions)
     {
@@ -201,28 +345,35 @@ static int Info(string? rootOption, string name, string? proxy)
     return 0;
 }
 
-static int Rollback(string? rootOption, string? store, int? toGeneration)
+static int Rollback(string? rootOption, string? store, int? toGeneration, bool json)
 {
     if (toGeneration is < 1)
     {
-        throw new SeikoException("--to requires a positive generation number");
+        throw new SeikoException("--to requires a positive generation number", "usage");
     }
 
     var root = rootOption ?? FindRoot();
     var result = new SeikoClient().Rollback(root, store, toGeneration);
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.RollbackEnvelope,
+            new RollbackEnvelope(1, "rollback", new RollbackData(result.Generation, result.SeiInstalled, result.FilesDeployed)));
+        return 0;
+    }
+
     Console.WriteLine($"rolled back to generation {result.Generation}: {result.SeiInstalled} sei, {result.FilesDeployed} file(s)");
     return 0;
 }
 
-static int Init(string? rootOption)
+static int Init(string? rootOption, bool json)
 {
     var root = Path.GetFullPath(rootOption ?? Directory.GetCurrentDirectory());
     Directory.CreateDirectory(root);
     var path = Path.Combine(root, "seiko.conf");
     if (File.Exists(path))
     {
-        Console.Error.WriteLine($"sk: {path} already exists");
-        return 1;
+        throw new SeikoException($"{path} already exists", "io");
     }
 
     File.WriteAllText(path, """
@@ -234,8 +385,44 @@ sources = []
 sei = []
 components = []
 """ + "\n");
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "init", new InitData(path)));
+        return 0;
+    }
+
     Console.WriteLine($"created {path}");
     return 0;
+}
+
+static int RunDoctor(string? rootOption, string? store, bool clean, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var result = new Doctor().Run(root, store, clean);
+    var hasError = result.Findings.Any(finding => finding.Severity == "error");
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.DoctorEnvelope, new DoctorEnvelope(1, "doctor", result));
+        return hasError ? 1 : 0;
+    }
+
+    foreach (var finding in result.Findings)
+    {
+        var path = finding.Path is null ? "" : $" ({finding.Path})";
+        Console.WriteLine($"{finding.Severity} {finding.Code}: {finding.Message}{path}");
+    }
+
+    if (result.CleanCount > 0)
+    {
+        Console.WriteLine($"cleaned {result.CleanCount} partial item(s)");
+    }
+
+    if (result.Findings.Count == 0)
+    {
+        Console.WriteLine("no problems found");
+    }
+
+    return hasError ? 1 : 0;
 }
 
 static string FindRoot()

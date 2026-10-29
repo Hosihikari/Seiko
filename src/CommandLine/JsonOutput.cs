@@ -1,0 +1,64 @@
+using System.Text.Json.Serialization;
+using Seiko;
+
+namespace Seiko.CommandLine;
+
+public sealed record ListItem(
+    string Name,
+    string Version,
+    string Source,
+    bool Direct,
+    Dictionary<string, string>? Selectors);
+
+public sealed record SyncData(int Sei, int Files, string Mode);
+
+public sealed record RollbackData(int Generation, int Sei, int Files);
+
+public sealed record InitData(string Created);
+
+public sealed record ErrorData(string Code, string Message);
+
+public sealed record ListEnvelope(int SchemaVersion, string Command, List<ListItem> Data);
+
+public sealed record SyncEnvelope(int SchemaVersion, string Command, SyncData Data);
+
+public sealed record RollbackEnvelope(int SchemaVersion, string Command, RollbackData Data);
+
+public sealed record InitEnvelope(int SchemaVersion, string Command, InitData Data);
+
+public sealed record SearchEnvelope(int SchemaVersion, string Command, List<SeiSummary> Data);
+
+public sealed record InfoVersion(
+    string Version,
+    bool Yanked,
+    string? Deprecated,
+    int Artifacts,
+    List<SeiDependency> Dependencies);
+
+public sealed record InfoData(string Name, string Source, List<InfoVersion> Versions);
+
+public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
+
+public sealed record DoctorEnvelope(int SchemaVersion, string Command, DoctorResult Data);
+
+public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData Error);
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(ListEnvelope))]
+[JsonSerializable(typeof(SyncEnvelope))]
+[JsonSerializable(typeof(RollbackEnvelope))]
+[JsonSerializable(typeof(InitEnvelope))]
+[JsonSerializable(typeof(SearchEnvelope))]
+[JsonSerializable(typeof(InfoEnvelope))]
+[JsonSerializable(typeof(DoctorEnvelope))]
+[JsonSerializable(typeof(ErrorEnvelope))]
+[JsonSerializable(typeof(InfoData))]
+[JsonSerializable(typeof(InfoVersion))]
+[JsonSerializable(typeof(SeiDependency))]
+[JsonSerializable(typeof(SeiSummary))]
+[JsonSerializable(typeof(DoctorResult))]
+[JsonSerializable(typeof(DoctorFinding))]
+public partial class CliJsonContext : JsonSerializerContext
+{
+}

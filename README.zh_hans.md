@@ -44,6 +44,8 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk info <name>`：显示版本、依赖与构件数。
 - 源可以是本地路径或 http(s) 索引；私有源用 `tokenEnv` 提供 bearer token。
 - 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。
+- `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`。
+- `--json`：输出 `{schemaVersion, command, data}` 信封；错误也使用同一信封并带错误码。
 - `seiko-mcp`：stdio 上的 MCP server；默认只读，`--allow-mutations` 才开放 `sync` 与 `rollback`。
 
 尚未实现：硬链接/重排优化、公共索引仓。

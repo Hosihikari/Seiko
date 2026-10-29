@@ -25,11 +25,10 @@ public sealed class Store
         }
 
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
-            ?? throw new SeikoException($"invalid sei.json in {directory}");
-
+            ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
         if (manifest.SchemaVersion != 1)
         {
-            throw new SeikoException($"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}");
+            throw new SeikoException($"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}", "io");
         }
 
         return new StoredSei(directory, manifest);
@@ -57,6 +56,7 @@ public sealed class Store
         using var artifactLock = ProcessLock.Acquire(
             Path.Combine(partialRoot, expectedSha + ".lock"),
             $"artifact {expectedSha}");
+        artifactLock.DeleteOnDispose = true;
 
         if (File.Exists(manifestPath))
         {
@@ -147,8 +147,7 @@ public sealed class Store
     private static StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)
     {
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
-            ?? throw new SeikoException($"invalid sei.json for {sei.Name} {sei.Version}");
-
+            ?? throw new SeikoException($"invalid sei.json for {sei.Name} {sei.Version}", "io");
         Validate(sei, manifest);
         return new StoredSei(directory, manifest);
     }
@@ -170,14 +169,14 @@ public sealed class Store
 
             if (name.Split('/').Any(segment => segment == ".."))
             {
-                throw new SeikoException($"zip-slip entry rejected: {name}");
+                throw new SeikoException($"zip-slip entry rejected: {name}", "io");
             }
 
             if (name == "sei.json")
             {
                 if (seenManifest)
                 {
-                    throw new SeikoException("duplicate root sei.json in sei");
+                    throw new SeikoException("duplicate root sei.json in sei", "io");
                 }
 
                 seenManifest = true;
@@ -186,7 +185,7 @@ public sealed class Store
             var destination = Path.GetFullPath(Path.Combine(directory, name));
             if (!destination.StartsWith(root, StringComparison.Ordinal))
             {
-                throw new SeikoException($"zip-slip entry rejected: {name}");
+                throw new SeikoException($"zip-slip entry rejected: {name}", "io");
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -195,7 +194,7 @@ public sealed class Store
 
         if (!seenManifest)
         {
-            throw new SeikoException("sei has no root sei.json");
+            throw new SeikoException("sei has no root sei.json", "io");
         }
     }
 
@@ -203,18 +202,18 @@ public sealed class Store
     {
         if (manifest.SchemaVersion != 1)
         {
-            throw new SeikoException($"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}");
+            throw new SeikoException($"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}", "io");
         }
 
         if (!string.Equals(manifest.Name, sei.Name, StringComparison.Ordinal))
         {
-            throw new SeikoException($"{sei.Name}: sei.json declares name '{manifest.Name}'");
+            throw new SeikoException($"{sei.Name}: sei.json declares name '{manifest.Name}'", "io");
         }
 
         if (!NuGet.Versioning.NuGetVersion.TryParse(manifest.Version, out var manifestVersion)
             || !manifestVersion.Equals(sei.ParsedVersion))
         {
-            throw new SeikoException($"{sei.Name}: sei.json declares version '{manifest.Version}', index has '{sei.Version}'");
+            throw new SeikoException($"{sei.Name}: sei.json declares version '{manifest.Version}', index has '{sei.Version}'", "io");
         }
 
         var manifestDeps = manifest.Dependencies
@@ -227,12 +226,12 @@ public sealed class Store
             .ToList();
         if (!manifestDeps.SequenceEqual(indexDeps, StringComparer.Ordinal))
         {
-            throw new SeikoException($"{sei.Name}: sei.json dependencies do not match the index");
+            throw new SeikoException($"{sei.Name}: sei.json dependencies do not match the index", "io");
         }
 
         if (!SelectorEquals(manifest.Selectors, sei.Artifact.Selectors))
         {
-            throw new SeikoException($"{sei.Name}: sei.json selectors do not match the index artifact");
+            throw new SeikoException($"{sei.Name}: sei.json selectors do not match the index artifact", "io");
         }
     }
 

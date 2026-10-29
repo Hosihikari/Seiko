@@ -18,15 +18,15 @@ public sealed class LocalSource : ISeiSource
 
         if (!File.Exists(IndexPath))
         {
-            throw new SeikoException($"source '{config.Id}': index not found: {IndexPath}");
+            throw new SeikoException($"source '{config.Id}': index not found: {IndexPath}", "source");
         }
 
         Index = JsonSerializer.Deserialize(File.ReadAllBytes(IndexPath), SeikoJsonContext.Default.IndexRoot)
-            ?? throw new SeikoException($"source '{config.Id}': invalid index");
+            ?? throw new SeikoException($"source '{config.Id}': invalid index", "source");
 
         if (Index.SchemaVersion != 1)
         {
-            throw new SeikoException($"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}");
+            throw new SeikoException($"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}", "source");
         }
     }
 
@@ -39,16 +39,16 @@ public sealed class LocalSource : ISeiSource
         }
 
         var sei = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex)
-            ?? throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}");
+            ?? throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}", "source");
 
         if (sei.SchemaVersion != 1)
         {
-            throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}");
+            throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}", "source");
         }
 
         if (!string.Equals(sei.Name, name, StringComparison.Ordinal))
         {
-            throw new SeikoException($"source '{Config.Id}': sei file for {name} declares name '{sei.Name}'");
+            throw new SeikoException($"source '{Config.Id}': sei file for {name} declares name '{sei.Name}'", "source");
         }
 
         return sei;
@@ -118,7 +118,7 @@ public sealed class LocalSource : ISeiSource
     {
         if (source.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
         {
-            throw new SeikoException($"source '{Config.Id}': http artifacts are not supported in this slice: {source.Url}");
+            throw new SeikoException($"source '{Config.Id}': http artifacts are not supported in this slice: {source.Url}", "source");
         }
 
         if (source.Url.StartsWith("file:", StringComparison.OrdinalIgnoreCase))

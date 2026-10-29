@@ -3,10 +3,14 @@ namespace Seiko;
 public sealed class ProcessLock : IDisposable
 {
     private readonly FileStream _stream;
+    private readonly string _path;
 
-    private ProcessLock(FileStream stream)
+    public bool DeleteOnDispose { get; set; }
+
+    private ProcessLock(FileStream stream, string path)
     {
         _stream = stream;
+        _path = path;
     }
 
     public static ProcessLock Acquire(string path, string description, string code = "lock")
@@ -19,11 +23,13 @@ public sealed class ProcessLock : IDisposable
 
         try
         {
-            return new ProcessLock(new FileStream(
-                path,
-                FileMode.OpenOrCreate,
-                FileAccess.ReadWrite,
-                FileShare.None));
+            return new ProcessLock(
+                new FileStream(
+                    path,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None),
+                path);
         }
         catch (IOException ex)
         {
@@ -35,5 +41,23 @@ public sealed class ProcessLock : IDisposable
         }
     }
 
-    public void Dispose() => _stream.Dispose();
+    public void Dispose()
+    {
+        _stream.Dispose();
+        if (!DeleteOnDispose)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(_path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
 }

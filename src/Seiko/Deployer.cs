@@ -36,7 +36,8 @@ public static class Deployer
                     if (!string.Equals(existing.Sha256, hash, StringComparison.Ordinal))
                     {
                         throw new SeikoException(
-                            $"file conflict: {relative} differs between {existing.Owners[0]} and {item.Name}");
+                            $"file conflict: {relative} differs between {existing.Owners[0]} and {item.Name}",
+                            "deploy");
                     }
 
                     existing.Owners.Add(item.Name);
@@ -161,7 +162,7 @@ public static class Deployer
         }
         catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException)
         {
-            throw new SeikoException($"invalid mode '{mode}' for {relative}", ex);
+            throw new SeikoException($"invalid mode '{mode}' for {relative}", "deploy", ex);
         }
     }
 

@@ -52,7 +52,7 @@ public sealed class SeikoClient
         {
             if (existingLock is null)
             {
-                throw new SeikoException("--frozen requires seiko.lock.json");
+                throw new SeikoException("--frozen requires seiko.lock.json", "lock");
             }
 
             resolved = LockReplay.Resolve(sources, existingLock, specs);
@@ -68,13 +68,13 @@ public sealed class SeikoClient
             {
                 if (existingLock is null)
                 {
-                    throw new SeikoException("--locked requires seiko.lock.json");
+                    throw new SeikoException("--locked requires seiko.lock.json", "lock");
                 }
 
                 var difference = LockReplay.Compare(existingLock, lockFile);
                 if (difference is not null)
                 {
-                    throw new SeikoException($"--locked: lock is out of date ({difference})");
+                    throw new SeikoException($"--locked: lock is out of date ({difference})", "lock");
                 }
             }
         }
@@ -167,26 +167,26 @@ public sealed class SeikoClient
         var statePath = Path.Combine(stateDirectory, "state.json");
         if (!File.Exists(statePath))
         {
-            throw new SeikoException("no local state; run `sk sync` first");
+            throw new SeikoException("no local state; run `sk sync` first", "lock");
         }
 
         var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
-            ?? throw new SeikoException("invalid local state");
+            ?? throw new SeikoException("invalid local state", "lock");
 
         var target = toGeneration ?? state.Generation - 1;
         if (target < 1)
         {
-            throw new SeikoException("no previous generation to roll back to");
+            throw new SeikoException("no previous generation to roll back to", "lock");
         }
 
         var snapshotLockPath = Path.Combine(stateDirectory, "generations", target.ToString(), "lock.json");
         if (!File.Exists(snapshotLockPath))
         {
-            throw new SeikoException($"generation {target} not found");
+            throw new SeikoException($"generation {target} not found", "lock");
         }
 
         var snapshotLock = LockFile.Read(snapshotLockPath)
-            ?? throw new SeikoException($"generation {target} has no lock");
+            ?? throw new SeikoException($"generation {target} has no lock", "lock");
 
         var store = new Store(storeRoot ?? DefaultStorePath());
         var sei = new List<DeployedSei>();
@@ -194,14 +194,15 @@ public sealed class SeikoClient
         {
             var stored = store.TryGet(locked.Artifact.Sha256)
                 ?? throw new SeikoException(
-                    $"rollback: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in the store");
+                    $"rollback: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in the store",
+                    "io");
 
             if (!string.Equals(stored.Manifest.Name, locked.Name, StringComparison.Ordinal)
                 || !NuGetVersion.TryParse(stored.Manifest.Version, out var storedVersion)
                 || !NuGetVersion.TryParse(locked.Version, out var lockedVersion)
                 || !storedVersion.Equals(lockedVersion))
             {
-                throw new SeikoException($"rollback: stored manifest mismatch for {locked.Name} {locked.Version}");
+                throw new SeikoException($"rollback: stored manifest mismatch for {locked.Name} {locked.Version}", "io");
             }
 
             sei.Add(new DeployedSei(locked.Name, locked.Version, stored.Directory, stored.Manifest));
@@ -282,7 +283,7 @@ public sealed class SeikoClient
             return new SeiInfo(name, source.Id, versions);
         }
 
-        throw new SeikoException($"sei '{name}' not found in any source");
+        throw new SeikoException($"sei '{name}' not found in any source", "source");
     }
 
     private static SeiVersionEntry? LatestVersion(SeiIndex sei)
