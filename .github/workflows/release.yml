@@ -1,0 +1,258 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+      - name: Validate release tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::release tag must look like v0.1.0 or v0.1.0-rc.1"
+            exit 1
+          fi
+          git rev-parse "refs/tags/$tag" >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore Seiko.slnx
+      - name: Test
+        run: dotnet test tests/Seiko.Tests/Seiko.Tests.csproj -c Release --no-restore
+
+  publish:
+    name: Publish (${{ matrix.rid }})
+    needs: [validate, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-2025
+          - rid: win-arm64
+            os: windows-11-arm
+          - rid: linux-x64
+            os: ubuntu-22.04
+          - rid: linux-arm64
+            os: ubuntu-22.04-arm
+          - rid: osx-arm64
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+      - name: Install NativeAOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Ensure vswhere on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          if (Test-Path $installer) {
+            $installer | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+      - name: Publish
+        run: >
+          dotnet publish src/CommandLine/Seiko.CommandLine.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          -p:PublishAot=true
+          -p:StripSymbols=true
+          -o "$RUNNER_TEMP/publish-${{ matrix.rid }}"
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/publish-${{ matrix.rid }}/sk"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin="$bin.exe"
+          fi
+          "$bin" --version
+          "$bin" --help >/dev/null
+      - name: Package and installer smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          tag="${{ needs.validate.outputs.tag }}"
+          rid="${{ matrix.rid }}"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            temp_dir=$(cygpath -u "$RUNNER_TEMP")
+            PYTHON=python
+          else
+            temp_dir="$RUNNER_TEMP"
+            PYTHON=python3
+          fi
+          publish_dir="$temp_dir/publish-$rid"
+          stage="$temp_dir/stage-$rid"
+          mkdir -p "$stage" "artifacts/release"
+          bin="sk"
+          ext="tar.gz"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin="sk.exe"
+            ext="zip"
+          fi
+          cp "$publish_dir/$bin" "$stage/$bin"
+          cp LICENSE.md "$stage/"
+          asset="sk-$version-$rid.$ext"
+          if [ "$ext" = "zip" ]; then
+            "$PYTHON" - "$stage" "artifacts/release/$asset" <<'PY'
+          import pathlib, sys, zipfile
+          src, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.rglob("*")):
+                  if p.is_file():
+                      z.write(p, p.relative_to(src).as_posix())
+          PY
+          else
+            tar -czf "artifacts/release/$asset" -C "$stage" .
+          fi
+
+          symbols="$temp_dir/symbols-$rid"
+          mkdir -p "$symbols"
+          find "$publish_dir" -maxdepth 1 -type f \( -name '*.pdb' -o -name '*.dbg' \) -exec cp {} "$symbols/" \;
+          find "$publish_dir" -maxdepth 1 -type d -name '*.dSYM' -exec cp -R {} "$symbols/" \;
+          if [ -n "$(ls -A "$symbols")" ]; then
+            symbols_asset="sk-$version-$rid-symbols.$ext"
+            if [ "$ext" = "zip" ]; then
+              "$PYTHON" - "$symbols" "artifacts/release/$symbols_asset" <<'PY'
+          import pathlib, sys, zipfile
+          src, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.rglob("*")):
+                  if p.is_file():
+                      z.write(p, p.relative_to(src).as_posix())
+          PY
+            else
+              tar -czf "artifacts/release/$symbols_asset" -C "$symbols" .
+            fi
+          fi
+
+          "$PYTHON" - "artifacts/release/$asset" > artifacts/release/SHA256SUMS <<'PY'
+          import hashlib, pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          print(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}")
+          PY
+
+          install_dir="$temp_dir/install-$rid"
+          "$PYTHON" -m http.server 8765 --directory artifacts/release >/dev/null 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8765/SHA256SUMS >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            install_dir_win=$(cygpath -w "$install_dir")
+            pwsh -NoProfile -File ./install.ps1 -Version "$tag" -Dir "$install_dir_win" -BaseUrl http://127.0.0.1:8765
+            "$install_dir/sk.exe" --version
+          else
+            bash ./install.sh --version "$tag" --dir "$install_dir" --base-url http://127.0.0.1:8765
+            "$install_dir/sk" --version
+          fi
+
+          mv artifacts/release/SHA256SUMS "$temp_dir/SHA256SUMS-$rid"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/release/*
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [validate, publish]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Add installers and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp install.sh install.ps1 dist/
+          python3 - dist <<'PY'
+          import hashlib, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          lines = []
+          for p in sorted(root.iterdir()):
+              if p.is_file() and p.name != "SHA256SUMS":
+                  lines.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}")
+          (root / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: Seiko ${{ needs.validate.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
+          files: dist/*

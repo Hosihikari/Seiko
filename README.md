@@ -6,6 +6,33 @@
 
 Seiko is a general-purpose package manager under Hosihikari: any project can use it to distribute sei. **Seiko** is the product name; `sei` (星) is the unit name — one package is a sei, and the English plural is also `sei`. The CLI command is `sk`, short for Seiko.
 
+## Install
+
+Linux and macOS:
+
+```bash
+curl -fsSL https://github.com/Hosihikari/Seiko/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | iex
+```
+
+The installer selects the latest stable release, verifies it against `SHA256SUMS`, and installs to `~/.local/bin` on Unix or `%LOCALAPPDATA%\Seiko\bin` on Windows. It does not modify `PATH` unless `--modify-path` (or `-ModifyPath`) is passed. Use `--version vX.Y.Z` to pin a release, `--dir <path>` for another directory, and `--dry-run` to inspect the plan.
+
+Linux binaries require glibc (Ubuntu 22.04 or newer); musl/Alpine is not supported in this release. The binaries are not code-signed, so a browser download may trigger Gatekeeper or SmartScreen warnings; the installer uses the release assets directly.
+
+Verify a downloaded archive:
+
+```bash
+gh attestation verify sk-0.1.0-linux-x64.tar.gz --repo Hosihikari/Seiko
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Upgrade by re-running the installer; uninstall by deleting `sk` (or `sk.exe`) and removing the install directory from `PATH` if it was added.
+
 Current slice:
 
 - `sk init` — writes a `seiko.conf` template.

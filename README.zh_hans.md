@@ -6,6 +6,33 @@
 
 Seiko 是星光旗下的通用包管理器：任何项目都可以用它分发 sei。**Seiko** 是产品名，`sei`（星）是单位名——一个包就是一个 sei，英文单复数都写作 `sei`。CLI 命令是 `sk`，即 Seiko 的缩写。
 
+## 安装
+
+Linux 和 macOS：
+
+```bash
+curl -fsSL https://github.com/Hosihikari/Seiko/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell：
+
+```powershell
+irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | iex
+```
+
+安装器选择最新稳定版，用 `SHA256SUMS` 校验，Unix 装到 `~/.local/bin`，Windows 装到 `%LOCALAPPDATA%\Seiko\bin`。默认不改 `PATH`；传 `--modify-path`（PowerShell 为 `-ModifyPath`）才会追加。`--version vX.Y.Z` 钉版本，`--dir <path>` 换目录，`--dry-run` 只打印计划。
+
+Linux 二进制要求 glibc（Ubuntu 22.04 及以上）；本版本不支持 musl/Alpine。二进制未做代码签名，浏览器手动下载可能触发 Gatekeeper 或 SmartScreen 警告；安装脚本直接使用 Release 资产。
+
+校验下载的归档：
+
+```bash
+gh attestation verify sk-0.1.0-linux-x64.tar.gz --repo Hosihikari/Seiko
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+升级即重跑安装器；卸载删除 `sk`（Windows 为 `sk.exe`），如曾加入 PATH 再删除对应目录。
+
 当前切片：
 
 - `sk init`：生成 `seiko.conf` 模板。
