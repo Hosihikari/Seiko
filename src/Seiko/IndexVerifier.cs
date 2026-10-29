@@ -798,6 +798,8 @@ public static class IndexVerifier
         return new HttpClient(handler)
         {
             Timeout = TimeSpan.FromMinutes(30),
+            DefaultRequestVersion = HttpVersion.Version11,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
         };
     }
 

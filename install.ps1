@@ -45,6 +45,15 @@ if ($env:OS -ne "Windows_NT") {
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# Some HTTP proxies break on HTTP/2; the release assets are small enough that
+# HTTP/1.1 is the safer default. The parameter exists in PowerShell 7.4+.
+$web = @{ UseBasicParsing = $true }
+$rest = @{ Headers = @{ "User-Agent" = "seiko-install"; "Accept" = "application/vnd.github+json" } }
+if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey("HttpVersion")) {
+    $web.HttpVersion = "1.1"
+    $rest.HttpVersion = "1.1"
+}
+
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_ARCHITEW6432 -eq "ARM64") {
     "ARM64"
 } elseif ($env:PROCESSOR_ARCHITECTURE -eq "AMD64" -or $env:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
@@ -66,7 +75,7 @@ if ($BaseUrl -and -not $Version) {
 if (-not $Version) {
     $release = Invoke-RestMethod `
         -Uri "https://api.github.com/repos/$Repo/releases/latest" `
-        -Headers @{ "User-Agent" = "seiko-install"; "Accept" = "application/vnd.github+json" }
+        @rest
     $tag = $release.tag_name
 } elseif ($Version.StartsWith("v")) {
     $tag = $Version
@@ -93,7 +102,7 @@ $tmp = Join-Path ([IO.Path]::GetTempPath()) ("seiko-install-" + [guid]::NewGuid(
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     $sumsFile = Join-Path $tmp "SHA256SUMS"
-    Invoke-WebRequest -Uri $sumsUrl -OutFile $sumsFile -UseBasicParsing
+    Invoke-WebRequest -Uri $sumsUrl -OutFile $sumsFile @web
     $expected = Get-Content $sumsFile | ForEach-Object {
         $parts = $_ -split '\s+', 2
         if ($parts.Count -eq 2 -and ($parts[1] -eq $asset -or $parts[1] -eq "*$asset")) {
@@ -115,7 +124,7 @@ try {
     }
 
     $archive = Join-Path $tmp $asset
-    Invoke-WebRequest -Uri $assetUrl -OutFile $archive -UseBasicParsing
+    Invoke-WebRequest -Uri $assetUrl -OutFile $archive @web
     $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $expected.ToLowerInvariant()) {
         Fail "checksum mismatch for $asset"
