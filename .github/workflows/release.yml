@@ -116,7 +116,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bin="$RUNNER_TEMP/publish-${{ matrix.rid }}/sk"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            temp_dir=$(cygpath -u "$RUNNER_TEMP")
+          else
+            temp_dir="$RUNNER_TEMP"
+          fi
+          bin="$temp_dir/publish-${{ matrix.rid }}/sk"
           if [ "$RUNNER_OS" = "Windows" ]; then
             bin="$bin.exe"
           fi
