@@ -57,6 +57,8 @@ public sealed class SeikoClient
             Progress = progress,
             Log = log,
         };
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
         var sources = LoadSources(config, root, proxy, session);
         using var sourceScope = new SourceScope(sources);
@@ -104,7 +106,7 @@ public sealed class SeikoClient
         session.TotalBytes = totalBytes;
         progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
 
-        var store = new Store(storeRoot ?? DefaultStorePath());
+        var store = new Store(storePath);
         var stored = DownloadAll(store, resolved, session, downloadCts);
         progress?.Report(new SyncProgress(
             SyncPhase.Deploying,
@@ -534,11 +536,30 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
-            ?? throw new SeikoException("no lock; run `sk sync`", "lock");
-        var referenced = lockFile.Sei
-            .Select(sei => sei.Artifact.Sha256.ToLowerInvariant())
-            .ToHashSet(StringComparer.Ordinal);
+        var roots = RootRegistry.Read(storePath)
+            .Append(root)
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .ToList();
+        var referenced = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var registered in roots)
+        {
+            var lockFile = LockFile.Read(Path.Combine(registered, "seiko.lock.json"));
+            if (lockFile is null)
+            {
+                continue;
+            }
+
+            foreach (var sei in lockFile.Sei)
+            {
+                referenced.Add(sei.Artifact.Sha256.ToLowerInvariant());
+            }
+        }
+
+        if (referenced.Count == 0
+            && LockFile.Read(Path.Combine(root, "seiko.lock.json")) is null)
+        {
+            throw new SeikoException("no lock; run `sk sync`", "lock");
+        }
         var removed = 0;
         long bytes = 0;
         if (!Directory.Exists(storePath))
@@ -631,7 +652,9 @@ public sealed class SeikoClient
         var snapshotLock = LockFile.Read(snapshotLockPath)
             ?? throw new SeikoException($"generation {target} has no lock", "lock");
 
-        var store = new Store(storeRoot ?? DefaultStorePath());
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
+        var store = new Store(storePath);
         var sei = new List<DeployedSei>();
         foreach (var locked in snapshotLock.Sei)
         {

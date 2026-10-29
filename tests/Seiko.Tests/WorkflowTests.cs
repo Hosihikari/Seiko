@@ -83,6 +83,38 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void CacheClean_ProtectsAllRegisteredRoots()
+    {
+        using var first = new Fixture();
+        using var second = new Fixture();
+        var sharedStore = Path.Combine(first.Root, "shared-store");
+        first.AddSei("first", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["first.txt"] = "first" } }],
+        });
+        first.WriteConfig("win-x64", new SpecFixture("first", "[1.0.0]"));
+        second.AddSei("second", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["second.txt"] = "second" } }],
+        });
+        second.WriteConfig("win-x64", new SpecFixture("second", "[1.0.0]"));
+
+        var client = new SeikoClient();
+        client.Sync(first.Root, sharedStore);
+        client.Sync(second.Root, sharedStore);
+        var stale = Path.Combine(sharedStore, new string('b', 64));
+        Directory.CreateDirectory(stale);
+
+        var result = client.CacheClean(first.Root, sharedStore);
+
+        Assert.Equal(1, result.Removed);
+        Assert.False(Directory.Exists(stale));
+        Assert.Equal(2, client.CacheStatus(sharedStore).Artifacts);
+    }
+
+    [Fact]
     public void Update_WithoutLatestKeepsRangeAndUpgrades()
     {
         using var fixture = new Fixture();

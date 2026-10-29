@@ -118,6 +118,12 @@ public sealed class DeployedFile
     public string Sha256 { get; set; } = "";
 }
 
+public sealed class RootRegistryState
+{
+    public int SchemaVersion { get; set; } = 1;
+    public List<string> Roots { get; set; } = [];
+}
+
 public sealed class DeploymentJournal
 {
     public int SchemaVersion { get; set; } = 1;
