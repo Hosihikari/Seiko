@@ -27,7 +27,7 @@ Linux binaries require glibc (Ubuntu 22.04 or newer); musl/Alpine is not support
 Verify a downloaded archive:
 
 ```bash
-gh attestation verify sk-0.1.0-linux-x64.tar.gz --repo Hosihikari/Seiko
+gh attestation verify sk-0.1.1-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
