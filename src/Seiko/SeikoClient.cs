@@ -19,6 +19,12 @@ public sealed class RollbackResult
     public required int FilesDeployed { get; init; }
 }
 
+public sealed record OutdatedSei(
+    string Name,
+    string Current,
+    string? LatestInRange,
+    string Latest);
+
 public sealed class SeikoClient
 {
     public SyncResult Sync(
@@ -30,7 +36,8 @@ public sealed class SeikoClient
         string? proxy = null,
         IProgress<SyncProgress>? progress = null,
         Action<string>? log = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<string>? updateNames = null)
     {
         root = Path.GetFullPath(root);
         using var rootLock = ProcessLock.Acquire(
@@ -67,7 +74,7 @@ public sealed class SeikoClient
         }
         else
         {
-            var resolver = new Resolver(sources, existingLock, rid, allowPrerelease);
+            var resolver = new Resolver(sources, existingLock, rid, allowPrerelease, updateNames);
             resolved = resolver.Resolve(specs);
             lockFile = LockFile.FromResolution(rid, sources, resolved);
 
@@ -170,6 +177,210 @@ public sealed class SeikoClient
         }
 
         return tasks.Select(task => task.Result).ToList();
+    }
+
+    public SyncResult Add(
+        string root,
+        string specification,
+        string? storeRoot = null,
+        bool allowPrerelease = false,
+        int jobs = DownloadSession.DefaultJobs,
+        string? proxy = null,
+        IProgress<SyncProgress>? progress = null,
+        Action<string>? log = null,
+        CancellationToken cancellationToken = default)
+    {
+        root = Path.GetFullPath(root);
+        var at = specification.LastIndexOf('@');
+        var name = (at > 0 ? specification[..at] : specification).Trim();
+        var version = at > 0 ? specification[(at + 1)..].Trim() : null;
+        if (string.IsNullOrWhiteSpace(name) || (at == specification.Length - 1))
+        {
+            throw new SeikoException("add requires a sei name and optional @range", "usage");
+        }
+
+        var config = ConfigLoader.Load(root);
+        if (config.Components.Any(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)))
+        {
+            throw new SeikoException($"{name} is already declared in components", "config");
+        }
+
+        var existing = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
+        if (existing is null)
+        {
+            config.Sei.Add(new SeiSpec { Name = name, Version = version });
+        }
+        else
+        {
+            existing.Version = version;
+        }
+
+        ConfigWriter.WriteSpecs(root, "sei", config.Sei);
+        return Sync(
+            root,
+            storeRoot,
+            allowPrerelease,
+            SyncMode.Normal,
+            jobs,
+            proxy,
+            progress,
+            log,
+            cancellationToken);
+    }
+
+    public SyncResult Remove(
+        string root,
+        string name,
+        string? storeRoot = null,
+        bool allowPrerelease = false,
+        int jobs = DownloadSession.DefaultJobs,
+        string? proxy = null,
+        IProgress<SyncProgress>? progress = null,
+        Action<string>? log = null,
+        CancellationToken cancellationToken = default)
+    {
+        root = Path.GetFullPath(root);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new SeikoException("remove requires a sei name", "usage");
+        }
+
+        var config = ConfigLoader.Load(root);
+        var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
+        var removedComponent = config.Components.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
+        if (!removedSei && !removedComponent)
+        {
+            throw new SeikoException($"{name} is not a direct dependency", "resolve");
+        }
+
+        if (removedSei)
+        {
+            ConfigWriter.WriteSpecs(root, "sei", config.Sei);
+        }
+
+        if (removedComponent)
+        {
+            ConfigWriter.WriteSpecs(root, "components", config.Components);
+        }
+
+        return Sync(
+            root,
+            storeRoot,
+            allowPrerelease,
+            SyncMode.Normal,
+            jobs,
+            proxy,
+            progress,
+            log,
+            cancellationToken);
+    }
+
+    public SyncResult Update(
+        string root,
+        string? name = null,
+        bool latest = false,
+        string? storeRoot = null,
+        bool allowPrerelease = false,
+        int jobs = DownloadSession.DefaultJobs,
+        string? proxy = null,
+        IProgress<SyncProgress>? progress = null,
+        Action<string>? log = null,
+        CancellationToken cancellationToken = default)
+    {
+        root = Path.GetFullPath(root);
+        var config = ConfigLoader.Load(root);
+        var targets = new List<SeiSpec>();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            targets.AddRange(config.Sei);
+            targets.AddRange(config.Components);
+        }
+        else
+        {
+            var sei = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
+            var component = config.Components.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
+            if (sei is not null)
+            {
+                targets.Add(sei);
+            }
+
+            if (component is not null)
+            {
+                targets.Add(component);
+            }
+
+            if (targets.Count == 0)
+            {
+                throw new SeikoException($"{name} is not a direct dependency", "resolve");
+            }
+        }
+
+        if (latest && targets.Count > 0)
+        {
+            using var session = new DownloadSession(jobs, cancellationToken);
+            var sources = LoadSources(config, root, proxy, session);
+            using var sourceScope = new SourceScope(sources);
+            foreach (var target in targets)
+            {
+                var version = FindLatestVersion(sources, target.Name, allowPrerelease)
+                    ?? throw new SeikoException($"no version of {target.Name} found in any source", "source");
+                target.Version = $"[{version}]";
+            }
+
+            ConfigWriter.WriteSpecs(root, "sei", config.Sei);
+            ConfigWriter.WriteSpecs(root, "components", config.Components);
+        }
+
+        var updateNames = targets
+            .Select(spec => spec.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        return Sync(
+            root,
+            storeRoot,
+            allowPrerelease,
+            SyncMode.Normal,
+            jobs,
+            proxy,
+            progress,
+            log,
+            cancellationToken,
+            updateNames);
+    }
+
+    private static string? FindLatestVersion(
+        IReadOnlyList<ISeiSource> sources,
+        string name,
+        bool allowPrerelease)
+    {
+        NuGetVersion? best = null;
+        foreach (var source in sources)
+        {
+            var index = source.GetSei(name);
+            if (index is null)
+            {
+                continue;
+            }
+
+            foreach (var entry in index.Versions)
+            {
+                if (entry.Yanked || !NuGetVersion.TryParse(entry.Version, out var version))
+                {
+                    continue;
+                }
+
+                if (!allowPrerelease && version.IsPrerelease)
+                {
+                    continue;
+                }
+
+                if (best is null || version > best)
+                {
+                    best = version;
+                }
+            }
+        }
+
+        return best?.ToNormalizedString();
     }
 
     public RollbackResult Rollback(string root, string? storeRoot = null, int? toGeneration = null)
@@ -300,6 +511,150 @@ public sealed class SeikoClient
         }
 
         throw new SeikoException($"sei '{name}' not found in any source", "source");
+    }
+
+    public IReadOnlyList<IReadOnlyList<string>> Why(string root, string name)
+    {
+        root = Path.GetFullPath(root);
+        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+            ?? throw new SeikoException("no lock; run `sk sync`", "lock");
+        var byName = lockFile.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
+        if (!byName.ContainsKey(name))
+        {
+            throw new SeikoException($"sei '{name}' is not in the lock", "resolve");
+        }
+
+        var chains = new List<IReadOnlyList<string>>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var direct in lockFile.Sei.Where(sei => sei.Direct).OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            Visit(direct.Name, []);
+        }
+
+        if (chains.Count == 0)
+        {
+            throw new SeikoException($"no dependency path to {name}", "resolve");
+        }
+
+        return chains;
+
+        void Visit(string current, List<string> path)
+        {
+            if (path.Contains(current, StringComparer.Ordinal))
+            {
+                return;
+            }
+
+            path.Add(current);
+            if (string.Equals(current, name, StringComparison.Ordinal))
+            {
+                var key = string.Join("\0", path);
+                if (seen.Add(key))
+                {
+                    chains.Add(path.ToList());
+                }
+            }
+            else if (byName.TryGetValue(current, out var locked))
+            {
+                foreach (var dependency in locked.Dependencies.OrderBy(d => d.Name, StringComparer.Ordinal))
+                {
+                    Visit(dependency.Name, path);
+                }
+            }
+
+            path.RemoveAt(path.Count - 1);
+        }
+    }
+
+    public IReadOnlyList<OutdatedSei> Outdated(
+        string root,
+        string? proxy = null,
+        bool allowPrerelease = false)
+    {
+        root = Path.GetFullPath(root);
+        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
+        if (lockFile is null)
+        {
+            return [];
+        }
+
+        var config = ConfigLoader.Load(root);
+        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        var sources = LoadSources(config, root, proxy, session);
+        using var sourceScope = new SourceScope(sources);
+        var ranges = config.Sei.Concat(config.Components)
+            .GroupBy(spec => spec.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Version, StringComparer.Ordinal);
+        var result = new List<OutdatedSei>();
+
+        foreach (var locked in lockFile.Sei.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            SeiIndex? index = null;
+            foreach (var source in sources)
+            {
+                index = source.GetSei(locked.Name);
+                if (index is not null)
+                {
+                    break;
+                }
+            }
+
+            if (index is null)
+            {
+                continue;
+            }
+
+            var range = VersionRange.All;
+            if (ranges.TryGetValue(locked.Name, out var rangeText)
+                && !string.IsNullOrWhiteSpace(rangeText)
+                && rangeText.Trim() != "*"
+                && !VersionRange.TryParse(rangeText, out range))
+            {
+                throw new SeikoException($"invalid version range '{rangeText}' for {locked.Name}", "config");
+            }
+
+            NuGetVersion? latest = null;
+            NuGetVersion? latestInRange = null;
+            foreach (var entry in index.Versions)
+            {
+                if (entry.Yanked || !NuGetVersion.TryParse(entry.Version, out var version))
+                {
+                    continue;
+                }
+
+                if (!allowPrerelease && version.IsPrerelease)
+                {
+                    continue;
+                }
+
+                if (latest is null || version > latest)
+                {
+                    latest = version;
+                }
+
+                if (range.Satisfies(version) && (latestInRange is null || version > latestInRange))
+                {
+                    latestInRange = version;
+                }
+            }
+
+            if (latest is null
+                || !NuGetVersion.TryParse(locked.Version, out var current)
+                || (latestInRange is not null && latestInRange > current)
+                || latest > current)
+            {
+                if (latest is not null)
+                {
+                    result.Add(new OutdatedSei(
+                        locked.Name,
+                        locked.Version,
+                        latestInRange?.ToNormalizedString(),
+                        latest.ToNormalizedString()));
+                }
+            }
+        }
+
+        return result;
     }
 
     private static SeiVersionEntry? LatestVersion(SeiIndex sei)

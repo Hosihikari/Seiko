@@ -60,6 +60,89 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(syncProxy),
         IsJson(parseResult))));
+sync.Aliases.Add("install");
+
+var add = new Command("add", "Add a direct sei declaration and sync.");
+var addRoot = RootOption();
+var addStore = StoreOption();
+var addPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var addJobs = JobsOption();
+var addProxy = ProxyOption();
+var addSpec = new Argument<string>("spec") { Description = "Sei name with an optional @range." };
+add.Add(addSpec);
+add.Add(addRoot);
+add.Add(addStore);
+add.Add(addPre);
+add.Add(addJobs);
+add.Add(addProxy);
+add.SetAction(parseResult => Run(
+    "add",
+    IsJson(parseResult),
+    () => Add(
+        parseResult.GetValue(addRoot),
+        parseResult.GetValue(addSpec)!,
+        parseResult.GetValue(addStore),
+        parseResult.GetValue(addPre),
+        parseResult.GetValue(addJobs) ?? DownloadSession.DefaultJobs,
+        parseResult.GetValue(addProxy),
+        IsJson(parseResult))));
+
+var remove = new Command("remove", "Remove a direct sei declaration and sync.");
+var removeRoot = RootOption();
+var removeStore = StoreOption();
+var removePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var removeJobs = JobsOption();
+var removeProxy = ProxyOption();
+var removeName = new Argument<string>("name") { Description = "Direct sei name." };
+remove.Add(removeName);
+remove.Add(removeRoot);
+remove.Add(removeStore);
+remove.Add(removePre);
+remove.Add(removeJobs);
+remove.Add(removeProxy);
+remove.SetAction(parseResult => Run(
+    "remove",
+    IsJson(parseResult),
+    () => Remove(
+        parseResult.GetValue(removeRoot),
+        parseResult.GetValue(removeName)!,
+        parseResult.GetValue(removeStore),
+        parseResult.GetValue(removePre),
+        parseResult.GetValue(removeJobs) ?? DownloadSession.DefaultJobs,
+        parseResult.GetValue(removeProxy),
+        IsJson(parseResult))));
+
+var update = new Command("update", "Update direct declarations and sync.");
+var updateRoot = RootOption();
+var updateStore = StoreOption();
+var updatePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var updateJobs = JobsOption();
+var updateProxy = ProxyOption();
+var updateLatest = new Option<bool>("--latest") { Description = "Rewrite direct ranges to the latest version." };
+var updateName = new Argument<string?>("name")
+{
+    Description = "Direct sei name; all direct declarations when omitted.",
+    Arity = ArgumentArity.ZeroOrOne,
+};
+update.Add(updateName);
+update.Add(updateRoot);
+update.Add(updateStore);
+update.Add(updatePre);
+update.Add(updateJobs);
+update.Add(updateProxy);
+update.Add(updateLatest);
+update.SetAction(parseResult => Run(
+    "update",
+    IsJson(parseResult),
+    () => Update(
+        parseResult.GetValue(updateRoot),
+        parseResult.GetValue(updateName),
+        parseResult.GetValue(updateLatest),
+        parseResult.GetValue(updateStore),
+        parseResult.GetValue(updatePre),
+        parseResult.GetValue(updateJobs) ?? DownloadSession.DefaultJobs,
+        parseResult.GetValue(updateProxy),
+        IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
 var listRoot = RootOption();
@@ -133,11 +216,45 @@ doctor.SetAction(parseResult => Run(
         parseResult.GetValue(doctorClean),
         IsJson(parseResult))));
 
+var why = new Command("why", "Explain why a sei is in the dependency graph.");
+var whyRoot = RootOption();
+var whyName = new Argument<string>("name") { Description = "Sei name." };
+why.Add(whyName);
+why.Add(whyRoot);
+why.SetAction(parseResult => Run(
+    "why",
+    IsJson(parseResult),
+    () => Why(
+        parseResult.GetValue(whyRoot),
+        parseResult.GetValue(whyName)!,
+        IsJson(parseResult))));
+
+var outdated = new Command("outdated", "Report sei that have newer versions.");
+var outdatedRoot = RootOption();
+var outdatedProxy = ProxyOption();
+var outdatedPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+outdated.Add(outdatedRoot);
+outdated.Add(outdatedProxy);
+outdated.Add(outdatedPre);
+outdated.SetAction(parseResult => Run(
+    "outdated",
+    IsJson(parseResult),
+    () => Outdated(
+        parseResult.GetValue(outdatedRoot),
+        parseResult.GetValue(outdatedProxy),
+        parseResult.GetValue(outdatedPre),
+        IsJson(parseResult))));
+
 var help = new Command("help", "Show help.");
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
 rootCommand.Add(init);
 rootCommand.Add(sync);
+rootCommand.Add(add);
+rootCommand.Add(remove);
+rootCommand.Add(update);
+rootCommand.Add(why);
+rootCommand.Add(outdated);
 rootCommand.Add(list);
 rootCommand.Add(rollback);
 rootCommand.Add(search);
@@ -238,6 +355,9 @@ static Option<string?> StoreOption()
 static Option<string?> ProxyOption()
     => new("--proxy") { Description = "HTTP proxy URL; defaults to the system proxy." };
 
+static Option<int?> JobsOption()
+    => new("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
+
 static int Sync(
     string? rootOption,
     string? store,
@@ -274,13 +394,164 @@ static int Sync(
         return 0;
     }
 
+    PrintSyncResult(result);
+    return 0;
+}
+
+static int Add(
+    string? rootOption,
+    string specification,
+    string? store,
+    bool pre,
+    int jobs,
+    string? proxy,
+    bool json)
+    => RunMutation(
+        "add",
+        json,
+        (progress, log) => new SeikoClient().Add(
+            rootOption ?? FindRoot(),
+            specification,
+            store,
+            pre,
+            jobs,
+            proxy,
+            progress,
+            log));
+
+static int Remove(
+    string? rootOption,
+    string name,
+    string? store,
+    bool pre,
+    int jobs,
+    string? proxy,
+    bool json)
+    => RunMutation(
+        "remove",
+        json,
+        (progress, log) => new SeikoClient().Remove(
+            rootOption ?? FindRoot(),
+            name,
+            store,
+            pre,
+            jobs,
+            proxy,
+            progress,
+            log));
+
+static int Update(
+    string? rootOption,
+    string? name,
+    bool latest,
+    string? store,
+    bool pre,
+    int jobs,
+    string? proxy,
+    bool json)
+    => RunMutation(
+        "update",
+        json,
+        (progress, log) => new SeikoClient().Update(
+            rootOption ?? FindRoot(),
+            name,
+            latest,
+            store,
+            pre,
+            jobs,
+            proxy,
+            progress,
+            log));
+
+static int Why(string? rootOption, string name, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var chains = new SeikoClient().Why(root, name);
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.WhyEnvelope,
+            new WhyEnvelope(1, "why", new WhyData(name, chains.Select(chain => chain.ToList()).ToList())));
+        return 0;
+    }
+
+    if (chains.Count == 1 && chains[0].Count == 1)
+    {
+        Console.WriteLine($"{name} is a direct dependency");
+        return 0;
+    }
+
+    foreach (var chain in chains)
+    {
+        Console.WriteLine(string.Join(" -> ", chain));
+    }
+
+    return 0;
+}
+
+static int Outdated(string? rootOption, string? proxy, bool pre, bool json)
+{
+    var root = rootOption ?? FindRoot();
+    var items = new SeikoClient().Outdated(root, proxy, pre);
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.OutdatedEnvelope, new OutdatedEnvelope(1, "outdated", items.ToList()));
+        return 0;
+    }
+
+    if (items.Count == 0)
+    {
+        Console.WriteLine("everything is up to date");
+        return 0;
+    }
+
+    Console.WriteLine("NAME	CURRENT	LATEST-IN-RANGE	LATEST");
+    foreach (var item in items)
+    {
+        Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}");
+    }
+
+    return 0;
+}
+
+static int RunMutation(
+    string command,
+    bool json,
+    Func<IProgress<SyncProgress>?, Action<string>, SyncResult> action)
+{
+    var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
+    SyncResult result;
+    if (showProgress)
+    {
+        using var display = new ProgressDisplay();
+        result = action(display, Log.Debug);
+    }
+    else
+    {
+        result = action(null, Log.Debug);
+    }
+
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.SyncEnvelope,
+            new SyncEnvelope(1, command, new SyncData(result.SeiInstalled, result.FilesDeployed, SyncMode.Normal.ToString())));
+    }
+    else
+    {
+        PrintSyncResult(result);
+    }
+
+    return 0;
+}
+
+static void PrintSyncResult(SyncResult result)
+{
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
     foreach (var sei in result.Lock.Sei)
     {
         Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}");
     }
-
-    return 0;
 }
 
 static int List(string? rootOption, bool json)

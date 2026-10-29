@@ -19,14 +19,21 @@ public sealed class Resolver
     private readonly SeikoLock? _lock;
     private readonly string _rid;
     private readonly bool _allowPrerelease;
+    private readonly IReadOnlySet<string>? _updateNames;
     private readonly Dictionary<string, ResolvedSei> _resolved = new(StringComparer.Ordinal);
 
-    public Resolver(IReadOnlyList<ISeiSource> sources, SeikoLock? existingLock, string rid, bool allowPrerelease)
+    public Resolver(
+        IReadOnlyList<ISeiSource> sources,
+        SeikoLock? existingLock,
+        string rid,
+        bool allowPrerelease,
+        IReadOnlySet<string>? updateNames = null)
     {
         _sources = sources;
         _lock = existingLock;
         _rid = rid;
         _allowPrerelease = allowPrerelease;
+        _updateNames = updateNames;
     }
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
@@ -207,6 +214,11 @@ public sealed class Resolver
 
     private NuGetVersion? GetLockedVersion(string name)
     {
+        if (_updateNames?.Contains(name) == true)
+        {
+            return null;
+        }
+
         var locked = _lock?.Sei.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
         if (locked is null)
         {

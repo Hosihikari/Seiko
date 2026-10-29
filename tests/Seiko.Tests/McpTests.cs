@@ -14,7 +14,10 @@ public sealed class McpTests
         var names = ToolNames(response);
         Assert.Contains("list", names);
         Assert.Contains("search", names);
+        Assert.Contains("why", names);
+        Assert.Contains("outdated", names);
         Assert.DoesNotContain("sync", names);
+        Assert.DoesNotContain("add", names);
     }
 
     [Fact]
@@ -24,6 +27,45 @@ public sealed class McpTests
         var names = ToolNames(server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!);
         Assert.Contains("sync", names);
         Assert.Contains("rollback", names);
+        Assert.Contains("add", names);
+        Assert.Contains("remove", names);
+        Assert.Contains("update", names);
+    }
+
+    [Fact]
+    public void AddTool_WritesDeclarationAndInstalls()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
+        var request = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = 3,
+            ["method"] = "tools/call",
+            ["params"] = new JsonObject
+            {
+                ["name"] = "add",
+                ["arguments"] = new JsonObject
+                {
+                    ["root"] = fixture.Root,
+                    ["spec"] = "hello@[1.0.0]",
+                    ["store"] = fixture.StoreDirectory,
+                },
+            },
+        }.ToJsonString();
+
+        var response = server.Handle(request)!;
+        var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();
+
+        Assert.False(result["isError"]!.GetValue<bool>());
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.Contains("hello", File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")));
     }
 
     [Fact]

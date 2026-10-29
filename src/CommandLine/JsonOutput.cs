@@ -39,6 +39,12 @@ public sealed record InfoData(string Name, string Source, List<InfoVersion> Vers
 
 public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
 
+public sealed record WhyData(string Name, List<List<string>> Chains);
+
+public sealed record WhyEnvelope(int SchemaVersion, string Command, WhyData Data);
+
+public sealed record OutdatedEnvelope(int SchemaVersion, string Command, List<OutdatedSei> Data);
+
 public sealed record DoctorEnvelope(int SchemaVersion, string Command, DoctorResult Data);
 
 public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData Error);
@@ -51,6 +57,9 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(InitEnvelope))]
 [JsonSerializable(typeof(SearchEnvelope))]
 [JsonSerializable(typeof(InfoEnvelope))]
+[JsonSerializable(typeof(WhyEnvelope))]
+[JsonSerializable(typeof(OutdatedEnvelope))]
+[JsonSerializable(typeof(OutdatedSei))]
 [JsonSerializable(typeof(DoctorEnvelope))]
 [JsonSerializable(typeof(ErrorEnvelope))]
 [JsonSerializable(typeof(InfoData))]

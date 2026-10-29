@@ -44,7 +44,9 @@ internal sealed class Fixture : IDisposable
 
     public void AddSei(string name, params VersionFixture[] versions)
     {
-        var index = new SeiIndex { Name = name };
+        var index = _indexes.TryGetValue(name, out var existing)
+            ? existing
+            : new SeiIndex { Name = name };
         foreach (var version in versions)
         {
             var artifacts = new List<ArtifactEntry>();

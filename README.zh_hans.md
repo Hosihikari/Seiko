@@ -37,7 +37,10 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 - `sk init`：生成 `seiko.conf` 模板。
 - `sk sync`：读 `seiko.conf`，从本地静态索引解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，部署到安装根，写 `seiko.lock.json`。
-- `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；`--locked` 在锁过期时报错。
+- `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；`--locked` 在锁过期时报错；`sk install` 是别名。
+- `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]`：修改直接声明并同步。
+- `sk why <name>`：显示到某个 sei 的依赖链。
+- `sk outdated`：显示范围内与整体的新版本。
 - `sk list`：读锁列出已安装的 sei。
 - `sk rollback`：从内容寻址存储恢复上一代部署。
 - `sk search <term>`：在配置的索引里搜索 sei 名。

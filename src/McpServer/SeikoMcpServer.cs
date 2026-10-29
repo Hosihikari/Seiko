@@ -92,10 +92,15 @@ public sealed class SeikoMcpServer
             Tool("info", "Show versions, dependencies, and artifact counts.", InfoSchema()),
             Tool("lock", "Return the current lock file.", RootSchema(required: false)),
             Tool("source_list", "List configured sources.", RootSchema(required: false)),
+            Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
+            Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
         };
 
         if (_allowMutations)
         {
+            tools.Add(Tool("add", "Add a direct sei declaration and sync.", AddSchema()));
+            tools.Add(Tool("remove", "Remove a direct sei declaration and sync.", RemoveSchema()));
+            tools.Add(Tool("update", "Update direct declarations and sync.", UpdateSchema()));
             tools.Add(Tool("sync", "Resolve and deploy sei.", SyncSchema()));
             tools.Add(Tool("rollback", "Restore a previous generation.", RollbackSchema()));
         }
@@ -121,6 +126,11 @@ public sealed class SeikoMcpServer
                 "info" => Info(arguments),
                 "lock" => Lock(arguments),
                 "source_list" => SourceList(arguments),
+                "why" => Why(arguments),
+                "outdated" => Outdated(arguments),
+                "add" => RequireMutations(() => Add(arguments)),
+                "remove" => RequireMutations(() => Remove(arguments)),
+                "update" => RequireMutations(() => Update(arguments)),
                 "sync" => RequireMutations(() => Sync(arguments)),
                 "rollback" => RequireMutations(() => Rollback(arguments)),
                 _ => throw new SeikoException($"unknown tool '{name}'"),
@@ -230,6 +240,96 @@ public sealed class SeikoMcpServer
 
         return sources.ToJsonString();
     }
+
+    private string Why(JsonObject arguments)
+    {
+        var name = RequiredString(arguments, "name");
+        var root = Root(arguments, required: false);
+        var chains = new JsonArray();
+        foreach (var chain in _client.Why(root, name))
+        {
+            var path = new JsonArray();
+            foreach (var part in chain)
+            {
+                path.Add(part);
+            }
+
+            chains.Add(path);
+        }
+
+        return chains.ToJsonString();
+    }
+
+    private string Outdated(JsonObject arguments)
+    {
+        var root = Root(arguments, required: false);
+        var items = new JsonArray();
+        foreach (var item in _client.Outdated(
+            root,
+            OptionalString(arguments, "proxy"),
+            Bool(arguments, "pre")))
+        {
+            items.Add(new JsonObject
+            {
+                ["name"] = item.Name,
+                ["current"] = item.Current,
+                ["latestInRange"] = item.LatestInRange,
+                ["latest"] = item.Latest,
+            });
+        }
+
+        return items.ToJsonString();
+    }
+
+    private string Add(JsonObject arguments)
+    {
+        var spec = RequiredString(arguments, "spec");
+        var root = Root(arguments, required: true);
+        var result = _client.Add(
+            root,
+            spec,
+            OptionalString(arguments, "store"),
+            Bool(arguments, "pre"),
+            Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
+            OptionalString(arguments, "proxy"));
+        return SyncResultJson(result);
+    }
+
+    private string Remove(JsonObject arguments)
+    {
+        var name = RequiredString(arguments, "name");
+        var root = Root(arguments, required: true);
+        var result = _client.Remove(
+            root,
+            name,
+            OptionalString(arguments, "store"),
+            Bool(arguments, "pre"),
+            Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
+            OptionalString(arguments, "proxy"));
+        return SyncResultJson(result);
+    }
+
+    private string Update(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var result = _client.Update(
+            root,
+            OptionalString(arguments, "name"),
+            Bool(arguments, "latest"),
+            OptionalString(arguments, "store"),
+            Bool(arguments, "pre"),
+            Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
+            OptionalString(arguments, "proxy"));
+        return SyncResultJson(result);
+    }
+
+    private static string SyncResultJson(SyncResult result)
+        => new JsonObject
+        {
+            ["sei"] = result.SeiInstalled,
+            ["files"] = result.FilesDeployed,
+            ["mode"] = SyncMode.Normal.ToString(),
+        }.ToJsonString();
 
     private string Sync(JsonObject arguments)
     {
@@ -385,6 +485,72 @@ public sealed class SeikoMcpServer
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
+        };
+
+    private static JsonObject WhySchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject { ["type"] = "string" },
+                ["root"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(JsonValue.Create("name")),
+        };
+
+    private static JsonObject OutdatedSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+                ["pre"] = new JsonObject { ["type"] = "boolean" },
+            },
+            ["required"] = new JsonArray(),
+        };
+
+    private static JsonObject AddSchema()
+        => SyncMutationSchema(requireSpec: true);
+
+    private static JsonObject RemoveSchema()
+        => SyncMutationSchema(requireSpec: false);
+
+    private static JsonObject UpdateSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["name"] = new JsonObject { ["type"] = "string" },
+                ["latest"] = new JsonObject { ["type"] = "boolean" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+                ["pre"] = new JsonObject { ["type"] = "boolean" },
+                ["jobs"] = new JsonObject { ["type"] = "integer" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(JsonValue.Create("root")),
+        };
+
+    private static JsonObject SyncMutationSchema(bool requireSpec)
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                [requireSpec ? "spec" : "name"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+                ["pre"] = new JsonObject { ["type"] = "boolean" },
+                ["jobs"] = new JsonObject { ["type"] = "integer" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(
+                JsonValue.Create("root"),
+                JsonValue.Create(requireSpec ? "spec" : "name")),
         };
 
     private static JsonObject RollbackSchema()

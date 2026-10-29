@@ -37,7 +37,10 @@ Current slice:
 
 - `sk init` — writes a `seiko.conf` template.
 - `sk sync` — reads `seiko.conf`, resolves sei from a local static index, selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
-- `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date.
+- `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date; `sk install` is an alias.
+- `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync.
+- `sk why <name>` — shows the dependency chains to a sei.
+- `sk outdated` — shows newer in-range and overall versions.
 - `sk list` — lists installed sei from the lock.
 - `sk rollback` — restores the previous deployment generation from the content-addressed store.
 - `sk search <term>` — searches sei names in the configured indexes.
