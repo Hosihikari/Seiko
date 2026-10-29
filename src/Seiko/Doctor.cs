@@ -29,6 +29,7 @@ public sealed class Doctor
             CheckLockMatchesConfig(config, lockFile, findings);
             CheckStore(lockFile, storePath, findings);
             CheckDeployment(root, lockFile, findings);
+            CheckTransaction(root, findings);
             var cleanCount = clean
                 ? CleanPartials(storePath, findings)
                 : ReportPartials(storePath, findings);
@@ -225,6 +226,29 @@ public sealed class Doctor
             catch (IOException ex)
             {
                 findings.Add(Error("io", ex.Message, path));
+            }
+        }
+    }
+
+    private static void CheckTransaction(string root, List<DoctorFinding> findings)
+    {
+        var journal = Path.Combine(root, ".seiko", "transaction.json");
+        if (File.Exists(journal))
+        {
+            findings.Add(Error(
+                "deploy-transaction",
+                "an incomplete deployment transaction exists; run `sk sync` to roll it back",
+                journal));
+        }
+        else
+        {
+            var backup = Path.Combine(root, ".seiko", "transaction");
+            if (Directory.Exists(backup))
+            {
+                findings.Add(Warning(
+                    "deploy-backup",
+                    "leftover deployment backup; run `sk sync` or remove it",
+                    backup));
             }
         }
     }

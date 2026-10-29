@@ -118,6 +118,21 @@ public sealed class DeployedFile
     public string Sha256 { get; set; } = "";
 }
 
+public sealed class DeploymentJournal
+{
+    public int SchemaVersion { get; set; } = 1;
+    public bool Committed { get; set; }
+    public string? NewGenerationPath { get; set; }
+    public List<DeploymentJournalEntry> Entries { get; set; } = [];
+}
+
+public sealed class DeploymentJournalEntry
+{
+    public string Path { get; set; } = "";
+    public bool Existed { get; set; }
+    public int? UnixMode { get; set; }
+}
+
 public sealed class PartialArtifactState
 {
     public int SchemaVersion { get; set; } = 1;

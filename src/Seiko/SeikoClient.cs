@@ -33,10 +33,11 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default)
     {
         root = Path.GetFullPath(root);
-        var config = ConfigLoader.Load(root);
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        var config = ConfigLoader.Load(root);
         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var session = new DownloadSession(jobs, downloadCts.Token)
         {
@@ -110,12 +111,8 @@ public sealed class SeikoClient
             root,
             deployedSei,
             Path.Combine(root, ".seiko"),
-            lockFile);
-
-        if (mode != SyncMode.Frozen)
-        {
-            LockFile.Write(lockPath, lockFile);
-        }
+            lockFile,
+            writeLock: mode != SyncMode.Frozen);
 
         return new SyncResult
         {
@@ -182,6 +179,7 @@ public sealed class SeikoClient
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
         var stateDirectory = Path.Combine(root, ".seiko");
+        Deployer.Recover(root, stateDirectory);
         var statePath = Path.Combine(stateDirectory, "state.json");
         if (!File.Exists(statePath))
         {
@@ -231,8 +229,8 @@ public sealed class SeikoClient
             sei,
             stateDirectory,
             snapshotLock,
-            generationOverride: target);
-        LockFile.Write(Path.Combine(root, "seiko.lock.json"), snapshotLock);
+            generationOverride: target,
+            writeLock: true);
 
         return new RollbackResult
         {

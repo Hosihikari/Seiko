@@ -54,6 +54,21 @@ public sealed class DoctorTests
     }
 
     [Fact]
+    public void Doctor_ReportsIncompleteDeploymentTransaction()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WriteJournal();
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "deploy-transaction");
+        DeploymentTransaction.Recover(fixture.Root, stateDirectory);
+    }
+
+    [Fact]
     public void Doctor_CleanRequiresInstallRootLock()
     {
         using var fixture = new Fixture();
