@@ -2,38 +2,40 @@
 
 [English](README.md) | [简体中文](README.zh_hans.md)
 
-[![CI](https://github.com/Hosihikari/seiko/actions/workflows/ci.yml/badge.svg)](https://github.com/Hosihikari/seiko/actions/workflows/ci.yml)
+[![CI](https://github.com/Hosihikari/Seiko/actions/workflows/ci.yml/badge.svg)](https://github.com/Hosihikari/Seiko/actions/workflows/ci.yml)
 
-Install-side package manager for the Seiko package format. The CLI command is `sk`.
+Seiko is Hosihikari's install-side tool, alongside the Hosihikari framework and Projection (星光框架、星光投影). **Seiko** is the product name; `sei` (星) is the unit name — one package is a sei, and the English plural is also `sei`.
+
+Install-side package manager for the Seiko package format. The CLI command is `sk`, short for Seiko.
 
 Current slice:
 
 - `sk init` — writes a `seiko.conf` template.
-- `sk sync` — reads `seiko.conf`, resolves seis from a local static index, selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, projects files into the install root, and writes `seiko.lock.json`.
+- `sk sync` — reads `seiko.conf`, resolves sei from a local static index, selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
 - `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date.
-- `sk list` — lists packages from the lock.
-- `sk rollback` — restores the previous generation from the content-addressed store.
-- `sk search <term>` — searches package names in the configured indexes.
+- `sk list` — lists installed sei from the lock.
+- `sk rollback` — restores the previous deployment generation from the content-addressed store.
+- `sk search <term>` — searches sei names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
 - Sources may be a local path or an http(s) index; `tokenEnv` supplies a bearer token for private sources.
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 
-Not implemented yet: hardlink/reflink projection and the public index repository.
+Not implemented yet: hardlink/reflink deployment and the public index repository.
 
 ## Build and test
 
 ```bash
 dotnet build Seiko.slnx
-dotnet test tests/Seiko.Core.Tests/Seiko.Core.Tests.csproj
-dotnet publish src/Cli/Seiko.Cli.csproj -c Release -r win-x64 -p:PublishAot=true
+dotnet test tests/Seiko.Tests/Seiko.Tests.csproj
+dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r win-x64 -p:PublishAot=true
 ```
 
 ## Layout
 
-- `src/Core` — models, config, sources, resolution, store, projection, lock.
-- `src/Cli` — command line.
-- `src/Mcp` — placeholder MCP server project.
-- `tests/Seiko.Core.Tests` — fixtures and sync tests.
+- `src/Seiko` — models, config, sources, resolution, store, deployment, lock.
+- `src/CommandLine` — command line.
+- `src/McpServer` — MCP server over stdio.
+- `tests/Seiko.Tests` — fixtures and sync tests.
 
 ## License
 
