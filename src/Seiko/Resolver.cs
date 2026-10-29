@@ -56,6 +56,11 @@ public sealed class Resolver
 
     private void ResolveSei(SeiSpec spec, HashSet<string> path)
     {
+        if (!SeiName.IsValid(spec.Name))
+        {
+            throw Fail($"invalid sei name '{spec.Name}'");
+        }
+
         if (path.Contains(spec.Name))
         {
             throw Fail($"dependency cycle: {string.Join(" -> ", path)} -> {spec.Name}");

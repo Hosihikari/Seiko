@@ -27,7 +27,7 @@ Linux binaries require glibc (Ubuntu 22.04 or newer); musl/Alpine is not support
 Verify a downloaded archive:
 
 ```bash
-gh attestation verify sk-0.1.5-linux-x64.tar.gz --repo Hosihikari/Seiko
+gh attestation verify sk-0.1.6-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
@@ -35,8 +35,8 @@ Upgrade by re-running the installer; uninstall by deleting `sk` (or `sk.exe`) an
 
 Current slice:
 
-- `sk init` — writes a `seiko.conf` template.
-- `sk sync` — reads `seiko.conf`, resolves sei from a local static index, selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
+- `sk init` — writes a `seiko.conf` template with the official index as source `official`.
+- `sk sync` — reads `seiko.conf`, resolves sei from a static index (local or HTTPS), selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
 - `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date; `sk install` is an alias.
 - `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync.
 - `sk why <name>` — shows the dependency chains to a sei.
@@ -45,7 +45,8 @@ Current slice:
 - `sk rollback` — restores the previous deployment generation from the content-addressed store.
 - `sk search <term>` — searches sei names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
-- Sources may be a local path or an http(s) index; `tokenEnv` supplies a bearer token for private sources.
+- Sources may be a local path or an http(s) index; the official index is `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`; `tokenEnv` supplies a bearer token for private sources.
+- `sk index verify [path] [--check-artifacts] [--strict]` — validates an index directory: schema, names, versions, artifact URLs, SHA-256, and with `--check-artifacts` the artifact bytes and the embedded `sei.json`; `--strict` also fails on warnings.
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
 - `sk source add|remove|list` — manage sources; `sk config get|set rid` — read or write the platform override.
 - `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's lock.
@@ -54,7 +55,11 @@ Current slice:
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 
-Not implemented yet: hardlink/reflink deployment and the public index repository.
+Not implemented yet: hardlink/reflink deployment.
+
+## Official index
+
+The official static index is maintained in [Hosihikari/SeiIndex](https://github.com/Hosihikari/SeiIndex). `sk init` writes it as the `official` source; remove or replace that entry to use another index. Any static HTTPS index or local directory with the same layout works, and private sources use the same mechanism.
 
 ## Build and test
 

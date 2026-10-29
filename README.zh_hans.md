@@ -27,7 +27,7 @@ Linux 二进制要求 glibc（Ubuntu 22.04 及以上）；本版本不支持 mus
 校验下载的归档：
 
 ```bash
-gh attestation verify sk-0.1.5-linux-x64.tar.gz --repo Hosihikari/Seiko
+gh attestation verify sk-0.1.6-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
@@ -35,8 +35,8 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 当前切片：
 
-- `sk init`：生成 `seiko.conf` 模板。
-- `sk sync`：读 `seiko.conf`，从本地静态索引解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，部署到安装根，写 `seiko.lock.json`。
+- `sk init`：生成 `seiko.conf` 模板，默认写入官方索引源 `official`。
+- `sk sync`：读 `seiko.conf`，从静态索引（本地或 HTTPS）解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，部署到安装根，写 `seiko.lock.json`。
 - `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；`--locked` 在锁过期时报错；`sk install` 是别名。
 - `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]`：修改直接声明并同步。
 - `sk why <name>`：显示到某个 sei 的依赖链。
@@ -45,7 +45,8 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk rollback`：从内容寻址存储恢复上一代部署。
 - `sk search <term>`：在配置的索引里搜索 sei 名。
 - `sk info <name>`：显示版本、依赖与构件数。
-- 源可以是本地路径或 http(s) 索引；私有源用 `tokenEnv` 提供 bearer token。
+- 源可以是本地路径或 http(s) 索引；官方索引是 `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`；私有源用 `tokenEnv` 提供 bearer token。
+- `sk index verify [path] [--check-artifacts] [--strict]`：校验索引目录的 schema、名称、版本、构件 URL 与 SHA-256；`--check-artifacts` 还会下载构件并校验字节与根级 `sei.json`，`--strict` 把警告也视为失败。
 - 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。
 - `sk source add|remove|list`：管理源；`sk config get|set rid`：读写平台覆盖。
 - `sk cache status|verify|clean`：查看存储、校验构件，或清理所有已注册安装根的锁未引用的构件。
@@ -54,7 +55,11 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `-v/--verbose` 输出调试日志与展开堆栈；`-q/--quiet` 静默进度与日志输出。进度条只在交互式 stdout 显示。
 - `seiko-mcp`：stdio 上的 MCP server；默认只读，`--allow-mutations` 才开放 `sync` 与 `rollback`。
 
-尚未实现：硬链接/重排优化、公共索引仓。
+尚未实现：硬链接/重排优化。
+
+## 官方索引
+
+官方静态索引维护在 [Hosihikari/SeiIndex](https://github.com/Hosihikari/SeiIndex)。`sk init` 默认把它写成 `official` 源；删除或替换该条目即可改用其他索引。任何同布局的静态 HTTPS 索引或本地目录都可以作为源，私有源使用同一套机制。
 
 ## 构建与测试
 

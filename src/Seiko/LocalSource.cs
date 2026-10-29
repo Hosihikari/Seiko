@@ -32,6 +32,11 @@ public sealed class LocalSource : ISeiSource
 
     public SeiIndex? GetSei(string name)
     {
+        if (!SeiName.IsValid(name))
+        {
+            throw new SeikoException($"source '{Config.Id}': invalid sei name '{name}'", "source");
+        }
+
         var path = Path.Combine(BaseDirectory, "sei", name + ".json");
         if (!File.Exists(path))
         {

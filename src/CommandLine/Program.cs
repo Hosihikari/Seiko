@@ -360,6 +360,37 @@ cache.Add(cacheStatus);
 cache.Add(cacheVerify);
 cache.Add(cacheClean);
 
+var index = new Command("index", "Inspect static index repositories.");
+var indexVerify = new Command("verify", "Validate a static index directory.");
+var indexVerifyPath = new Argument<string?>("path")
+{
+    Description = "Index directory (defaults to the current directory).",
+    Arity = ArgumentArity.ZeroOrOne,
+};
+var indexVerifyArtifacts = new Option<bool>("--check-artifacts")
+{
+    Description = "Download artifacts and verify size, SHA-256, and sei.json.",
+};
+var indexVerifyStrict = new Option<bool>("--strict")
+{
+    Description = "Treat warnings as errors.",
+};
+var indexVerifyProxy = ProxyOption();
+indexVerify.Add(indexVerifyPath);
+indexVerify.Add(indexVerifyArtifacts);
+indexVerify.Add(indexVerifyStrict);
+indexVerify.Add(indexVerifyProxy);
+indexVerify.SetAction(parseResult => Run(
+    "index_verify",
+    IsJson(parseResult),
+    () => IndexVerifyCommand(
+        parseResult.GetValue(indexVerifyPath),
+        parseResult.GetValue(indexVerifyArtifacts),
+        parseResult.GetValue(indexVerifyStrict),
+        parseResult.GetValue(indexVerifyProxy),
+        IsJson(parseResult))));
+index.Add(indexVerify);
+
 var help = new Command("help", "Show help.");
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
@@ -378,6 +409,7 @@ rootCommand.Add(doctor);
 rootCommand.Add(source);
 rootCommand.Add(config);
 rootCommand.Add(cache);
+rootCommand.Add(index);
 rootCommand.Add(help);
 rootCommand.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
@@ -931,15 +963,7 @@ static int Init(string? rootOption, bool json)
         throw new SeikoException($"{path} already exists", "io");
     }
 
-    File.WriteAllText(path, """
-# Seiko install root
-# Add a source, then run `sk sync`.
-sources = []
-
-# rid = "win-x64"
-sei = []
-components = []
-""" + "\n");
+    File.WriteAllText(path, InitTemplate.Create() + "\n");
     if (json)
     {
         WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "init", new InitData(path)));
@@ -948,6 +972,39 @@ components = []
 
     Console.WriteLine($"created {path}");
     return 0;
+}
+
+static int IndexVerifyCommand(
+    string? pathOption,
+    bool checkArtifacts,
+    bool strict,
+    string? proxy,
+    bool json)
+{
+    var directory = Path.GetFullPath(pathOption ?? Directory.GetCurrentDirectory());
+    var result = IndexVerifier.Verify(directory, checkArtifacts, proxy, Log.Debug);
+    var failed = result.Errors > 0 || (strict && result.Warnings > 0);
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.IndexVerifyEnvelope,
+            new IndexVerifyEnvelope(1, "index_verify", result));
+        return failed ? 1 : 0;
+    }
+
+    foreach (var finding in result.Findings)
+    {
+        var path = finding.Path is null ? "" : $" ({finding.Path})";
+        Console.WriteLine($"{finding.Severity} {finding.Code}: {finding.Message}{path}");
+    }
+
+    var checkedText = result.CheckedArtifacts > 0
+        ? $", {result.CheckedArtifacts} artifact(s) checked"
+        : "";
+    Console.WriteLine(
+        $"{result.Sei} sei, {result.Versions} version(s), {result.Artifacts} artifact(s){checkedText}; "
+        + $"{result.Errors} error(s), {result.Warnings} warning(s)");
+    return failed ? 1 : 0;
 }
 
 static int RunDoctor(string? rootOption, string? store, bool clean, bool json)

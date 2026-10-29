@@ -56,6 +56,11 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
     private async Task<SeiIndex?> GetSeiAsync(string name)
     {
+        if (!SeiName.IsValid(name))
+        {
+            throw new SeikoException($"source '{Id}': invalid sei name '{name}'", "source");
+        }
+
         if (_cache.TryGetValue(name, out var cached))
         {
             return cached;
