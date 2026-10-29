@@ -111,7 +111,7 @@ jobs:
           -r ${{ matrix.rid }}
           -p:PublishAot=true
           -p:StripSymbols=true
-          -o "$RUNNER_TEMP/publish-${{ matrix.rid }}"
+          -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
       - name: Smoke test
         shell: bash
         run: |
