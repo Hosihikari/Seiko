@@ -120,7 +120,8 @@ public sealed class SeikoClient
                 item.Sei.Name,
                 item.Sei.Version,
                 item.Stored.Directory,
-                item.Stored.Manifest))
+                item.Stored.Manifest,
+                item.Stored.Digests))
             .ToList();
         var deployment = Deployer.Deploy(
             root,
@@ -503,6 +504,7 @@ public sealed class SeikoClient
 
         foreach (var directory in ArtifactDirectories(storePath))
         {
+            var artifact = Path.GetFileName(directory);
             var manifestPath = Path.Combine(directory, "sei.json");
             if (!File.Exists(manifestPath))
             {
@@ -524,9 +526,75 @@ public sealed class SeikoClient
             {
                 findings.Add(new CacheFinding("error", "cache-manifest", ex.Message, directory));
             }
+
+            VerifyArtifactFiles(storePath, artifact, directory, findings);
         }
 
         return findings;
+    }
+
+    private static void VerifyArtifactFiles(
+        string storePath,
+        string artifact,
+        string directory,
+        List<CacheFinding> findings)
+    {
+        var state = StoreDigests.TryRead(storePath, artifact);
+        if (state is null)
+        {
+            findings.Add(new CacheFinding(
+                "warning",
+                "cache-meta",
+                "artifact has no digest record; run `sk sync` to rebuild it",
+                directory));
+            return;
+        }
+
+        var listed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in state.Files ?? [])
+        {
+            listed.Add(file.Path);
+            var path = Path.Combine(directory, file.Path.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                findings.Add(new CacheFinding(
+                    "error",
+                    "cache-missing-file",
+                    $"artifact file {file.Path} is missing",
+                    directory));
+                continue;
+            }
+
+            try
+            {
+                var actual = Hashing.Sha256File(path);
+                if (!actual.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    findings.Add(new CacheFinding(
+                        "error",
+                        "cache-corrupt",
+                        $"artifact file {file.Path} has changed",
+                        path));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                findings.Add(new CacheFinding("error", "io", ex.Message, path));
+            }
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(directory, file).Replace('\\', '/');
+            if (!listed.Contains(relative))
+            {
+                findings.Add(new CacheFinding(
+                    "warning",
+                    "cache-unlisted",
+                    $"artifact file {relative} is not in the digest record",
+                    file));
+            }
+        }
     }
 
     public CacheCleanResult CacheClean(string root, string? storeRoot = null)
@@ -579,6 +647,7 @@ public sealed class SeikoClient
             {
                 bytes += DirectorySize(directory);
                 Directory.Delete(directory, recursive: true);
+                StoreDigests.TryDelete(storePath, name);
                 removed++;
             }
             catch (IOException ex)
@@ -591,6 +660,7 @@ public sealed class SeikoClient
             }
         }
 
+        StoreDigests.CleanOrphans(storePath);
         return new CacheCleanResult(removed, bytes);
     }
 
@@ -671,7 +741,12 @@ public sealed class SeikoClient
                 throw new SeikoException($"rollback: stored manifest mismatch for {locked.Name} {locked.Version}", "io");
             }
 
-            sei.Add(new DeployedSei(locked.Name, locked.Version, stored.Directory, stored.Manifest));
+            sei.Add(new DeployedSei(
+                locked.Name,
+                locked.Version,
+                stored.Directory,
+                stored.Manifest,
+                stored.Digests));
         }
 
         var deployment = Deployer.Deploy(

@@ -1,9 +1,13 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace Seiko;
 
-public sealed record StoredSei(string Directory, SeiManifest Manifest);
+public sealed record StoredSei(
+    string Directory,
+    SeiManifest Manifest,
+    IReadOnlyDictionary<string, StoreFileDigest> Digests);
 
 public sealed class Store
 {
@@ -31,7 +35,7 @@ public sealed class Store
             throw new SeikoException($"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}", "io");
         }
 
-        return new StoredSei(directory, manifest);
+        return new StoredSei(directory, manifest, LoadDigests(sha256, directory));
     }
 
     public StoredSei Ensure(ResolvedSei sei, DownloadSession session, CancellationToken cancellationToken)
@@ -99,13 +103,14 @@ public sealed class Store
                 var temp = Path.Combine(Root, actual + ".tmp-" + Guid.NewGuid().ToString("N"));
                 try
                 {
-                    Extract(artifactPath, temp);
+                    var digests = Extract(artifactPath, temp);
                     if (Directory.Exists(directory))
                     {
                         Directory.Delete(directory, recursive: true);
                     }
 
                     Directory.Move(temp, directory);
+                    StoreDigests.Write(Root, new StoreDigestsState { Artifact = actual, Files = digests });
                 }
                 catch
                 {
@@ -151,18 +156,48 @@ public sealed class Store
         }
     }
 
-    private static StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)
+    private StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)
     {
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json for {sei.Name} {sei.Version}", "io");
         Validate(sei, manifest);
-        return new StoredSei(directory, manifest);
+        return new StoredSei(
+            directory,
+            manifest,
+            LoadDigests(sei.Artifact.Source.Sha256.ToLowerInvariant(), directory));
     }
 
-    private static void Extract(string artifactPath, string directory)
+    private IReadOnlyDictionary<string, StoreFileDigest> LoadDigests(string artifact, string directory)
+    {
+        var state = StoreDigests.TryRead(Root, artifact);
+        if (state is null)
+        {
+            // Artifacts extracted by older versions have no digest record yet;
+            // adopt their current contents as the baseline.
+            state = StoreDigests.Compute(directory, artifact);
+            try
+            {
+                StoreDigests.Write(Root, state);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
+        var digests = new Dictionary<string, StoreFileDigest>(StringComparer.Ordinal);
+        foreach (var file in state.Files ?? [])
+        {
+            digests[file.Path] = file;
+        }
+
+        return digests;
+    }
+
+    private static List<StoreFileDigest> Extract(string artifactPath, string directory)
     {
         Directory.CreateDirectory(directory);
         using var archive = ZipFile.OpenRead(artifactPath);
+        var digests = new List<StoreFileDigest>();
         var seenManifest = false;
         var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;
 
@@ -196,13 +231,33 @@ public sealed class Store
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            entry.ExtractToFile(destination, overwrite: false);
+            using var input = entry.Open();
+            using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[81920];
+            long size = 0;
+            int read;
+            while ((read = input.Read(buffer)) > 0)
+            {
+                output.Write(buffer, 0, read);
+                hash.AppendData(buffer, 0, read);
+                size += read;
+            }
+
+            digests.Add(new StoreFileDigest
+            {
+                Path = name,
+                Sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
+                Size = size,
+            });
         }
 
         if (!seenManifest)
         {
             throw new SeikoException("sei has no root sei.json", "io");
         }
+
+        return digests;
     }
 
     private static void Validate(ResolvedSei sei, SeiManifest manifest)

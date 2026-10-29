@@ -3,7 +3,12 @@ using System.Text.Json;
 
 namespace Seiko;
 
-public sealed record DeployedSei(string Name, string Version, string Directory, SeiManifest Manifest);
+public sealed record DeployedSei(
+    string Name,
+    string Version,
+    string Directory,
+    SeiManifest Manifest,
+    IReadOnlyDictionary<string, StoreFileDigest> Digests);
 
 public sealed class DeployResult
 {
@@ -119,9 +124,9 @@ public static class Deployer
                     Directory.CreateDirectory(parent);
                 }
 
-                // Shortcut: copy deployment; hardlink/reflink is a later optimization.
+                EnsureStoreUnchanged(mutation.File);
                 var temp = destination + ".seiko-tmp-" + Guid.NewGuid().ToString("N");
-                File.Copy(mutation.File.SourcePath, temp, overwrite: true);
+                FileLink.Create(mutation.File.SourcePath, temp);
                 File.Move(temp, destination, overwrite: true);
                 ApplyMode(destination, mutation.RelativePath, mutation.File.Modes);
                 AppliedForTests.Value?.Invoke(++applied);
@@ -169,7 +174,7 @@ public static class Deployer
                     continue;
                 }
 
-                var hash = Hashing.Sha256File(file);
+                var hash = HashStoredFile(item, file, relative);
                 if (desired.TryGetValue(relative, out var existing))
                 {
                     if (!string.Equals(existing.Sha256, hash, StringComparison.Ordinal))
@@ -186,6 +191,7 @@ public static class Deployer
                 desired[relative] = new DesiredFile
                 {
                     SourcePath = file,
+                    StoreDirectory = item.Directory,
                     Sha256 = hash,
                     Owners = [item.Name],
                     Modes = item.Manifest.Modes,
@@ -277,9 +283,43 @@ public static class Deployer
 
     private sealed record Mutation(string RelativePath, DesiredFile? File);
 
+    private static string HashStoredFile(DeployedSei sei, string file, string relative)
+    {
+        if (sei.Digests.Count == 0)
+        {
+            return Hashing.Sha256File(file);
+        }
+
+        if (!sei.Digests.TryGetValue(relative, out var digest)
+            || new FileInfo(file).Length != digest.Size)
+        {
+            throw CorruptStore(sei, relative);
+        }
+
+        return digest.Sha256;
+    }
+
+    private static void EnsureStoreUnchanged(DesiredFile file)
+    {
+        var actual = Hashing.Sha256File(file.SourcePath);
+        if (!actual.Equals(file.Sha256, StringComparison.Ordinal))
+        {
+            throw CorruptStore(file.StoreDirectory, file.SourcePath);
+        }
+    }
+
+    private static SeikoException CorruptStore(DeployedSei sei, string relative)
+        => CorruptStore(sei.Directory, Path.Combine(sei.Directory, relative));
+
+    private static SeikoException CorruptStore(string storeDirectory, string path)
+        => new(
+            $"store artifact is corrupted ({path}); delete {storeDirectory} and run `sk sync` to download it again",
+            "checksum");
+
     private sealed class DesiredFile
     {
         public required string SourcePath { get; init; }
+        public required string StoreDirectory { get; init; }
         public required string Sha256 { get; init; }
         public required List<string> Owners { get; init; }
         public Dictionary<string, string>? Modes { get; init; }

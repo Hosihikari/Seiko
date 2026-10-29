@@ -14,6 +14,7 @@ namespace Seiko;
 [JsonSerializable(typeof(PartialArtifactState))]
 [JsonSerializable(typeof(DeploymentJournal))]
 [JsonSerializable(typeof(RootRegistryState))]
+[JsonSerializable(typeof(StoreDigestsState))]
 public partial class SeikoJsonContext : JsonSerializerContext
 {
 }
