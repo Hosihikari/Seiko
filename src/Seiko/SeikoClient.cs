@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using NuGet.Versioning;
@@ -20,12 +21,25 @@ public sealed class RollbackResult
 
 public sealed class SeikoClient
 {
-    public SyncResult Sync(string root, string? storeRoot = null, bool allowPrerelease = false, SyncMode mode = SyncMode.Normal)
+    public SyncResult Sync(
+        string root,
+        string? storeRoot = null,
+        bool allowPrerelease = false,
+        SyncMode mode = SyncMode.Normal,
+        int jobs = DownloadSession.DefaultJobs,
+        string? proxy = null,
+        CancellationToken cancellationToken = default)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
+        using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var session = new DownloadSession(jobs, downloadCts.Token);
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-        var sources = LoadSources(config, root);
+        var sources = LoadSources(config, root, proxy, session);
+        using var sourceScope = new SourceScope(sources);
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
@@ -66,9 +80,7 @@ public sealed class SeikoClient
         }
 
         var store = new Store(storeRoot ?? DefaultStorePath());
-        var stored = resolved
-            .Select(sei => (Sei: sei, Stored: store.Ensure(sei)))
-            .ToList();
+        var stored = DownloadAll(store, resolved, session, downloadCts);
         var deployedSei = stored
             .Select(item => new DeployedSei(
                 item.Sei.Name,
@@ -94,9 +106,63 @@ public sealed class SeikoClient
         };
     }
 
+    private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(
+        Store store,
+        IReadOnlyList<ResolvedSei> resolved,
+        DownloadSession session,
+        CancellationTokenSource downloadCts)
+    {
+        Exception? firstError = null;
+        var tasks = resolved
+            .Select(async sei =>
+            {
+                try
+                {
+                    return (Sei: sei, Stored: await store.EnsureAsync(sei, session, downloadCts.Token)
+                        .ConfigureAwait(false));
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.CompareExchange(ref firstError, ex, null);
+                    downloadCts.Cancel();
+                    throw;
+                }
+            })
+            .ToArray();
+
+        try
+        {
+            Task.WhenAll(tasks).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            downloadCts.Cancel();
+            try
+            {
+                Task.WhenAll(tasks).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Preserve the first failure below.
+            }
+
+            if (firstError is not null)
+            {
+                ExceptionDispatchInfo.Capture(firstError).Throw();
+            }
+
+            throw;
+        }
+
+        return tasks.Select(task => task.Result).ToList();
+    }
+
     public RollbackResult Rollback(string root, string? storeRoot = null, int? toGeneration = null)
     {
         root = Path.GetFullPath(root);
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         var stateDirectory = Path.Combine(root, ".seiko");
         var statePath = Path.Combine(stateDirectory, "state.json");
         if (!File.Exists(statePath))
@@ -157,11 +223,13 @@ public sealed class SeikoClient
         };
     }
 
-    public IReadOnlyList<SeiSummary> Search(string root, string term)
+    public IReadOnlyList<SeiSummary> Search(string root, string term, string? proxy = null)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
-        var sources = LoadSources(config, root);
+        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        var sources = LoadSources(config, root, proxy, session);
+        using var sourceScope = new SourceScope(sources);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var results = new List<SeiSummary>();
 
@@ -186,11 +254,13 @@ public sealed class SeikoClient
         return results.OrderBy(result => result.Name, StringComparer.Ordinal).ToList();
     }
 
-    public SeiInfo Info(string root, string name)
+    public SeiInfo Info(string root, string name, string? proxy = null)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
-        var sources = LoadSources(config, root);
+        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        var sources = LoadSources(config, root, proxy, session);
+        using var sourceScope = new SourceScope(sources);
 
         foreach (var source in sources)
         {
@@ -234,15 +304,23 @@ public sealed class SeikoClient
         return (stable ?? candidates.OrderByDescending(item => item.Version).FirstOrDefault())?.Entry;
     }
 
-    private static List<ISeiSource> LoadSources(SeikoConfig config, string root)
-        => config.Sources.Select(source => CreateSource(source, root)).ToList();
+    private static List<ISeiSource> LoadSources(
+        SeikoConfig config,
+        string root,
+        string? proxy,
+        DownloadSession session)
+        => config.Sources.Select(source => CreateSource(source, root, proxy, session)).ToList();
 
-    private static ISeiSource CreateSource(SourceConfig source, string root)
+    private static ISeiSource CreateSource(
+        SourceConfig source,
+        string root,
+        string? proxy,
+        DownloadSession session)
     {
         if (source.Index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || source.Index.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            return new HttpSource(source);
+            return new HttpSource(source, proxy, session);
         }
 
         return new LocalSource(source, root);

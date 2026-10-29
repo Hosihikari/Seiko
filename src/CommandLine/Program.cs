@@ -14,17 +14,23 @@ var syncStore = StoreOption();
 var syncPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
 var syncFrozen = new Option<bool>("--frozen") { Description = "Replay seiko.lock.json without resolving." };
 var syncLocked = new Option<bool>("--locked") { Description = "Fail if the lock is out of date." };
+var syncJobs = new Option<int?>("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
+var syncProxy = new Option<string?>("--proxy") { Description = "HTTP proxy URL; defaults to the system proxy." };
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
 sync.Add(syncFrozen);
 sync.Add(syncLocked);
+sync.Add(syncJobs);
+sync.Add(syncProxy);
 sync.SetAction(parseResult => Run(() => Sync(
     parseResult.GetValue(syncRoot),
     parseResult.GetValue(syncStore),
     parseResult.GetValue(syncPre),
     parseResult.GetValue(syncFrozen),
-    parseResult.GetValue(syncLocked))));
+    parseResult.GetValue(syncLocked),
+    parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
+    parseResult.GetValue(syncProxy))));
 
 var list = new Command("list", "List installed sei from the lock.");
 var listRoot = RootOption();
@@ -45,21 +51,27 @@ rollback.SetAction(parseResult => Run(() => Rollback(
 
 var search = new Command("search", "Search sei names in the configured indexes.");
 var searchRoot = RootOption();
+var searchProxy = ProxyOption();
 var searchTerm = new Argument<string>("term") { Description = "Name fragment to search for." };
 search.Add(searchTerm);
 search.Add(searchRoot);
+search.Add(searchProxy);
 search.SetAction(parseResult => Run(() => Search(
     parseResult.GetValue(searchRoot),
-    parseResult.GetValue(searchTerm)!)));
+    parseResult.GetValue(searchTerm)!,
+    parseResult.GetValue(searchProxy))));
 
 var info = new Command("info", "Show versions, dependencies, and artifact counts.");
 var infoRoot = RootOption();
+var infoProxy = ProxyOption();
 var infoName = new Argument<string>("name") { Description = "Sei name." };
 info.Add(infoName);
 info.Add(infoRoot);
+info.Add(infoProxy);
 info.SetAction(parseResult => Run(() => Info(
     parseResult.GetValue(infoRoot),
-    parseResult.GetValue(infoName)!)));
+    parseResult.GetValue(infoName)!,
+    parseResult.GetValue(infoProxy))));
 
 var help = new Command("help", "Show help.");
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
@@ -95,7 +107,7 @@ static int Run(Func<int> action)
     catch (SeikoException ex)
     {
         Console.Error.WriteLine($"sk: {ex.Message}");
-        return 1;
+        return ex.Code == "usage" ? 2 : 1;
     }
 }
 
@@ -105,7 +117,17 @@ static Option<string?> RootOption()
 static Option<string?> StoreOption()
     => new("--store") { Description = "Content-addressed store directory." };
 
-static int Sync(string? rootOption, string? store, bool pre, bool frozen, bool locked)
+static Option<string?> ProxyOption()
+    => new("--proxy") { Description = "HTTP proxy URL; defaults to the system proxy." };
+
+static int Sync(
+    string? rootOption,
+    string? store,
+    bool pre,
+    bool frozen,
+    bool locked,
+    int jobs,
+    string? proxy)
 {
     if (frozen && locked)
     {
@@ -114,7 +136,7 @@ static int Sync(string? rootOption, string? store, bool pre, bool frozen, bool l
 
     var root = rootOption ?? FindRoot();
     var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
-    var result = new SeikoClient().Sync(root, store, pre, mode);
+    var result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy);
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
     foreach (var sei in result.Lock.Sei)
     {
@@ -147,10 +169,10 @@ static int List(string? rootOption)
     return 0;
 }
 
-static int Search(string? rootOption, string term)
+static int Search(string? rootOption, string term, string? proxy)
 {
     var root = rootOption ?? FindRoot();
-    var results = new SeikoClient().Search(root, term);
+    var results = new SeikoClient().Search(root, term, proxy);
     Console.WriteLine("NAME\tVERSION\tSOURCE");
     foreach (var result in results)
     {
@@ -160,10 +182,10 @@ static int Search(string? rootOption, string term)
     return 0;
 }
 
-static int Info(string? rootOption, string name)
+static int Info(string? rootOption, string name, string? proxy)
 {
     var root = rootOption ?? FindRoot();
-    var info = new SeikoClient().Info(root, name);
+    var info = new SeikoClient().Info(root, name, proxy);
     Console.WriteLine($"{info.Name} ({info.Source})");
     foreach (var version in info.Versions)
     {

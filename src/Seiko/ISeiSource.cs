@@ -6,5 +6,9 @@ public interface ISeiSource
     IndexRoot Index { get; }
     SeiIndex? GetSei(string name);
     string ResolveArtifact(ArtifactLocation source);
-    void DownloadArtifact(ArtifactLocation source, string destination);
+    Task DownloadAsync(
+        ArtifactLocation source,
+        string directory,
+        DownloadSession session,
+        CancellationToken cancellationToken);
 }

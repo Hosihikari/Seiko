@@ -56,8 +56,63 @@ public sealed class LocalSource : ISeiSource
 
     public string ResolveArtifact(ArtifactLocation source) => ResolveArtifactPath(source);
 
-    public void DownloadArtifact(ArtifactLocation source, string destination)
-        => File.Copy(ResolveArtifactPath(source), destination, overwrite: true);
+    public async Task DownloadAsync(
+        ArtifactLocation source,
+        string directory,
+        DownloadSession session,
+        CancellationToken cancellationToken)
+    {
+        var sourcePath = ResolveArtifactPath(source);
+        var destination = Path.Combine(directory, "artifact");
+        var statePath = Path.Combine(directory, "meta.json");
+        var sourceInfo = new FileInfo(sourcePath);
+        var size = sourceInfo.Length;
+        var lastModified = sourceInfo.LastWriteTimeUtc.ToString("R");
+        var state = PartialArtifactStateFile.Read(statePath);
+        var reusable = state is not null
+            && string.Equals(state.Url, sourcePath, StringComparison.Ordinal)
+            && state.Size == size
+            && string.Equals(state.LastModified, lastModified, StringComparison.Ordinal);
+        if (!reusable)
+        {
+            PartialArtifactStateFile.ClearDirectory(directory);
+            state = null;
+        }
+
+        state ??= new PartialArtifactState
+        {
+            Url = sourcePath,
+            Size = size,
+            LastModified = lastModified,
+            SegmentCount = 1,
+            SegmentSize = size,
+        };
+        PartialArtifactStateFile.Write(statePath, state);
+        var have = File.Exists(destination) ? new FileInfo(destination).Length : 0;
+        if (have > size)
+        {
+            have = 0;
+        }
+
+        await using var input = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+        input.Position = have;
+        await using var output = new FileStream(
+            destination,
+            FileMode.OpenOrCreate,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81920,
+            useAsync: true);
+        output.SetLength(have);
+        output.Position = have;
+        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+    }
 
     public string ResolveArtifactPath(ArtifactLocation source)
     {

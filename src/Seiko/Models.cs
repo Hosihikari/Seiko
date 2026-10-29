@@ -118,6 +118,17 @@ public sealed class DeployedFile
     public string Sha256 { get; set; } = "";
 }
 
+public sealed class PartialArtifactState
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string Url { get; set; } = "";
+    public long Size { get; set; }
+    public string? ETag { get; set; }
+    public string? LastModified { get; set; }
+    public int SegmentCount { get; set; } = 1;
+    public long SegmentSize { get; set; }
+}
+
 public sealed record SeiSummary(string Name, string Version, string Source);
 
 public sealed record SeiVersionInfo(

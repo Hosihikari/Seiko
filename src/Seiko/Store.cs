@@ -35,7 +35,13 @@ public sealed class Store
         return new StoredSei(directory, manifest);
     }
 
-    public StoredSei Ensure(ResolvedSei sei)
+    public StoredSei Ensure(ResolvedSei sei, DownloadSession session, CancellationToken cancellationToken)
+        => EnsureAsync(sei, session, cancellationToken).GetAwaiter().GetResult();
+
+    public async Task<StoredSei> EnsureAsync(
+        ResolvedSei sei,
+        DownloadSession session,
+        CancellationToken cancellationToken)
     {
         var expectedSha = sei.Artifact.Source.Sha256.ToLowerInvariant();
         var directory = Path.Combine(Root, expectedSha);
@@ -45,56 +51,97 @@ public sealed class Store
             return LoadStored(sei, directory, manifestPath);
         }
 
-        var tempArtifact = Path.Combine(
-            Path.GetTempPath(),
-            "seiko-artifact-" + Guid.NewGuid().ToString("N") + ".zip");
+        var partialRoot = Path.Combine(Root, ".partial");
+        Directory.CreateDirectory(partialRoot);
+        var partialDirectory = Path.Combine(partialRoot, expectedSha);
+        using var artifactLock = ProcessLock.Acquire(
+            Path.Combine(partialRoot, expectedSha + ".lock"),
+            $"artifact {expectedSha}");
+
+        if (File.Exists(manifestPath))
+        {
+            return LoadStored(sei, directory, manifestPath);
+        }
+
+        Directory.CreateDirectory(partialDirectory);
         try
         {
-            sei.Source.DownloadArtifact(sei.Artifact.Source, tempArtifact);
-            var length = new FileInfo(tempArtifact).Length;
-            if (sei.Artifact.Source.Size > 0 && length != sei.Artifact.Source.Size)
-            {
-                throw new SeikoException(
-                    $"size mismatch for {sei.Name} {sei.Version}: expected {sei.Artifact.Source.Size}, got {length}");
-            }
+            await sei.Source.DownloadAsync(sei.Artifact.Source, partialDirectory, session, cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var actual = Hashing.Sha256File(tempArtifact);
-            if (!actual.Equals(expectedSha, StringComparison.Ordinal))
-            {
-                throw new SeikoException(
-                    $"checksum mismatch for {sei.Name} {sei.Version}: expected {expectedSha}, got {actual}");
-            }
-
-            var temp = Path.Combine(Root, actual + ".tmp-" + Guid.NewGuid().ToString("N"));
+            var artifactPath = Path.Combine(partialDirectory, "artifact");
+            await session.ExtractSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                Extract(tempArtifact, temp);
-                if (Directory.Exists(directory))
+                var length = new FileInfo(artifactPath).Length;
+                if (sei.Artifact.Source.Size > 0 && length != sei.Artifact.Source.Size)
                 {
-                    Directory.Delete(directory, recursive: true);
+                    throw new SeikoException(
+                        $"size mismatch for {sei.Name} {sei.Version}: expected {sei.Artifact.Source.Size}, got {length}",
+                        "checksum");
                 }
 
-                Directory.Move(temp, directory);
+                var actual = Hashing.Sha256File(artifactPath);
+                if (!actual.Equals(expectedSha, StringComparison.Ordinal))
+                {
+                    throw new SeikoException(
+                        $"checksum mismatch for {sei.Name} {sei.Version}: expected {expectedSha}, got {actual}",
+                        "checksum");
+                }
+
+                var temp = Path.Combine(Root, actual + ".tmp-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Extract(artifactPath, temp);
+                    if (Directory.Exists(directory))
+                    {
+                        Directory.Delete(directory, recursive: true);
+                    }
+
+                    Directory.Move(temp, directory);
+                }
+                catch
+                {
+                    if (Directory.Exists(temp))
+                    {
+                        Directory.Delete(temp, recursive: true);
+                    }
+
+                    throw;
+                }
             }
-            catch
+            finally
             {
-                if (Directory.Exists(temp))
-                {
-                    Directory.Delete(temp, recursive: true);
-                }
-
-                throw;
+                session.ExtractSlots.Release();
             }
+
+            TryDeleteDirectory(partialDirectory);
+            return LoadStored(sei, directory, manifestPath);
         }
-        finally
+        catch (SeikoException ex) when (ex.Code == "checksum")
         {
-            if (File.Exists(tempArtifact))
+            TryDeleteDirectory(partialDirectory);
+            throw;
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
             {
-                File.Delete(tempArtifact);
+                Directory.Delete(path, recursive: true);
             }
         }
-
-        return LoadStored(sei, directory, manifestPath);
+        catch (IOException)
+        {
+            // A later doctor/clean pass can remove leftovers.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)

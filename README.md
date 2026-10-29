@@ -43,6 +43,7 @@ Current slice:
 - `sk search <term>` — searches sei names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
 - Sources may be a local path or an http(s) index; `tokenEnv` supplies a bearer token for private sources.
+- Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 
 Not implemented yet: hardlink/reflink deployment and the public index repository.
