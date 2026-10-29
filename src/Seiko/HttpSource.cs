@@ -46,10 +46,6 @@ public sealed class HttpSource : ISeiSource, IDisposable
         _client = new HttpClient(handler)
         {
             Timeout = Timeout.InfiniteTimeSpan,
-            // HTTP/2 through CONNECT proxies is not universally supported;
-            // index and artifact traffic is small enough that HTTP/1.1 wins.
-            DefaultRequestVersion = HttpVersion.Version11,
-            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
         };
         _baseUri = new Uri(indexUri, ".");
         _token = ResolveToken(config);
