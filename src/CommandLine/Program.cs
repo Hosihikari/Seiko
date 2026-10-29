@@ -1,32 +1,120 @@
+using System.CommandLine;
 using Seiko;
 
-var command = args.Length == 0 ? "help" : args[0];
-var options = CliOptions.Parse(args.Skip(1).ToArray());
+var rootCommand = new RootCommand("sk - Seiko general-purpose package manager (sk is short for Seiko)");
 
-try
+var init = new Command("init", "Write a seiko.conf template.");
+var initRoot = RootOption();
+init.Add(initRoot);
+init.SetAction(parseResult => Run(() => Init(parseResult.GetValue(initRoot))));
+
+var sync = new Command("sync", "Resolve sei and deploy files into the install root.");
+var syncRoot = RootOption();
+var syncStore = StoreOption();
+var syncPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var syncFrozen = new Option<bool>("--frozen") { Description = "Replay seiko.lock.json without resolving." };
+var syncLocked = new Option<bool>("--locked") { Description = "Fail if the lock is out of date." };
+sync.Add(syncRoot);
+sync.Add(syncStore);
+sync.Add(syncPre);
+sync.Add(syncFrozen);
+sync.Add(syncLocked);
+sync.SetAction(parseResult => Run(() => Sync(
+    parseResult.GetValue(syncRoot),
+    parseResult.GetValue(syncStore),
+    parseResult.GetValue(syncPre),
+    parseResult.GetValue(syncFrozen),
+    parseResult.GetValue(syncLocked))));
+
+var list = new Command("list", "List installed sei from the lock.");
+var listRoot = RootOption();
+list.Add(listRoot);
+list.SetAction(parseResult => Run(() => List(parseResult.GetValue(listRoot))));
+
+var rollback = new Command("rollback", "Restore a previous generation.");
+var rollbackRoot = RootOption();
+var rollbackStore = StoreOption();
+var rollbackTo = new Option<int?>("--to") { Description = "Generation number to roll back to." };
+rollback.Add(rollbackRoot);
+rollback.Add(rollbackStore);
+rollback.Add(rollbackTo);
+rollback.SetAction(parseResult => Run(() => Rollback(
+    parseResult.GetValue(rollbackRoot),
+    parseResult.GetValue(rollbackStore),
+    parseResult.GetValue(rollbackTo))));
+
+var search = new Command("search", "Search sei names in the configured indexes.");
+var searchRoot = RootOption();
+var searchTerm = new Argument<string>("term") { Description = "Name fragment to search for." };
+search.Add(searchTerm);
+search.Add(searchRoot);
+search.SetAction(parseResult => Run(() => Search(
+    parseResult.GetValue(searchRoot),
+    parseResult.GetValue(searchTerm)!)));
+
+var info = new Command("info", "Show versions, dependencies, and artifact counts.");
+var infoRoot = RootOption();
+var infoName = new Argument<string>("name") { Description = "Sei name." };
+info.Add(infoName);
+info.Add(infoRoot);
+info.SetAction(parseResult => Run(() => Info(
+    parseResult.GetValue(infoRoot),
+    parseResult.GetValue(infoName)!)));
+
+var help = new Command("help", "Show help.");
+help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
+
+rootCommand.Add(init);
+rootCommand.Add(sync);
+rootCommand.Add(list);
+rootCommand.Add(rollback);
+rootCommand.Add(search);
+rootCommand.Add(info);
+rootCommand.Add(help);
+rootCommand.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
+
+var parseResult = rootCommand.Parse(args);
+if (parseResult.Errors.Count > 0)
 {
-    return command switch
+    foreach (var error in parseResult.Errors)
     {
-        "sync" => Sync(options),
-        "list" => List(options),
-        "rollback" => Rollback(options),
-        "search" => Search(options),
-        "info" => Info(options),
-        "init" => Init(options),
-        "help" or "--help" or "-h" => Help(),
-        _ => Unknown(command),
-    };
-}
-catch (SeikoException ex)
-{
-    Console.Error.WriteLine($"sk: {ex.Message}");
-    return 1;
+        Console.Error.WriteLine($"sk: {error.Message}");
+    }
+
+    return 2;
 }
 
-static int Sync(CliOptions options)
+return parseResult.Invoke();
+
+static int Run(Func<int> action)
 {
-    var root = options.Root ?? FindRoot();
-    var result = new SeikoClient().Sync(root, options.Store, options.Pre, options.Mode);
+    try
+    {
+        return action();
+    }
+    catch (SeikoException ex)
+    {
+        Console.Error.WriteLine($"sk: {ex.Message}");
+        return 1;
+    }
+}
+
+static Option<string?> RootOption()
+    => new("--root") { Description = "Install root (defaults to the nearest seiko.conf)." };
+
+static Option<string?> StoreOption()
+    => new("--store") { Description = "Content-addressed store directory." };
+
+static int Sync(string? rootOption, string? store, bool pre, bool frozen, bool locked)
+{
+    if (frozen && locked)
+    {
+        throw new SeikoException("--frozen and --locked are mutually exclusive");
+    }
+
+    var root = rootOption ?? FindRoot();
+    var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
+    var result = new SeikoClient().Sync(root, store, pre, mode);
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
     foreach (var sei in result.Lock.Sei)
     {
@@ -36,9 +124,9 @@ static int Sync(CliOptions options)
     return 0;
 }
 
-static int List(CliOptions options)
+static int List(string? rootOption)
 {
-    var root = options.Root ?? FindRoot();
+    var root = rootOption ?? FindRoot();
     var lockFile = new SeikoClient().ReadLock(root);
     if (lockFile is null)
     {
@@ -59,16 +147,10 @@ static int List(CliOptions options)
     return 0;
 }
 
-static int Search(CliOptions options)
+static int Search(string? rootOption, string term)
 {
-    if (options.Arguments.Count != 1)
-    {
-        Console.Error.WriteLine("sk: search requires a term");
-        return 2;
-    }
-
-    var root = options.Root ?? FindRoot();
-    var results = new SeikoClient().Search(root, options.Arguments[0]);
+    var root = rootOption ?? FindRoot();
+    var results = new SeikoClient().Search(root, term);
     Console.WriteLine("NAME\tVERSION\tSOURCE");
     foreach (var result in results)
     {
@@ -78,16 +160,10 @@ static int Search(CliOptions options)
     return 0;
 }
 
-static int Info(CliOptions options)
+static int Info(string? rootOption, string name)
 {
-    if (options.Arguments.Count != 1)
-    {
-        Console.Error.WriteLine("sk: info requires a sei name");
-        return 2;
-    }
-
-    var root = options.Root ?? FindRoot();
-    var info = new SeikoClient().Info(root, options.Arguments[0]);
+    var root = rootOption ?? FindRoot();
+    var info = new SeikoClient().Info(root, name);
     Console.WriteLine($"{info.Name} ({info.Source})");
     foreach (var version in info.Versions)
     {
@@ -103,17 +179,22 @@ static int Info(CliOptions options)
     return 0;
 }
 
-static int Rollback(CliOptions options)
+static int Rollback(string? rootOption, string? store, int? toGeneration)
 {
-    var root = options.Root ?? FindRoot();
-    var result = new SeikoClient().Rollback(root, options.Store, options.ToGeneration);
+    if (toGeneration is < 1)
+    {
+        throw new SeikoException("--to requires a positive generation number");
+    }
+
+    var root = rootOption ?? FindRoot();
+    var result = new SeikoClient().Rollback(root, store, toGeneration);
     Console.WriteLine($"rolled back to generation {result.Generation}: {result.SeiInstalled} sei, {result.FilesDeployed} file(s)");
     return 0;
 }
 
-static int Init(CliOptions options)
+static int Init(string? rootOption)
 {
-    var root = Path.GetFullPath(options.Root ?? Directory.GetCurrentDirectory());
+    var root = Path.GetFullPath(rootOption ?? Directory.GetCurrentDirectory());
     Directory.CreateDirectory(root);
     var path = Path.Combine(root, "seiko.conf");
     if (File.Exists(path))
@@ -135,31 +216,6 @@ components = []
     return 0;
 }
 
-static int Help()
-{
-    Console.WriteLine("""
-sk - Seiko install-side package manager (sk is short for Seiko)
-
-usage:
-  sk init [--root <dir>]
-  sk sync [--root <dir>] [--store <dir>] [--pre] [--frozen|--locked]
-  sk list [--root <dir>]
-  sk rollback [--root <dir>] [--store <dir>] [--to <n>]
-  sk search <term> [--root <dir>]
-  sk info <name> [--root <dir>]
-
-Seiko reads <root>/seiko.conf, resolves sei from the configured static index,
-verifies artifacts, deploys files into <root>, and writes seiko.lock.json.
-""");
-    return 0;
-}
-
-static int Unknown(string command)
-{
-    Console.Error.WriteLine($"sk: unknown command '{command}' (try `sk help`)");
-    return 2;
-}
-
 static string FindRoot()
 {
     var current = new DirectoryInfo(Directory.GetCurrentDirectory());
@@ -174,79 +230,4 @@ static string FindRoot()
     }
 
     return Directory.GetCurrentDirectory();
-}
-
-internal sealed class CliOptions
-{
-    public string? Root { get; private set; }
-    public string? Store { get; private set; }
-    public bool Pre { get; private set; }
-    public SyncMode Mode { get; private set; } = SyncMode.Normal;
-    public int? ToGeneration { get; private set; }
-    public List<string> Arguments { get; } = [];
-
-    public static CliOptions Parse(string[] args)
-    {
-        var options = new CliOptions();
-        for (var i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--root":
-                    options.Root = Next(args, ref i, "--root");
-                    break;
-                case "--store":
-                    options.Store = Next(args, ref i, "--store");
-                    break;
-                case "--pre":
-                    options.Pre = true;
-                    break;
-                case "--frozen":
-                    if (options.Mode == SyncMode.Locked)
-                    {
-                        throw new SeikoException("--frozen and --locked are mutually exclusive");
-                    }
-
-                    options.Mode = SyncMode.Frozen;
-                    break;
-                case "--locked":
-                    if (options.Mode == SyncMode.Frozen)
-                    {
-                        throw new SeikoException("--frozen and --locked are mutually exclusive");
-                    }
-
-                    options.Mode = SyncMode.Locked;
-                    break;
-                case "--to":
-                    var value = Next(args, ref i, "--to");
-                    if (!int.TryParse(value, out var generation) || generation < 1)
-                    {
-                        throw new SeikoException("--to requires a positive generation number");
-                    }
-
-                    options.ToGeneration = generation;
-                    break;
-                default:
-                    if (args[i].StartsWith("--", StringComparison.Ordinal))
-                    {
-                        throw new SeikoException($"unknown option '{args[i]}'");
-                    }
-
-                    options.Arguments.Add(args[i]);
-                    break;
-            }
-        }
-
-        return options;
-    }
-
-    private static string Next(string[] args, ref int index, string option)
-    {
-        if (index + 1 >= args.Length)
-        {
-            throw new SeikoException($"{option} requires a value");
-        }
-
-        return args[++index];
-    }
 }
