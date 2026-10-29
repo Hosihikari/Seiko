@@ -4,9 +4,7 @@
 
 [![CI](https://github.com/Hosihikari/Seiko/actions/workflows/ci.yml/badge.svg)](https://github.com/Hosihikari/Seiko/actions/workflows/ci.yml)
 
-Seiko 是星光的安装侧工具，与星光框架、星光投影并列。**Seiko** 是产品名，`sei`（星）是单位名——一个包就是一个 sei，英文单复数都写作 `sei`。
-
-Seiko 的安装侧包管理器实现。CLI 命令是 `sk`，即 Seiko 的缩写。
+Seiko 是星光旗下的通用包管理器：任何项目都可以用它分发 sei。**Seiko** 是产品名，`sei`（星）是单位名——一个包就是一个 sei，英文单复数都写作 `sei`。CLI 命令是 `sk`，即 Seiko 的缩写。
 
 当前切片：
 

@@ -8,7 +8,7 @@ public sealed class HttpSourceTests
     public void Sync_DownloadsFromHttpSource()
     {
         using var fixture = new Fixture();
-        fixture.AddPackage("hello", new VersionFixture
+        fixture.AddSei("hello", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
@@ -26,7 +26,7 @@ public sealed class HttpSourceTests
     public void Search_WorksWithHttpSource()
     {
         using var fixture = new Fixture();
-        fixture.AddPackage("hello", new VersionFixture
+        fixture.AddSei("hello", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture()],

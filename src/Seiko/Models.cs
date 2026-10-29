@@ -21,7 +21,7 @@ public sealed class IndexRoot
 {
     public int SchemaVersion { get; set; } = 1;
     public string? GeneratedBy { get; set; }
-    public List<string>? Packages { get; set; }
+    public List<string>? Sei { get; set; }
 }
 
 public sealed class SeiIndex
@@ -58,7 +58,7 @@ public sealed class SeikoConfig
 {
     public List<SourceConfig> Sources { get; set; } = [];
     public string? Rid { get; set; }
-    public List<SeiSpec> Packages { get; set; } = [];
+    public List<SeiSpec> Sei { get; set; } = [];
     public List<SeiSpec> Components { get; set; } = [];
 }
 
@@ -81,7 +81,7 @@ public sealed class SeikoLock
     public int SchemaVersion { get; set; } = 1;
     public PlatformInfo Target { get; set; } = new();
     public List<string> Sources { get; set; } = [];
-    public List<LockedSei> Packages { get; set; } = [];
+    public List<LockedSei> Sei { get; set; } = [];
 }
 
 public sealed class PlatformInfo

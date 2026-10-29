@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Seiko.McpServer;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -8,7 +9,7 @@ public sealed class McpTests
     [Fact]
     public void ToolsList_DefaultIsReadOnly()
     {
-        var server = new Seiko.McpServer.McpServer(Path.GetTempPath(), allowMutations: false);
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: false);
         var response = server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!;
         var names = ToolNames(response);
         Assert.Contains("list", names);
@@ -19,7 +20,7 @@ public sealed class McpTests
     [Fact]
     public void ToolsList_WithMutationsIncludesSync()
     {
-        var server = new Seiko.McpServer.McpServer(Path.GetTempPath(), allowMutations: true);
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);
         var names = ToolNames(server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!);
         Assert.Contains("sync", names);
         Assert.Contains("rollback", names);
@@ -28,7 +29,7 @@ public sealed class McpTests
     [Fact]
     public void MutationTool_RequiresExplicitRoot()
     {
-        var server = new Seiko.McpServer.McpServer(Path.GetTempPath(), allowMutations: true);
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);
         var response = server.Handle(
             """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sync","arguments":{}}}""")!;
         var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();
@@ -40,7 +41,7 @@ public sealed class McpTests
     [Fact]
     public void Initialize_ReturnsToolsCapability()
     {
-        var server = new Seiko.McpServer.McpServer(Path.GetTempPath(), allowMutations: false);
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: false);
         var response = server.Handle(
             """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")!;
         var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();

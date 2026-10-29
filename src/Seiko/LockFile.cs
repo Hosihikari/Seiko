@@ -35,13 +35,13 @@ public static class LockFile
     public static SeikoLock FromResolution(
         string rid,
         IReadOnlyList<ISeiSource> sources,
-        IReadOnlyList<ResolvedSei> packages)
+        IReadOnlyList<ResolvedSei> sei)
     {
         return new SeikoLock
         {
             Target = new PlatformInfo { Rid = rid },
             Sources = sources.Select(s => s.Id).ToList(),
-            Packages = packages
+            Sei = sei
                 .OrderBy(p => p.Name, StringComparer.Ordinal)
                 .Select(p => new LockedSei
                 {

@@ -35,19 +35,19 @@ public sealed class Resolver
         foreach (var spec in specs)
         {
             directNames.Add(spec.Name);
-            ResolvePackage(spec, new HashSet<string>(StringComparer.Ordinal));
+            ResolveSei(spec, new HashSet<string>(StringComparer.Ordinal));
         }
 
-        foreach (var package in _resolved.Values)
+        foreach (var sei in _resolved.Values)
         {
-            package.Direct = directNames.Contains(package.Name);
+            sei.Direct = directNames.Contains(sei.Name);
         }
 
         SelectArtifacts();
         return _resolved.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
     }
 
-    private void ResolvePackage(SeiSpec spec, HashSet<string> path)
+    private void ResolveSei(SeiSpec spec, HashSet<string> path)
     {
         if (path.Contains(spec.Name))
         {
@@ -124,7 +124,7 @@ public sealed class Resolver
         {
             foreach (var dependency in chosen.Entry.Dependencies)
             {
-                ResolvePackage(new SeiSpec { Name = dependency.Name, Version = dependency.Version }, path);
+                ResolveSei(new SeiSpec { Name = dependency.Name, Version = dependency.Version }, path);
             }
         }
         finally
@@ -136,10 +136,10 @@ public sealed class Resolver
     private void SelectArtifacts()
     {
         var graphNames = _resolved.Keys.ToHashSet(StringComparer.Ordinal);
-        foreach (var package in _resolved.Values)
+        foreach (var sei in _resolved.Values)
         {
             var scored = new List<(ArtifactEntry Artifact, int Score)>();
-            foreach (var artifact in package.Entry.Artifacts)
+            foreach (var artifact in sei.Entry.Artifacts)
             {
                 var score = Score(artifact, graphNames);
                 if (score >= 0)
@@ -151,7 +151,7 @@ public sealed class Resolver
             if (scored.Count == 0)
             {
                 throw new SeikoException(
-                    $"no artifact of {package.Name} {package.Version} matches rid '{_rid}' and packages [{string.Join(", ", graphNames.OrderBy(n => n, StringComparer.Ordinal))}]");
+                    $"no artifact of {sei.Name} {sei.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames.OrderBy(n => n, StringComparer.Ordinal))}]");
             }
 
             var best = scored.Max(s => s.Score);
@@ -159,10 +159,10 @@ public sealed class Resolver
             if (top.Count > 1)
             {
                 throw new SeikoException(
-                    $"ambiguous artifact for {package.Name} {package.Version}: {top.Count} artifacts match at specificity {best}");
+                    $"ambiguous artifact for {sei.Name} {sei.Version}: {top.Count} artifacts match at specificity {best}");
             }
 
-            package.Artifact = top[0].Artifact;
+            sei.Artifact = top[0].Artifact;
         }
     }
 
@@ -195,19 +195,19 @@ public sealed class Resolver
     {
         foreach (var source in _sources)
         {
-            index = source.GetPackage(name);
+            index = source.GetSei(name);
             if (index is not null)
             {
                 return source;
             }
         }
 
-        throw new SeikoException($"package '{name}' not found in any source");
+        throw new SeikoException($"sei '{name}' not found in any source");
     }
 
     private NuGetVersion? GetLockedVersion(string name)
     {
-        var locked = _lock?.Packages.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+        var locked = _lock?.Sei.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
         if (locked is null)
         {
             return null;
@@ -216,7 +216,7 @@ public sealed class Resolver
         return NuGetVersion.TryParse(locked.Version, out var version) ? version : null;
     }
 
-    private static VersionRange ParseRange(string? text, string package)
+    private static VersionRange ParseRange(string? text, string sei)
     {
         if (string.IsNullOrWhiteSpace(text) || text.Trim() == "*")
         {
@@ -225,7 +225,7 @@ public sealed class Resolver
 
         if (!VersionRange.TryParse(text, out var range))
         {
-            throw new SeikoException($"invalid version range '{text}' for {package}");
+            throw new SeikoException($"invalid version range '{text}' for {sei}");
         }
 
         return range;

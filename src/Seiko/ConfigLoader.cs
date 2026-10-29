@@ -45,7 +45,7 @@ public static class ConfigLoader
             throw new SeikoException($"{path}: at least one source is required");
         }
 
-        ReadSpecs(configuration.GetSection("packages"), config.Packages);
+        ReadSpecs(configuration.GetSection("sei"), config.Sei);
         ReadSpecs(configuration.GetSection("components"), config.Components);
         return config;
     }

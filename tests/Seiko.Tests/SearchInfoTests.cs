@@ -5,15 +5,15 @@ namespace Seiko.Tests;
 public sealed class SearchInfoTests
 {
     [Fact]
-    public void Search_FindsPackages()
+    public void Search_FindsSei()
     {
         using var fixture = new Fixture();
-        fixture.AddPackage("hello", new VersionFixture
+        fixture.AddSei("hello", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture()],
         });
-        fixture.AddPackage("other", new VersionFixture
+        fixture.AddSei("other", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture()],
@@ -32,7 +32,7 @@ public sealed class SearchInfoTests
     public void Info_ListsVersions()
     {
         using var fixture = new Fixture();
-        fixture.AddPackage(
+        fixture.AddSei(
             "hello",
             new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
             new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture(), new ArtifactFixture()] });
@@ -51,7 +51,7 @@ public sealed class SearchInfoTests
     public void Info_ThrowsWhenMissing()
     {
         using var fixture = new Fixture();
-        fixture.AddPackage("hello", new VersionFixture
+        fixture.AddSei("hello", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture()],

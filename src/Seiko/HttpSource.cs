@@ -28,14 +28,14 @@ public sealed class HttpSource : ISeiSource
         Index = FetchIndex(indexUri);
     }
 
-    public SeiIndex? GetPackage(string name)
+    public SeiIndex? GetSei(string name)
     {
         if (_cache.TryGetValue(name, out var cached))
         {
             return cached;
         }
 
-        var uri = new Uri(_baseUri, $"packages/{name}.json");
+        var uri = new Uri(_baseUri, $"sei/{name}.json");
         using var response = Send(uri);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -44,16 +44,16 @@ public sealed class HttpSource : ISeiSource
         }
 
         response.EnsureSuccessStatusCode();
-        var package = JsonSerializer.Deserialize(ReadAllBytes(response), SeikoJsonContext.Default.SeiIndex)
-            ?? throw new SeikoException($"source '{Id}': invalid package index for {name}");
+        var sei = JsonSerializer.Deserialize(ReadAllBytes(response), SeikoJsonContext.Default.SeiIndex)
+            ?? throw new SeikoException($"source '{Id}': invalid sei index for {name}");
 
-        if (package.SchemaVersion != 1 || !string.Equals(package.Name, name, StringComparison.Ordinal))
+        if (sei.SchemaVersion != 1 || !string.Equals(sei.Name, name, StringComparison.Ordinal))
         {
-            throw new SeikoException($"source '{Id}': invalid package index for {name}");
+            throw new SeikoException($"source '{Id}': invalid sei index for {name}");
         }
 
-        _cache[name] = package;
-        return package;
+        _cache[name] = sei;
+        return sei;
     }
 
     public string ResolveArtifact(ArtifactLocation source) => new Uri(_baseUri, source.Url).AbsoluteUri;

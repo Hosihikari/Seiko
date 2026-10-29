@@ -30,28 +30,28 @@ public sealed class LocalSource : ISeiSource
         }
     }
 
-    public SeiIndex? GetPackage(string name)
+    public SeiIndex? GetSei(string name)
     {
-        var path = Path.Combine(BaseDirectory, "packages", name + ".json");
+        var path = Path.Combine(BaseDirectory, "sei", name + ".json");
         if (!File.Exists(path))
         {
             return null;
         }
 
-        var package = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex)
-            ?? throw new SeikoException($"source '{Config.Id}': invalid package index for {name}");
+        var sei = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex)
+            ?? throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}");
 
-        if (package.SchemaVersion != 1)
+        if (sei.SchemaVersion != 1)
         {
-            throw new SeikoException($"source '{Config.Id}': unsupported package schemaVersion {package.SchemaVersion} for {name}");
+            throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}");
         }
 
-        if (!string.Equals(package.Name, name, StringComparison.Ordinal))
+        if (!string.Equals(sei.Name, name, StringComparison.Ordinal))
         {
-            throw new SeikoException($"source '{Config.Id}': package file for {name} declares name '{package.Name}'");
+            throw new SeikoException($"source '{Config.Id}': sei file for {name} declares name '{sei.Name}'");
         }
 
-        return package;
+        return sei;
     }
 
     public string ResolveArtifact(ArtifactLocation source) => ResolveArtifactPath(source);

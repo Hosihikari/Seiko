@@ -4,7 +4,7 @@ public interface ISeiSource
 {
     string Id { get; }
     IndexRoot Index { get; }
-    SeiIndex? GetPackage(string name);
+    SeiIndex? GetSei(string name);
     string ResolveArtifact(ArtifactLocation source);
     void DownloadArtifact(ArtifactLocation source, string destination);
 }

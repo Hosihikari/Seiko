@@ -11,7 +11,7 @@ public static class LockReplay
     {
         foreach (var spec in specs)
         {
-            var locked = lockFile.Packages.FirstOrDefault(p => string.Equals(p.Name, spec.Name, StringComparison.Ordinal));
+            var locked = lockFile.Sei.FirstOrDefault(p => string.Equals(p.Name, spec.Name, StringComparison.Ordinal));
             if (locked is null)
             {
                 throw new SeikoException($"--frozen: {spec.Name} is not in the lock");
@@ -25,12 +25,12 @@ public static class LockReplay
         }
 
         var result = new List<ResolvedSei>();
-        foreach (var locked in lockFile.Packages.OrderBy(p => p.Name, StringComparer.Ordinal))
+        foreach (var locked in lockFile.Sei.OrderBy(p => p.Name, StringComparer.Ordinal))
         {
-            var source = sources.FirstOrDefault(s => s.GetPackage(locked.Name) is not null)
+            var source = sources.FirstOrDefault(s => s.GetSei(locked.Name) is not null)
                 ?? throw new SeikoException($"--frozen: source for {locked.Name} not found");
 
-            var index = source.GetPackage(locked.Name)!;
+            var index = source.GetSei(locked.Name)!;
             var entry = index.Versions.FirstOrDefault(v => string.Equals(v.Version, locked.Version, StringComparison.Ordinal))
                 ?? throw new SeikoException($"--frozen: {locked.Name} {locked.Version} not found in source");
 
@@ -70,11 +70,11 @@ public static class LockReplay
             return "sources changed";
         }
 
-        var left = existing.Packages.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
-        var right = resolved.Packages.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+        var left = existing.Sei.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+        var right = resolved.Sei.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
         if (left.Count != right.Count)
         {
-            return $"package count {left.Count} -> {right.Count}";
+            return $"sei count {left.Count} -> {right.Count}";
         }
 
         for (var i = 0; i < left.Count; i++)
@@ -115,7 +115,7 @@ public static class LockReplay
                 && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
     }
 
-    private static VersionRange ParseRange(string? text, string package)
+    private static VersionRange ParseRange(string? text, string sei)
     {
         if (string.IsNullOrWhiteSpace(text) || text.Trim() == "*")
         {
@@ -124,7 +124,7 @@ public static class LockReplay
 
         if (!VersionRange.TryParse(text, out var range))
         {
-            throw new SeikoException($"invalid version range '{text}' for {package}");
+            throw new SeikoException($"invalid version range '{text}' for {sei}");
         }
 
         return range;

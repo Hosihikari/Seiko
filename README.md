@@ -4,9 +4,7 @@
 
 [![CI](https://github.com/Hosihikari/Seiko/actions/workflows/ci.yml/badge.svg)](https://github.com/Hosihikari/Seiko/actions/workflows/ci.yml)
 
-Seiko is Hosihikari's install-side tool, alongside the Hosihikari Framework and Hosihikari Projection. **Seiko** is the product name; `sei` (星) is the unit name — one package is a sei, and the English plural is also `sei`.
-
-Install-side package manager for the Seiko package format. The CLI command is `sk`, short for Seiko.
+Seiko is a general-purpose package manager under Hosihikari: any project can use it to distribute sei. **Seiko** is the product name; `sei` (星) is the unit name — one package is a sei, and the English plural is also `sei`. The CLI command is `sk`, short for Seiko.
 
 Current slice:
 

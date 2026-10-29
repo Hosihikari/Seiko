@@ -4,14 +4,14 @@ using Seiko;
 
 namespace Seiko.McpServer;
 
-public sealed class McpServer
+public sealed class SeikoMcpServer
 {
     private const string ProtocolVersion = "2025-06-18";
     private readonly string _defaultRoot;
     private readonly bool _allowMutations;
-    private readonly SeikoClient _engine = new();
+    private readonly SeikoClient _client = new();
 
-    public McpServer(string defaultRoot, bool allowMutations)
+    public SeikoMcpServer(string defaultRoot, bool allowMutations)
     {
         _defaultRoot = Path.GetFullPath(defaultRoot);
         _allowMutations = allowMutations;
@@ -88,7 +88,7 @@ public sealed class McpServer
         var tools = new JsonArray
         {
             Tool("list", "List installed sei.", RootSchema(required: false)),
-            Tool("search", "Search package names in the configured indexes.", SearchSchema()),
+            Tool("search", "Search sei names in the configured indexes.", SearchSchema()),
             Tool("info", "Show versions, dependencies, and artifact counts.", InfoSchema()),
             Tool("lock", "Return the current lock file.", RootSchema(required: false)),
             Tool("source_list", "List configured sources.", RootSchema(required: false)),
@@ -140,11 +140,11 @@ public sealed class McpServer
     private string List(JsonObject arguments)
     {
         var root = Root(arguments, required: false);
-        var lockFile = _engine.ReadLock(root);
+        var lockFile = _client.ReadLock(root);
         var sei = new JsonArray();
         if (lockFile is not null)
         {
-            foreach (var item in lockFile.Packages)
+            foreach (var item in lockFile.Sei)
             {
                 sei.Add(new JsonObject
                 {
@@ -165,7 +165,7 @@ public sealed class McpServer
         var term = RequiredString(arguments, "term");
         var root = Root(arguments, required: false);
         var results = new JsonArray();
-        foreach (var result in _engine.Search(root, term))
+        foreach (var result in _client.Search(root, term))
         {
             results.Add(new JsonObject
             {
@@ -182,7 +182,7 @@ public sealed class McpServer
     {
         var name = RequiredString(arguments, "name");
         var root = Root(arguments, required: false);
-        var info = _engine.Info(root, name);
+        var info = _client.Info(root, name);
         var versions = new JsonArray();
         foreach (var version in info.Versions)
         {
@@ -207,7 +207,7 @@ public sealed class McpServer
     private string Lock(JsonObject arguments)
     {
         var root = Root(arguments, required: false);
-        var lockFile = _engine.ReadLock(root);
+        var lockFile = _client.ReadLock(root);
         return lockFile is null
             ? "null"
             : JsonSerializer.Serialize(lockFile, SeikoJsonContext.Default.SeikoLock);
@@ -242,7 +242,7 @@ public sealed class McpServer
         }
 
         var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
-        var result = _engine.Sync(root, OptionalString(arguments, "store"), Bool(arguments, "pre"), mode);
+        var result = _client.Sync(root, OptionalString(arguments, "store"), Bool(arguments, "pre"), mode);
         return new JsonObject
         {
             ["sei"] = result.SeiInstalled,
@@ -254,7 +254,7 @@ public sealed class McpServer
     private string Rollback(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
-        var result = _engine.Rollback(root, OptionalString(arguments, "store"), Int(arguments, "to"));
+        var result = _client.Rollback(root, OptionalString(arguments, "store"), Int(arguments, "to"));
         return new JsonObject
         {
             ["generation"] = result.Generation,

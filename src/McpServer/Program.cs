@@ -25,7 +25,7 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-var server = new McpServer(root, allowMutations);
+var server = new SeikoMcpServer(root, allowMutations);
 while (Console.ReadLine() is { } line)
 {
     if (string.IsNullOrWhiteSpace(line))

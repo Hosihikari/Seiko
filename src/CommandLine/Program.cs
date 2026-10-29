@@ -28,9 +28,9 @@ static int Sync(CliOptions options)
     var root = options.Root ?? FindRoot();
     var result = new SeikoClient().Sync(root, options.Store, options.Pre, options.Mode);
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
-    foreach (var package in result.Lock.Packages)
+    foreach (var sei in result.Lock.Sei)
     {
-        Console.WriteLine($"  {package.Name} {package.Version}{(package.Direct ? " (direct)" : "")}");
+        Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}");
     }
 
     return 0;
@@ -47,13 +47,13 @@ static int List(CliOptions options)
     }
 
     Console.WriteLine("NAME\tVERSION\tDIRECT\tSOURCE\tSELECTORS");
-    foreach (var package in lockFile.Packages)
+    foreach (var sei in lockFile.Sei)
     {
-        var selectors = package.Artifact.Selectors is null
+        var selectors = sei.Artifact.Selectors is null
             ? "-"
-            : string.Join(",", package.Artifact.Selectors.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            : string.Join(",", sei.Artifact.Selectors.OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair => $"{pair.Key}={pair.Value}"));
-        Console.WriteLine($"{package.Name}\t{package.Version}\t{(package.Direct ? "yes" : "no")}\t{package.Source}\t{selectors}");
+        Console.WriteLine($"{sei.Name}\t{sei.Version}\t{(sei.Direct ? "yes" : "no")}\t{sei.Source}\t{selectors}");
     }
 
     return 0;
@@ -128,7 +128,7 @@ static int Init(CliOptions options)
 sources = []
 
 # rid = "win-x64"
-packages = []
+sei = []
 components = []
 """ + "\n");
     Console.WriteLine($"created {path}");

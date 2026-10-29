@@ -8,7 +8,7 @@ public sealed class SyncResult
 {
     public required SeikoLock Lock { get; init; }
     public required int FilesDeployed { get; init; }
-    public int SeiInstalled => Lock.Packages.Count;
+    public int SeiInstalled => Lock.Sei.Count;
 }
 
 public sealed class RollbackResult
@@ -29,7 +29,7 @@ public sealed class SeikoClient
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
-        var specs = config.Packages.Concat(config.Components).ToList();
+        var specs = config.Sei.Concat(config.Components).ToList();
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
@@ -124,7 +124,7 @@ public sealed class SeikoClient
 
         var store = new Store(storeRoot ?? DefaultStorePath());
         var sei = new List<DeployedSei>();
-        foreach (var locked in snapshotLock.Packages)
+        foreach (var locked in snapshotLock.Sei)
         {
             var stored = store.TryGet(locked.Artifact.Sha256)
                 ?? throw new SeikoException(
@@ -152,7 +152,7 @@ public sealed class SeikoClient
         return new RollbackResult
         {
             Generation = target,
-            SeiInstalled = snapshotLock.Packages.Count,
+            SeiInstalled = snapshotLock.Sei.Count,
             FilesDeployed = deployment.FileCount,
         };
     }
@@ -167,15 +167,15 @@ public sealed class SeikoClient
 
         foreach (var source in sources)
         {
-            foreach (var name in source.Index.Packages ?? new List<string>())
+            foreach (var name in source.Index.Sei ?? new List<string>())
             {
                 if (!name.Contains(term, StringComparison.OrdinalIgnoreCase) || !seen.Add(name))
                 {
                     continue;
                 }
 
-                var package = source.GetPackage(name);
-                var latest = package is null ? null : LatestVersion(package);
+                var sei = source.GetSei(name);
+                var latest = sei is null ? null : LatestVersion(sei);
                 if (latest is not null)
                 {
                     results.Add(new SeiSummary(name, latest.Version, source.Id));
@@ -194,13 +194,13 @@ public sealed class SeikoClient
 
         foreach (var source in sources)
         {
-            var package = source.GetPackage(name);
-            if (package is null)
+            var sei = source.GetSei(name);
+            if (sei is null)
             {
                 continue;
             }
 
-            var versions = package.Versions
+            var versions = sei.Versions
                 .OrderByDescending(entry => NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : new NuGetVersion(0, 0, 0))
                 .Select(entry => new SeiVersionInfo(
                     entry.Version,
@@ -212,12 +212,12 @@ public sealed class SeikoClient
             return new SeiInfo(name, source.Id, versions);
         }
 
-        throw new SeikoException($"package '{name}' not found in any source");
+        throw new SeikoException($"sei '{name}' not found in any source");
     }
 
-    private static SeiVersionEntry? LatestVersion(SeiIndex package)
+    private static SeiVersionEntry? LatestVersion(SeiIndex sei)
     {
-        var candidates = package.Versions
+        var candidates = sei.Versions
             .Select(entry => new
             {
                 Entry = entry,

@@ -25,7 +25,7 @@ internal sealed class VersionFixture
 
 internal sealed class Fixture : IDisposable
 {
-    private readonly List<string> _packages = [];
+    private readonly List<string> _sei = [];
     private readonly Dictionary<string, SeiIndex> _indexes = new(StringComparer.Ordinal);
 
     public Fixture()
@@ -33,7 +33,7 @@ internal sealed class Fixture : IDisposable
         Root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
         SourceDirectory = Path.Combine(Root, "source");
         StoreDirectory = Path.Combine(Root, "store");
-        Directory.CreateDirectory(Path.Combine(SourceDirectory, "packages"));
+        Directory.CreateDirectory(Path.Combine(SourceDirectory, "sei"));
         Directory.CreateDirectory(Path.Combine(SourceDirectory, "artifacts"));
         Directory.CreateDirectory(StoreDirectory);
     }
@@ -42,7 +42,7 @@ internal sealed class Fixture : IDisposable
     public string SourceDirectory { get; }
     public string StoreDirectory { get; }
 
-    public void AddPackage(string name, params VersionFixture[] versions)
+    public void AddSei(string name, params VersionFixture[] versions)
     {
         var index = new SeiIndex { Name = name };
         foreach (var version in versions)
@@ -100,12 +100,12 @@ internal sealed class Fixture : IDisposable
         }
 
         _indexes[name] = index;
-        if (!_packages.Contains(name, StringComparer.Ordinal))
+        if (!_sei.Contains(name, StringComparer.Ordinal))
         {
-            _packages.Add(name);
+            _sei.Add(name);
         }
 
-        WritePackage(name);
+        WriteSei(name);
     }
 
     public void WriteConfig(string rid, params SpecFixture[] specs)
@@ -124,7 +124,7 @@ internal sealed class Fixture : IDisposable
         var index = new IndexRoot
         {
             GeneratedBy = "fixture",
-            Packages = _packages.OrderBy(name => name, StringComparer.Ordinal).ToList(),
+            Sei = _sei.OrderBy(name => name, StringComparer.Ordinal).ToList(),
         };
         File.WriteAllBytes(
             Path.Combine(SourceDirectory, "index.json"),
@@ -140,11 +140,11 @@ internal sealed class Fixture : IDisposable
 
         if (specs.Length == 0)
         {
-            lines.Add("packages = []");
+            lines.Add("sei = []");
         }
         else
         {
-            lines.Add("packages = [");
+            lines.Add("sei = [");
             for (var i = 0; i < specs.Length; i++)
             {
                 var spec = specs[i];
@@ -164,7 +164,7 @@ internal sealed class Fixture : IDisposable
     {
         var index = _indexes[name];
         index.Versions[0].Artifacts[0].Source.Sha256 = new string('0', 64);
-        WritePackage(name);
+        WriteSei(name);
     }
 
     public void Dispose()
@@ -175,9 +175,9 @@ internal sealed class Fixture : IDisposable
         }
     }
 
-    private void WritePackage(string name)
+    private void WriteSei(string name)
     {
-        var path = Path.Combine(SourceDirectory, "packages", name + ".json");
+        var path = Path.Combine(SourceDirectory, "sei", name + ".json");
         File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(_indexes[name], SeikoJsonContext.Default.SeiIndex));
     }
 
