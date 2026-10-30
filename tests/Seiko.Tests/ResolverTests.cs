@@ -74,6 +74,29 @@ public sealed class ResolverTests
         Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "c").Version);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Resolve_AllowsPrereleaseRequestedByALaterDependency(bool directFirst)
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            Version("a", "2.0.0-beta"));
+        fixture.AddSei("b", Version("b", "1.0.0", new DepFixture("a", "[2.0.0-beta]")));
+        SpecFixture[] specs = directFirst
+            ? [new SpecFixture("a"), new SpecFixture("b", "[1.0.0]")]
+            : [new SpecFixture("b", "[1.0.0]"), new SpecFixture("a")];
+        fixture.WriteConfig("win-x64", specs);
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
+        Assert.Equal("2.0.0-beta", lockFile.Sei.Single(sei => sei.Name == "a").Version);
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "b").Version);
+    }
+
     [Fact]
     public void Resolve_ReportsTheConstraintChainOnConflict()
     {

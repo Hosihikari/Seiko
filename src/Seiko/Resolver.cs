@@ -28,6 +28,7 @@ public sealed class Resolver
     private readonly IReadOnlySet<string>? _updateNames;
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private int _assignments;
 
@@ -47,6 +48,12 @@ public sealed class Resolver
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
     {
+        _pending.Clear();
+        _assigned.Clear();
+        _prereleaseHints.Clear();
+        _lastConflict = null;
+        _assignments = 0;
+
         var directNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
@@ -56,11 +63,7 @@ public sealed class Resolver
             }
 
             directNames.Add(spec.Name);
-            _pending.Add(new Requirement(
-                spec.Name,
-                ParseRange(spec.Version, spec.Name),
-                spec.Version,
-                null));
+            _pending.Add(CreateRequirement(spec.Name, spec.Version, null));
         }
 
         if (!Search(0))
@@ -104,15 +107,28 @@ public sealed class Resolver
         }
 
         var source = FindSource(requirement.Name, out var indexData);
-        var candidates = Candidates(requirement.Name, source, indexData!, _pending);
-        if (candidates.Count == 0)
+        var tried = new HashSet<string>(StringComparer.Ordinal);
+        while (true)
         {
-            _lastConflict = Conflict(requirement.Name, source.Id, _pending);
-            return false;
-        }
+            // Recompute the candidate list on every attempt: a failed branch
+            // may have revealed a prerelease constraint for this package, and
+            // the hint has to widen the list here too, not only in the branch
+            // that discovered it.
+            var candidates = Candidates(requirement.Name, source, indexData!, _pending);
+            if (candidates.Count == 0)
+            {
+                _lastConflict = Conflict(requirement.Name, source.Id, _pending);
+                return false;
+            }
 
-        foreach (var (entry, version) in Order(requirement.Name, candidates))
-        {
+            var next = Order(requirement.Name, candidates)
+                .FirstOrDefault(candidate => !tried.Contains(candidate.Version.ToNormalizedString()));
+            if (next.Entry is null)
+            {
+                return false;
+            }
+
+            tried.Add(next.Version.ToNormalizedString());
             if (++_assignments > MaxAssignments)
             {
                 throw Fail("dependency resolution did not converge");
@@ -121,24 +137,20 @@ public sealed class Resolver
             _assigned[requirement.Name] = new ResolvedSei
             {
                 Name = requirement.Name,
-                ParsedVersion = version,
-                Entry = entry,
+                ParsedVersion = next.Version,
+                Entry = next.Entry,
                 Source = source,
             };
 
             var added = 0;
-            foreach (var dependency in entry.Dependencies)
+            foreach (var dependency in next.Entry.Dependencies)
             {
                 if (!SeiName.IsValid(dependency.Name))
                 {
                     throw Fail($"invalid sei name '{dependency.Name}'");
                 }
 
-                _pending.Add(new Requirement(
-                    dependency.Name,
-                    ParseRange(dependency.Version, dependency.Name),
-                    dependency.Version,
-                    requirement.Name));
+                _pending.Add(CreateRequirement(dependency.Name, dependency.Version, requirement.Name));
                 added++;
             }
 
@@ -150,8 +162,6 @@ public sealed class Resolver
             _pending.RemoveRange(_pending.Count - added, added);
             _assigned.Remove(requirement.Name);
         }
-
-        return false;
     }
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
@@ -185,7 +195,7 @@ public sealed class Resolver
                 continue;
             }
 
-            if (version.IsPrerelease && !allowPrerelease)
+            if (version.IsPrerelease && !allowPrerelease && !HintAllows(name, version))
             {
                 continue;
             }
@@ -200,7 +210,16 @@ public sealed class Resolver
         string name,
         List<(SeiVersionEntry Entry, NuGetVersion Version)> candidates)
     {
-        var ordered = candidates.OrderByDescending(candidate => candidate.Version).ToList();
+        var explicitPrerelease = _allowPrerelease
+            || _pending.Any(requirement =>
+                string.Equals(requirement.Name, name, StringComparison.Ordinal)
+                && requirement.RangeText?.Contains('-') == true);
+        var ordered = explicitPrerelease
+            ? candidates.OrderByDescending(candidate => candidate.Version).ToList()
+            : candidates
+                .OrderBy(candidate => candidate.Version.IsPrerelease)
+                .ThenByDescending(candidate => candidate.Version)
+                .ToList();
         var lockedVersion = GetLockedVersion(name);
         if (lockedVersion is not null)
         {
@@ -302,6 +321,27 @@ public sealed class Resolver
 
         return NuGetVersion.TryParse(locked.Version, out var version) ? version : null;
     }
+
+    private Requirement CreateRequirement(string name, string? version, string? from)
+    {
+        var range = ParseRange(version, name);
+        if (version?.Contains('-') == true)
+        {
+            if (!_prereleaseHints.TryGetValue(name, out var ranges))
+            {
+                ranges = [];
+                _prereleaseHints[name] = ranges;
+            }
+
+            ranges.Add(range);
+        }
+
+        return new Requirement(name, range, version, from);
+    }
+
+    private bool HintAllows(string name, NuGetVersion version)
+        => _prereleaseHints.TryGetValue(name, out var ranges)
+            && ranges.Any(range => range.Satisfies(version));
 
     private static VersionRange ParseRange(string? text, string sei)
     {
