@@ -85,8 +85,7 @@ public sealed class SeikoMcpServer
 
     private JsonObject ToolsList()
     {
-        var tools = new JsonArray
-        {
+        var tools = new JsonArray(
             Tool("list", "List installed sei.", RootSchema(required: false)),
             Tool("search", "Search sei names in the configured indexes.", SearchSchema()),
             Tool("info", "Show versions, dependencies, and artifact counts.", InfoSchema()),
@@ -96,20 +95,19 @@ public sealed class SeikoMcpServer
             Tool("cache_status", "Show store artifact and partial counts.", StoreSchema()),
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
-            Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
-        };
+            Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()));
 
         if (_allowMutations)
         {
-            tools.Add(Tool("add", "Add a direct sei declaration and sync.", AddSchema()));
-            tools.Add(Tool("remove", "Remove a direct sei declaration and sync.", RemoveSchema()));
-            tools.Add(Tool("update", "Update direct declarations and sync.", UpdateSchema()));
-            tools.Add(Tool("source_add", "Add a source.", SourceAddSchema()));
-            tools.Add(Tool("source_remove", "Remove a source.", SourceRemoveSchema()));
-            tools.Add(Tool("config_set", "Write an install-root configuration value.", ConfigSetSchema()));
-            tools.Add(Tool("cache_clean", "Remove artifacts not referenced by this root.", CacheCleanSchema()));
-            tools.Add(Tool("sync", "Resolve and deploy sei.", SyncSchema()));
-            tools.Add(Tool("rollback", "Restore a previous generation.", RollbackSchema()));
+            tools.Add((JsonNode)Tool("add", "Add a direct sei declaration and sync.", AddSchema()));
+            tools.Add((JsonNode)Tool("remove", "Remove a direct sei declaration and sync.", RemoveSchema()));
+            tools.Add((JsonNode)Tool("update", "Update direct declarations and sync.", UpdateSchema()));
+            tools.Add((JsonNode)Tool("source_add", "Add a source.", SourceAddSchema()));
+            tools.Add((JsonNode)Tool("source_remove", "Remove a source.", SourceRemoveSchema()));
+            tools.Add((JsonNode)Tool("config_set", "Write an install-root configuration value.", ConfigSetSchema()));
+            tools.Add((JsonNode)Tool("cache_clean", "Remove artifacts not referenced by this root.", CacheCleanSchema()));
+            tools.Add((JsonNode)Tool("sync", "Resolve and deploy sei.", SyncSchema()));
+            tools.Add((JsonNode)Tool("rollback", "Restore a previous generation.", RollbackSchema()));
         }
 
         return new JsonObject { ["tools"] = tools };
@@ -170,7 +168,7 @@ public sealed class SeikoMcpServer
         {
             foreach (var item in lockFile.Sei)
             {
-                sei.Add(new JsonObject
+                sei.Add((JsonNode)new JsonObject
                 {
                     ["name"] = item.Name,
                     ["version"] = item.Version,
@@ -191,7 +189,7 @@ public sealed class SeikoMcpServer
         var results = new JsonArray();
         foreach (var result in _client.Search(root, term))
         {
-            results.Add(new JsonObject
+            results.Add((JsonNode)new JsonObject
             {
                 ["name"] = result.Name,
                 ["version"] = result.Version,
@@ -210,7 +208,7 @@ public sealed class SeikoMcpServer
         var versions = new JsonArray();
         foreach (var version in info.Versions)
         {
-            versions.Add(new JsonObject
+            versions.Add((JsonNode)new JsonObject
             {
                 ["version"] = version.Version,
                 ["yanked"] = version.Yanked,
@@ -244,7 +242,7 @@ public sealed class SeikoMcpServer
         var sources = new JsonArray();
         foreach (var source in config.Sources)
         {
-            sources.Add(SourceJson(source));
+            sources.Add((JsonNode)SourceJson(source));
         }
 
         return sources.ToJsonString();
@@ -255,7 +253,7 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var source in sources)
         {
-            array.Add(SourceJson(source));
+            array.Add((JsonNode)SourceJson(source));
         }
 
         return array.ToJsonString();
@@ -266,7 +264,7 @@ public sealed class SeikoMcpServer
         var hosts = new JsonArray();
         foreach (var host in source.TokenHosts ?? [])
         {
-            hosts.Add(host);
+            hosts.Add((JsonNode)host);
         }
 
         return new JsonObject
@@ -330,7 +328,7 @@ public sealed class SeikoMcpServer
         var findings = new JsonArray();
         foreach (var finding in _client.CacheVerify(OptionalString(arguments, "store")))
         {
-            findings.Add(new JsonObject
+            findings.Add((JsonNode)new JsonObject
             {
                 ["severity"] = finding.Severity,
                 ["code"] = finding.Code,
@@ -363,10 +361,10 @@ public sealed class SeikoMcpServer
             var path = new JsonArray();
             foreach (var part in chain)
             {
-                path.Add(part);
+                path.Add((JsonNode)part);
             }
 
-            chains.Add(path);
+            chains.Add((JsonNode)path);
         }
 
         return chains.ToJsonString();
@@ -381,7 +379,7 @@ public sealed class SeikoMcpServer
             OptionalString(arguments, "proxy"),
             Bool(arguments, "pre")))
         {
-            items.Add(new JsonObject
+            items.Add((JsonNode)new JsonObject
             {
                 ["name"] = item.Name,
                 ["current"] = item.Current,
@@ -540,7 +538,7 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var dependency in dependencies)
         {
-            array.Add(new JsonObject
+            array.Add((JsonNode)new JsonObject
             {
                 ["name"] = dependency.Name,
                 ["version"] = dependency.Version,
