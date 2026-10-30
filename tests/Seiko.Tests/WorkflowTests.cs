@@ -115,6 +115,36 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void CacheClean_ProtectsArtifactsNeededByRollback()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var clean = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(0, clean.Removed);
+        var rollback = client.Rollback(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal(1, rollback.Generation);
+        Assert.Equal("v1", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void Update_WithoutLatestKeepsRangeAndUpgrades()
     {
         using var fixture = new Fixture();

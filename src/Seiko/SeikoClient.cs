@@ -640,18 +640,21 @@ public sealed class SeikoClient
             var referenced = new HashSet<string>(StringComparer.Ordinal);
             foreach (var registered in roots)
             {
-                var lockFile = LockFile.Read(Path.Combine(registered, "seiko.lock.json"));
-                if (lockFile is null)
+                foreach (var lockPath in RootLockPaths(registered))
                 {
-                    continue;
-                }
-
-                foreach (var sei in lockFile.Sei)
-                {
-                    var digest = sei.Artifact.Sha256?.ToLowerInvariant();
-                    if (Hashing.IsSha256(digest))
+                    var lockFile = LockFile.Read(lockPath);
+                    if (lockFile is null)
                     {
-                        referenced.Add(digest!);
+                        continue;
+                    }
+
+                    foreach (var sei in lockFile.Sei)
+                    {
+                        var digest = sei.Artifact.Sha256?.ToLowerInvariant();
+                        if (Hashing.IsSha256(digest))
+                        {
+                            referenced.Add(digest!);
+                        }
                     }
                 }
             }
@@ -703,6 +706,21 @@ public sealed class SeikoClient
             {
                 rootLocks[index].Dispose();
             }
+        }
+    }
+
+    private static IEnumerable<string> RootLockPaths(string root)
+    {
+        yield return Path.Combine(root, "seiko.lock.json");
+        var generations = Path.Combine(root, ".seiko", "generations");
+        if (!Directory.Exists(generations))
+        {
+            yield break;
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(generations))
+        {
+            yield return Path.Combine(directory, "lock.json");
         }
     }
 

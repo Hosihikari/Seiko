@@ -9,18 +9,33 @@ public static class LockReplay
         SeikoLock lockFile,
         IReadOnlyList<SeiSpec> specs)
     {
+        var declared = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
+            declared.Add(spec.Name);
             var locked = lockFile.Sei.FirstOrDefault(p => string.Equals(p.Name, spec.Name, StringComparison.Ordinal));
             if (locked is null)
             {
                 throw Fail($"--frozen: {spec.Name} is not in the lock");
             }
 
+            if (!locked.Direct)
+            {
+                throw Fail($"--frozen: {spec.Name} is declared but locked as transitive");
+            }
+
             var range = ParseRange(spec.Version, spec.Name);
             if (!NuGetVersion.TryParse(locked.Version, out var version) || !range.Satisfies(version))
             {
                 throw Fail($"--frozen: locked {spec.Name} {locked.Version} does not satisfy {range}");
+            }
+        }
+
+        foreach (var locked in lockFile.Sei.Where(p => p.Direct))
+        {
+            if (!declared.Contains(locked.Name))
+            {
+                throw Fail($"--frozen: {locked.Name} is direct in the lock but not declared");
             }
         }
 

@@ -13,24 +13,23 @@ public sealed class ResolvedSei
     public string Version => ParsedVersion.ToNormalizedString();
 }
 
-// Resolution collects every constraint on a package and re-selects when a
-// later edge conflicts with an earlier choice, so a satisfiable graph is not
-// rejected just because the first constraint was satisfied by a version that
-// a subsequent constraint rules out.
+// Depth-first search over package versions with chronological backtracking.
+// A candidate that makes a later requirement unsatisfiable is abandoned, so
+// the resolver can fall back to an older version of an upstream package when
+// that version avoids the conflicting constraint entirely.
 public sealed class Resolver
 {
-    private const int MaxSteps = 10000;
-    private const int MaxPrunes = 100;
+    private const int MaxAssignments = 100000;
 
     private readonly IReadOnlyList<ISeiSource> _sources;
     private readonly SeikoLock? _lock;
     private readonly string _rid;
     private readonly bool _allowPrerelease;
     private readonly IReadOnlySet<string>? _updateNames;
-    private readonly Dictionary<string, ResolvedSei> _resolved = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<Constraint>> _constraints = new(StringComparer.Ordinal);
-    private readonly Queue<string> _pending = new();
-    private int _steps;
+    private readonly List<Requirement> _pending = [];
+    private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
+    private SeikoException? _lastConflict;
+    private int _assignments;
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -57,104 +56,113 @@ public sealed class Resolver
             }
 
             directNames.Add(spec.Name);
-            AddConstraint(spec.Name, ParseRange(spec.Version, spec.Name), spec.Version, null);
-            _pending.Enqueue(spec.Name);
+            _pending.Add(new Requirement(
+                spec.Name,
+                ParseRange(spec.Version, spec.Name),
+                spec.Version,
+                null));
         }
 
-        Stabilize();
+        if (!Search(0))
+        {
+            throw _lastConflict ?? Fail("no version satisfies the declared ranges");
+        }
 
-        foreach (var sei in _resolved.Values)
+        foreach (var sei in _assigned.Values)
         {
             sei.Direct = directNames.Contains(sei.Name);
         }
 
         SelectArtifacts();
-        return _resolved.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+        return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
     }
 
-    private void Stabilize()
+    private bool Search(int index)
     {
-        var prunes = 0;
-        while (true)
+        if (index >= _pending.Count)
         {
-            while (_pending.Count > 0)
+            return true;
+        }
+
+        var requirement = _pending[index];
+        if (!SeiName.IsValid(requirement.Name))
+        {
+            throw Fail($"invalid sei name '{requirement.Name}'");
+        }
+
+        if (_assigned.TryGetValue(requirement.Name, out var existing))
+        {
+            if (requirement.Range.Satisfies(existing.ParsedVersion))
             {
-                Select(_pending.Dequeue());
+                return Search(index + 1);
             }
 
-            if (!PruneUnreachable())
-            {
-                return;
-            }
+            _lastConflict = new SeikoException(
+                $"version conflict for {requirement.Name}: selected {existing.Version}, but {requirement.Range} is required by {Describe(requirement.From)}",
+                "resolve");
+            return false;
+        }
 
-            if (++prunes > MaxPrunes)
+        var source = FindSource(requirement.Name, out var indexData);
+        var candidates = Candidates(requirement.Name, source, indexData!, _pending);
+        if (candidates.Count == 0)
+        {
+            _lastConflict = Conflict(requirement.Name, source.Id, _pending);
+            return false;
+        }
+
+        foreach (var (entry, version) in Order(requirement.Name, candidates))
+        {
+            if (++_assignments > MaxAssignments)
             {
                 throw Fail("dependency resolution did not converge");
             }
-        }
-    }
 
-    private void Select(string name)
-    {
-        if (!_constraints.TryGetValue(name, out var constraints) || constraints.Count == 0)
-        {
-            return;
-        }
+            _assigned[requirement.Name] = new ResolvedSei
+            {
+                Name = requirement.Name,
+                ParsedVersion = version,
+                Entry = entry,
+                Source = source,
+            };
 
-        if (!SeiName.IsValid(name))
-        {
-            throw Fail($"invalid sei name '{name}'");
-        }
+            var added = 0;
+            foreach (var dependency in entry.Dependencies)
+            {
+                if (!SeiName.IsValid(dependency.Name))
+                {
+                    throw Fail($"invalid sei name '{dependency.Name}'");
+                }
 
-        if (++_steps > MaxSteps)
-        {
-            throw Fail("dependency resolution did not converge");
-        }
+                _pending.Add(new Requirement(
+                    dependency.Name,
+                    ParseRange(dependency.Version, dependency.Name),
+                    dependency.Version,
+                    requirement.Name));
+                added++;
+            }
 
-        var source = FindSource(name, out var index);
-        var candidates = Candidates(name, source, index!, constraints);
-        if (candidates.Count == 0)
-        {
-            throw Conflict(name, source.Id, constraints);
-        }
+            if (Search(index + 1))
+            {
+                return true;
+            }
 
-        var (entry, version) = Choose(name, candidates);
-        if (_resolved.TryGetValue(name, out var existing)
-            && existing.ParsedVersion.Equals(version))
-        {
-            return;
-        }
-
-        if (existing is not null)
-        {
-            RemoveOutgoing(name);
+            _pending.RemoveRange(_pending.Count - added, added);
+            _assigned.Remove(requirement.Name);
         }
 
-        _resolved[name] = new ResolvedSei
-        {
-            Name = name,
-            ParsedVersion = version,
-            Entry = entry,
-            Source = source,
-        };
-
-        foreach (var dependency in entry.Dependencies)
-        {
-            AddConstraint(
-                dependency.Name,
-                ParseRange(dependency.Version, dependency.Name),
-                dependency.Version,
-                name);
-            _pending.Enqueue(dependency.Name);
-        }
+        return false;
     }
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
         string name,
         ISeiSource source,
         SeiIndex index,
-        List<Constraint> constraints)
+        List<Requirement> pending)
     {
+        var constraints = pending
+            .Where(requirement => string.Equals(requirement.Name, name, StringComparison.Ordinal))
+            .ToList();
         var lockedVersion = GetLockedVersion(name);
         var allowPrerelease = _allowPrerelease
             || constraints.Any(constraint => constraint.RangeText?.Contains('-') == true);
@@ -188,102 +196,29 @@ public sealed class Resolver
         return candidates;
     }
 
-    private (SeiVersionEntry Entry, NuGetVersion Version) Choose(
+    private IEnumerable<(SeiVersionEntry Entry, NuGetVersion Version)> Order(
         string name,
         List<(SeiVersionEntry Entry, NuGetVersion Version)> candidates)
     {
-        var chosen = candidates.OrderByDescending(candidate => candidate.Version).First();
+        var ordered = candidates.OrderByDescending(candidate => candidate.Version).ToList();
         var lockedVersion = GetLockedVersion(name);
         if (lockedVersion is not null)
         {
-            var lockedMatch = candidates.FirstOrDefault(candidate => candidate.Version.Equals(lockedVersion));
-            if (lockedMatch.Entry is not null)
+            var locked = ordered.FirstOrDefault(candidate => candidate.Version.Equals(lockedVersion));
+            if (locked.Entry is not null)
             {
-                chosen = lockedMatch;
+                ordered.Remove(locked);
+                ordered.Insert(0, locked);
             }
         }
 
-        return chosen;
-    }
-
-    private void AddConstraint(string name, VersionRange range, string? rangeText, string? from)
-    {
-        if (!_constraints.TryGetValue(name, out var list))
-        {
-            list = [];
-            _constraints[name] = list;
-        }
-
-        list.Add(new Constraint(range, rangeText, from));
-    }
-
-    private void RemoveOutgoing(string name)
-    {
-        foreach (var (target, list) in _constraints)
-        {
-            if (list.RemoveAll(constraint => string.Equals(constraint.From, name, StringComparison.Ordinal)) > 0)
-            {
-                _pending.Enqueue(target);
-            }
-        }
-    }
-
-    private bool PruneUnreachable()
-    {
-        var reachable = new HashSet<string>(StringComparer.Ordinal);
-        var queue = new Queue<string>(
-            _constraints
-                .Where(pair => pair.Value.Any(constraint => constraint.From is null))
-                .Select(pair => pair.Key));
-
-        while (queue.Count > 0)
-        {
-            var name = queue.Dequeue();
-            if (!reachable.Add(name))
-            {
-                continue;
-            }
-
-            if (_resolved.TryGetValue(name, out var resolved))
-            {
-                foreach (var dependency in resolved.Entry.Dependencies)
-                {
-                    queue.Enqueue(dependency.Name);
-                }
-            }
-        }
-
-        var removed = false;
-        foreach (var name in _resolved.Keys.ToList())
-        {
-            if (reachable.Contains(name))
-            {
-                continue;
-            }
-
-            RemoveOutgoing(name);
-            _resolved.Remove(name);
-            _constraints.Remove(name);
-            removed = true;
-        }
-
-        if (!removed)
-        {
-            return false;
-        }
-
-        foreach (var name in reachable)
-        {
-            _pending.Enqueue(name);
-        }
-
-        return true;
+        return ordered;
     }
 
     private void SelectArtifacts()
     {
-        var graphNames = _resolved.Keys.ToHashSet(StringComparer.Ordinal);
-        foreach (var sei in _resolved.Values)
+        var graphNames = _assigned.Keys.ToHashSet(StringComparer.Ordinal);
+        foreach (var sei in _assigned.Values)
         {
             var scored = new List<(ArtifactEntry Artifact, int Score)>();
             foreach (var artifact in sei.Entry.Artifacts)
@@ -383,18 +318,25 @@ public sealed class Resolver
         return range;
     }
 
-    private static SeikoException Conflict(string name, string sourceId, List<Constraint> constraints)
+    private static SeikoException Conflict(string name, string sourceId, List<Requirement> pending)
     {
-        var parts = constraints
-            .Select(constraint =>
-                $"{constraint.Range} (required by {(constraint.From is null ? "direct" : constraint.From)})")
+        var parts = pending
+            .Where(requirement => string.Equals(requirement.Name, name, StringComparison.Ordinal))
+            .Select(requirement =>
+                $"{requirement.Range} (required by {Describe(requirement.From)})")
             .Distinct(StringComparer.Ordinal);
         return new SeikoException(
             $"version conflict for {name} in source '{sourceId}': no version satisfies {string.Join(", ", parts)}",
             "resolve");
     }
 
+    private static string Describe(string? from) => from is null ? "direct" : from;
+
     private static SeikoException Fail(string message) => new(message, "resolve");
 
-    private sealed record Constraint(VersionRange Range, string? RangeText, string? From);
+    private sealed record Requirement(
+        string Name,
+        VersionRange Range,
+        string? RangeText,
+        string? From);
 }

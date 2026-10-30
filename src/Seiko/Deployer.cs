@@ -352,9 +352,10 @@ public static class Deployer
 
     private static bool IsReserved(string relative)
     {
-        var comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
+        // Case-insensitive everywhere: macOS volumes are case-insensitive by
+        // default, and a stricter check on case-sensitive filesystems is
+        // harmless.
+        const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
         return relative.Equals("seiko.conf", comparison)
             || relative.Equals("seiko.lock.json", comparison)
             || relative.Equals(".seiko", comparison)

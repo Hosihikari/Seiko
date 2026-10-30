@@ -113,6 +113,9 @@ public sealed class SecurityTests
     [InlineData("seiko.conf")]
     [InlineData("seiko.lock.json")]
     [InlineData(".seiko/state.json")]
+    [InlineData("SEIKO.CONF")]
+    [InlineData("SEIKO.LOCK.JSON")]
+    [InlineData(".SEIKO/state.json")]
     public void Sync_RejectsReservedControlPaths(string path)
     {
         using var fixture = new Fixture();

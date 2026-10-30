@@ -37,7 +37,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 - `sk init`：生成 `seiko.conf` 模板，默认写入官方索引源 `official`。
 - `sk sync`：读 `seiko.conf`，从静态索引（本地或 HTTPS）解析 sei，按 `selectors` 选构件，校验 SHA-256，解包到内容寻址存储，部署到安装根，写 `seiko.lock.json`。
-- `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；`--locked` 在锁过期时报错；`sk install` 是别名。
+- `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；声明的直接集合必须与锁中的直接条目一致；`--locked` 在锁过期时报错；`sk install` 是别名。
 - `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]`：修改直接声明并同步。
 - `sk why <name>`：显示到某个 sei 的依赖链。
 - `sk outdated`：显示范围内与整体的新版本。
@@ -49,7 +49,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk index verify [path] [--check-artifacts] [--strict]`：校验索引目录的 schema、名称、版本、构件 URL 与 SHA-256；`--check-artifacts` 还会下载构件并校验字节与根级 `sei.json`，`--strict` 把警告也视为失败。
 - 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。
 - `sk source add|remove|list`：管理源（`--token-env` 与可重复的 `--token-host`）；`sk config get|set rid`：读写平台覆盖。
-- `sk cache status|verify|clean`：查看存储、校验构件，或清理所有已注册安装根的锁未引用的构件。
+- `sk cache status|verify|clean`：查看存储、校验构件，或清理所有已注册安装根当前锁与保留的回滚代都未引用的构件。
 - `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`。
 - `--json`：输出 `{schemaVersion, command, data}` 信封；错误也使用同一信封并带错误码。
 - `-v/--verbose` 输出调试日志与展开堆栈；`-q/--quiet` 静默进度与日志输出。进度条只在交互式 stdout 显示。

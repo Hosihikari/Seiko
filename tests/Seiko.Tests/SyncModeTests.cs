@@ -47,7 +47,7 @@ public sealed class SyncModeTests
     }
 
     [Fact]
-    public void Sync_FrozenReplaysLockedSet()
+    public void Sync_FrozenRejectsRemovedDirectSei()
     {
         using var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
@@ -60,6 +60,25 @@ public sealed class SyncModeTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         fixture.WriteConfig("win-x64");
+
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        Assert.Contains("not declared", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sync_FrozenReplaysLockedSetWhenDeclarationsMatch()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
         var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
 
         Assert.Equal(1, result.SeiInstalled);

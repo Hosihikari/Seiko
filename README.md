@@ -37,7 +37,7 @@ Current slice:
 
 - `sk init` — writes a `seiko.conf` template with the official index as source `official`.
 - `sk sync` — reads `seiko.conf`, resolves sei from a static index (local or HTTPS), selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
-- `sk sync --frozen` — replays `seiko.lock.json` without resolving; `--locked` fails if the lock is out of date; `sk install` is an alias.
+- `sk sync --frozen` — replays `seiko.lock.json` without resolving; the declared direct set must match the lock's direct entries; `--locked` fails if the lock is out of date; `sk install` is an alias.
 - `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync.
 - `sk why <name>` — shows the dependency chains to a sei.
 - `sk outdated` — shows newer in-range and overall versions.
@@ -49,7 +49,7 @@ Current slice:
 - `sk index verify [path] [--check-artifacts] [--strict]` — validates an index directory: schema, names, versions, artifact URLs, SHA-256, and with `--check-artifacts` the artifact bytes and the embedded `sei.json`; `--strict` also fails on warnings.
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
 - `sk source add|remove|list` — manage sources (`--token-env` and repeated `--token-host`); `sk config get|set rid` — read or write the platform override.
-- `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's lock.
+- `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's current lock or its retained rollback generations.
 - `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.

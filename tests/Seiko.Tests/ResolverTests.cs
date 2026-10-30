@@ -49,6 +49,32 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_BacktracksToAnEarlierPackageVersion()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            Version("a", "2.0.0", new DepFixture("b", "[2.0.0,3.0.0)")));
+        fixture.AddSei(
+            "b",
+            Version("b", "1.5.0"),
+            Version("b", "2.5.0"));
+        fixture.AddSei("c", Version("c", "1.0.0", new DepFixture("b", "[0.0.0,2.0.0)")));
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a"),
+            new SpecFixture("c", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "a").Version);
+        Assert.Equal("1.5.0", lockFile.Sei.Single(sei => sei.Name == "b").Version);
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "c").Version);
+    }
+
+    [Fact]
     public void Resolve_ReportsTheConstraintChainOnConflict()
     {
         using var fixture = new Fixture();
