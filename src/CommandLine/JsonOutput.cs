@@ -45,7 +45,7 @@ public sealed record WhyEnvelope(int SchemaVersion, string Command, WhyData Data
 
 public sealed record OutdatedEnvelope(int SchemaVersion, string Command, List<OutdatedSei> Data);
 
-public sealed record SourceItem(string Id, string Index, int Priority);
+public sealed record SourceItem(string Id, string Index, List<string>? TokenHosts);
 
 public sealed record SourceEnvelope(int SchemaVersion, string Command, List<SourceItem> Data);
 

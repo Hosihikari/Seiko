@@ -37,8 +37,13 @@ components = []
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
 
-        client.SourceAdd(fixture.Root, "mirror", "https://example.invalid/index.json", priority: 2);
-        Assert.Contains(client.ListSources(fixture.Root), source => source.Id == "mirror");
+        client.SourceAdd(
+            fixture.Root,
+            "mirror",
+            "https://example.invalid/index.json",
+            tokenHosts: ["cdn.example.invalid"]);
+        var mirror = Assert.Single(client.ListSources(fixture.Root), source => source.Id == "mirror");
+        Assert.Equal(["cdn.example.invalid"], mirror.TokenHosts);
         Assert.Equal("win-x64", client.ConfigGet(fixture.Root, "rid"));
 
         client.ConfigSet(fixture.Root, "rid", "linux-x64");

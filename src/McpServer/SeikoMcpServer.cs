@@ -244,12 +244,7 @@ public sealed class SeikoMcpServer
         var sources = new JsonArray();
         foreach (var source in config.Sources)
         {
-            sources.Add(new JsonObject
-            {
-                ["id"] = source.Id,
-                ["index"] = source.Index,
-                ["priority"] = source.Priority,
-            });
+            sources.Add(SourceJson(source));
         }
 
         return sources.ToJsonString();
@@ -260,15 +255,26 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var source in sources)
         {
-            array.Add(new JsonObject
-            {
-                ["id"] = source.Id,
-                ["index"] = source.Index,
-                ["priority"] = source.Priority,
-            });
+            array.Add(SourceJson(source));
         }
 
         return array.ToJsonString();
+    }
+
+    private static JsonObject SourceJson(SourceConfig source)
+    {
+        var hosts = new JsonArray();
+        foreach (var host in source.TokenHosts ?? [])
+        {
+            hosts.Add(host);
+        }
+
+        return new JsonObject
+        {
+            ["id"] = source.Id,
+            ["index"] = source.Index,
+            ["tokenHosts"] = hosts,
+        };
     }
 
     private string SourceAdd(JsonObject arguments)
@@ -280,8 +286,8 @@ public sealed class SeikoMcpServer
             root,
             id,
             index,
-            Int(arguments, "priority") ?? 0,
-            OptionalString(arguments, "tokenEnv"));
+            OptionalString(arguments, "tokenEnv"),
+            StringArray(arguments, "tokenHosts"));
         return SourcesJson(sources);
     }
 
@@ -504,6 +510,15 @@ public sealed class SeikoMcpServer
     private static int? Int(JsonObject arguments, string name)
         => arguments[name] is JsonValue value && value.TryGetValue<int>(out var result) ? result : null;
 
+    private static IReadOnlyList<string>? StringArray(JsonObject arguments, string name)
+        => arguments[name] is JsonArray array
+            ? array
+                .Select(item => item is JsonValue value && value.TryGetValue<string>(out var text) ? text : null)
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .Select(text => text!.Trim())
+                .ToList()
+            : null;
+
     private static JsonObject? SelectorsNode(Dictionary<string, string>? selectors)
     {
         if (selectors is null || selectors.Count == 0)
@@ -625,8 +640,12 @@ public sealed class SeikoMcpServer
                 ["root"] = new JsonObject { ["type"] = "string" },
                 ["id"] = new JsonObject { ["type"] = "string" },
                 ["index"] = new JsonObject { ["type"] = "string" },
-                ["priority"] = new JsonObject { ["type"] = "integer" },
                 ["tokenEnv"] = new JsonObject { ["type"] = "string" },
+                ["tokenHosts"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                },
             },
             ["required"] = new JsonArray(
                 JsonValue.Create("root"),

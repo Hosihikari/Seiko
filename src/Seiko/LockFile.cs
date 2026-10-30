@@ -51,7 +51,7 @@ public static class LockFile
                     Direct = p.Direct,
                     Artifact = new LockedArtifact
                     {
-                        Sha256 = p.Artifact.Source.Sha256.ToLowerInvariant(),
+                        Sha256 = (p.Artifact.Source.Sha256 ?? "").ToLowerInvariant(),
                         Selectors = SortSelectors(p.Artifact.Selectors),
                     },
                     Dependencies = p.Entry.Dependencies

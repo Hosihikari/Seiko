@@ -13,12 +13,41 @@ internal static class RootRegistry
         try
         {
             Directory.CreateDirectory(storeRoot);
-            using var registryLock = ProcessLock.Acquire(
-                Path.Combine(storeRoot, LockName),
-                "store root registry",
-                "io");
-            registryLock.DeleteOnDispose = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new SeikoException(
+                $"could not register install root for cache cleanup: {ex.Message}",
+                "io",
+                ex);
+        }
 
+        var lockPath = Path.Combine(storeRoot, LockName);
+        ProcessLock? registryLock = null;
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 5 && registryLock is null; attempt++)
+        {
+            try
+            {
+                registryLock = ProcessLock.Acquire(lockPath, "store root registry", "io");
+            }
+            catch (SeikoException ex)
+            {
+                lastError = ex;
+                Thread.Sleep(100 * (attempt + 1));
+            }
+        }
+
+        if (registryLock is null)
+        {
+            var message = $"could not register install root for cache cleanup: {lastError?.Message}";
+            throw lastError is null
+                ? new SeikoException(message, "io")
+                : new SeikoException(message, "io", lastError);
+        }
+
+        using (registryLock)
+        {
             var state = ReadState(storeRoot) ?? new RootRegistryState();
             var normalized = Path.GetFullPath(root);
             var comparer = OperatingSystem.IsWindows()
@@ -31,13 +60,6 @@ internal static class RootRegistry
 
             state.Roots.Add(normalized);
             WriteState(storeRoot, state);
-        }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or SeikoException)
-        {
-            // The registry is best-effort; a failed cache GC is safer than
-            // failing a deployment that already committed.
         }
     }
 

@@ -45,10 +45,10 @@ Current slice:
 - `sk rollback` — restores the previous deployment generation from the content-addressed store.
 - `sk search <term>` — searches sei names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
-- Sources may be a local path or an http(s) index; the official index is `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`; `tokenEnv` supplies a bearer token for private sources.
+- Sources may be a local path or an http(s) index; the official index is `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`; `tokenEnv` supplies a bearer token for private sources. The token is only sent to the index origin and to hosts listed in the source's `tokenHosts` (https); artifacts on other hosts never receive it.
 - `sk index verify [path] [--check-artifacts] [--strict]` — validates an index directory: schema, names, versions, artifact URLs, SHA-256, and with `--check-artifacts` the artifact bytes and the embedded `sei.json`; `--strict` also fails on warnings.
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
-- `sk source add|remove|list` — manage sources; `sk config get|set rid` — read or write the platform override.
+- `sk source add|remove|list` — manage sources (`--token-env` and repeated `--token-host`); `sk config get|set rid` — read or write the platform override.
 - `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's lock.
 - `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.

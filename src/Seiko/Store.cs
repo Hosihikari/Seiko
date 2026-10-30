@@ -21,6 +21,7 @@ public sealed class Store
 
     public StoredSei? TryGet(string sha256)
     {
+        sha256 = Hashing.NormalizeSha256(sha256);
         var directory = Path.Combine(Root, sha256);
         var manifestPath = Path.Combine(directory, "sei.json");
         if (!File.Exists(manifestPath))
@@ -46,7 +47,7 @@ public sealed class Store
         DownloadSession session,
         CancellationToken cancellationToken)
     {
-        var expectedSha = sei.Artifact.Source.Sha256.ToLowerInvariant();
+        var expectedSha = Hashing.NormalizeSha256(sei.Artifact.Source.Sha256);
         var directory = Path.Combine(Root, expectedSha);
         var manifestPath = Path.Combine(directory, "sei.json");
         if (File.Exists(manifestPath))
@@ -59,9 +60,8 @@ public sealed class Store
         Directory.CreateDirectory(partialRoot);
         var partialDirectory = Path.Combine(partialRoot, expectedSha);
         using var artifactLock = ProcessLock.Acquire(
-            Path.Combine(partialRoot, expectedSha + ".lock"),
+            Path.Combine(Root, ".locks", expectedSha + ".lock"),
             $"artifact {expectedSha}");
-        artifactLock.DeleteOnDispose = true;
 
         if (File.Exists(manifestPath))
         {

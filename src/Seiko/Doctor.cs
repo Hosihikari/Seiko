@@ -141,13 +141,14 @@ public sealed class Doctor
 
         foreach (var sei in lockFile.Sei)
         {
-            if (string.IsNullOrWhiteSpace(sei.Artifact.Sha256))
+            var digest = sei.Artifact.Sha256?.ToLowerInvariant();
+            if (!Hashing.IsSha256(digest))
             {
-                findings.Add(Error("store-missing", $"{sei.Name} has no artifact digest", null));
+                findings.Add(Error("store-digest", $"{sei.Name} has an invalid artifact digest", null));
                 continue;
             }
 
-            var directory = Path.Combine(storePath, sei.Artifact.Sha256.ToLowerInvariant());
+            var directory = Path.Combine(storePath, digest!);
             var manifestPath = Path.Combine(directory, "sei.json");
             if (!File.Exists(manifestPath))
             {

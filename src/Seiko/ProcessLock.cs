@@ -1,16 +1,15 @@
 namespace Seiko;
 
+// Lock files are intentionally never deleted. Closing and then deleting the
+// path lets a second process open the old file while a third creates a new
+// one, so both would hold a "lock" for the same name.
 public sealed class ProcessLock : IDisposable
 {
     private readonly FileStream _stream;
-    private readonly string _path;
 
-    public bool DeleteOnDispose { get; set; }
-
-    private ProcessLock(FileStream stream, string path)
+    private ProcessLock(FileStream stream)
     {
         _stream = stream;
-        _path = path;
     }
 
     public static ProcessLock Acquire(string path, string description, string code = "lock")
@@ -28,8 +27,7 @@ public sealed class ProcessLock : IDisposable
                     path,
                     FileMode.OpenOrCreate,
                     FileAccess.ReadWrite,
-                    FileShare.None),
-                path);
+                    FileShare.None));
         }
         catch (IOException ex)
         {
@@ -41,23 +39,5 @@ public sealed class ProcessLock : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        _stream.Dispose();
-        if (!DeleteOnDispose)
-        {
-            return;
-        }
-
-        try
-        {
-            File.Delete(_path);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
+    public void Dispose() => _stream.Dispose();
 }

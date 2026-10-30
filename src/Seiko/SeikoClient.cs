@@ -46,6 +46,8 @@ public sealed class SeikoClient
         IReadOnlySet<string>? updateNames = null)
     {
         root = Path.GetFullPath(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
@@ -57,8 +59,6 @@ public sealed class SeikoClient
             Progress = progress,
             Log = log,
         };
-        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        RootRegistry.Register(storePath, root);
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
         var sources = LoadSources(config, root, proxy, session);
         using var sourceScope = new SourceScope(sources);
@@ -402,8 +402,8 @@ public sealed class SeikoClient
         string root,
         string id,
         string index,
-        int priority = 0,
-        string? tokenEnv = null)
+        string? tokenEnv = null,
+        IReadOnlyList<string>? tokenHosts = null)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(index))
@@ -417,12 +417,17 @@ public sealed class SeikoClient
             throw new SeikoException($"source '{id}' already exists", "config");
         }
 
+        var hosts = (tokenHosts ?? [])
+            .Select(host => host.Trim())
+            .Where(host => host.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         config.Sources.Add(new SourceConfig
         {
             Id = id,
             Index = index,
-            Priority = priority,
             TokenEnv = string.IsNullOrWhiteSpace(tokenEnv) ? null : tokenEnv,
+            TokenHosts = hosts.Count > 0 ? hosts : null,
         });
         ConfigWriter.WriteSources(root, config.Sources);
         return config.Sources;
@@ -601,67 +606,104 @@ public sealed class SeikoClient
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        using var rootLock = ProcessLock.Acquire(
-            Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+        var comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+        // Hold the registry lock so no new root registers during the sweep,
+        // and every registered root's install lock so none of them can sync or
+        // publish a new lock between reading references and deleting.
+        using var registryLock = ProcessLock.Acquire(
+            Path.Combine(storePath, "roots.lock"),
+            "store root registry");
         var roots = RootRegistry.Read(storePath)
             .Append(root)
-            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .Distinct(comparer)
+            .Where(Directory.Exists)
+            .OrderBy(path => path, comparer)
             .ToList();
-        var referenced = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var registered in roots)
+        var rootLocks = new List<ProcessLock>();
+        try
         {
-            var lockFile = LockFile.Read(Path.Combine(registered, "seiko.lock.json"));
-            if (lockFile is null)
+            foreach (var registered in roots)
             {
-                continue;
+                if (!Directory.Exists(registered))
+                {
+                    continue;
+                }
+
+                rootLocks.Add(ProcessLock.Acquire(
+                    Path.Combine(registered, ".seiko", "install.lock"),
+                    $"install root {registered}"));
             }
 
-            foreach (var sei in lockFile.Sei)
+            var referenced = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var registered in roots)
             {
-                referenced.Add(sei.Artifact.Sha256.ToLowerInvariant());
+                var lockFile = LockFile.Read(Path.Combine(registered, "seiko.lock.json"));
+                if (lockFile is null)
+                {
+                    continue;
+                }
+
+                foreach (var sei in lockFile.Sei)
+                {
+                    var digest = sei.Artifact.Sha256?.ToLowerInvariant();
+                    if (Hashing.IsSha256(digest))
+                    {
+                        referenced.Add(digest!);
+                    }
+                }
+            }
+
+            if (referenced.Count == 0
+                && LockFile.Read(Path.Combine(root, "seiko.lock.json")) is null)
+            {
+                throw new SeikoException("no lock; run `sk sync`", "lock");
+            }
+
+            var removed = 0;
+            long bytes = 0;
+            if (!Directory.Exists(storePath))
+            {
+                return new CacheCleanResult(0, 0);
+            }
+
+            foreach (var directory in ArtifactDirectories(storePath))
+            {
+                var name = Path.GetFileName(directory);
+                if (referenced.Contains(name))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    bytes += DirectorySize(directory);
+                    Directory.Delete(directory, recursive: true);
+                    StoreDigests.TryDelete(storePath, name);
+                    removed++;
+                }
+                catch (IOException ex)
+                {
+                    throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+                }
+            }
+
+            StoreDigests.CleanOrphans(storePath);
+            return new CacheCleanResult(removed, bytes);
+        }
+        finally
+        {
+            for (var index = rootLocks.Count - 1; index >= 0; index--)
+            {
+                rootLocks[index].Dispose();
             }
         }
-
-        if (referenced.Count == 0
-            && LockFile.Read(Path.Combine(root, "seiko.lock.json")) is null)
-        {
-            throw new SeikoException("no lock; run `sk sync`", "lock");
-        }
-        var removed = 0;
-        long bytes = 0;
-        if (!Directory.Exists(storePath))
-        {
-            return new CacheCleanResult(0, 0);
-        }
-
-        foreach (var directory in ArtifactDirectories(storePath))
-        {
-            var name = Path.GetFileName(directory);
-            if (referenced.Contains(name))
-            {
-                continue;
-            }
-
-            try
-            {
-                bytes += DirectorySize(directory);
-                Directory.Delete(directory, recursive: true);
-                StoreDigests.TryDelete(storePath, name);
-                removed++;
-            }
-            catch (IOException ex)
-            {
-                throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
-            }
-        }
-
-        StoreDigests.CleanOrphans(storePath);
-        return new CacheCleanResult(removed, bytes);
     }
 
     private static IEnumerable<string> ArtifactDirectories(string storePath)
@@ -693,6 +735,8 @@ public sealed class SeikoClient
     public RollbackResult Rollback(string root, string? storeRoot = null, int? toGeneration = null)
     {
         root = Path.GetFullPath(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
@@ -722,8 +766,6 @@ public sealed class SeikoClient
         var snapshotLock = LockFile.Read(snapshotLockPath)
             ?? throw new SeikoException($"generation {target} has no lock", "lock");
 
-        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        RootRegistry.Register(storePath, root);
         var store = new Store(storePath);
         var sei = new List<DeployedSei>();
         foreach (var locked in snapshotLock.Sei)

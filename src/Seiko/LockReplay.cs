@@ -27,17 +27,25 @@ public static class LockReplay
         var result = new List<ResolvedSei>();
         foreach (var locked in lockFile.Sei.OrderBy(p => p.Name, StringComparer.Ordinal))
         {
-            var source = sources.FirstOrDefault(s => s.GetSei(locked.Name) is not null)
-                ?? throw Fail($"--frozen: source for {locked.Name} not found");
+            var source = sources.FirstOrDefault(s => string.Equals(s.Id, locked.Source, StringComparison.Ordinal))
+                ?? throw Fail(
+                    $"--frozen: source '{locked.Source}' for {locked.Name} is not configured");
 
-            var index = source.GetSei(locked.Name)!;
+            var index = source.GetSei(locked.Name)
+                ?? throw Fail($"--frozen: {locked.Name} is not in source '{locked.Source}'");
             var entry = index.Versions.FirstOrDefault(v => string.Equals(v.Version, locked.Version, StringComparison.Ordinal))
-                ?? throw Fail($"--frozen: {locked.Name} {locked.Version} not found in source");
+                ?? throw Fail($"--frozen: {locked.Name} {locked.Version} not found in source '{locked.Source}'");
 
             var artifact = entry.Artifacts.FirstOrDefault(a =>
-                    string.Equals(a.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(a.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
+                    && SelectorsEqual(a.Selectors, locked.Artifact.Selectors))
                 ?? throw Fail(
-                    $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} not found in source");
+                    $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'");
+
+            if (!DependenciesEqual(entry.Dependencies, locked.Dependencies))
+            {
+                throw Fail($"--frozen: dependencies of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
+            }
 
             if (!NuGetVersion.TryParse(locked.Version, out var version))
             {

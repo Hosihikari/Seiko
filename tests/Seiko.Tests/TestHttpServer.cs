@@ -11,6 +11,7 @@ internal sealed class TestHttpServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _loop;
     private readonly string _root;
+    private readonly List<string?> _authorizations = [];
 
     public TestHttpServer(string root)
     {
@@ -23,6 +24,17 @@ internal sealed class TestHttpServer : IDisposable
     }
 
     public string BaseUrl { get; }
+
+    public IReadOnlyList<string?> Authorizations
+    {
+        get
+        {
+            lock (_authorizations)
+            {
+                return _authorizations.ToList();
+            }
+        }
+    }
 
     private async Task AcceptLoopAsync()
     {
@@ -62,6 +74,12 @@ internal sealed class TestHttpServer : IDisposable
                 {
                     headers[line[..separator].Trim()] = line[(separator + 1)..].Trim();
                 }
+            }
+
+            lock (_authorizations)
+            {
+                _authorizations.Add(
+                    headers.TryGetValue("Authorization", out var authorization) ? authorization : null);
             }
 
             var parts = requestLine?.Split(' ', StringSplitOptions.RemoveEmptyEntries);

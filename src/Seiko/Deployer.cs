@@ -38,9 +38,27 @@ public static class Deployer
             ? JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState) ?? new LocalState()
             : new LocalState();
 
+        PathSafety.EnsureNoLinks(root, Relative(root, stateDirectory));
+        foreach (var relative in desired.Keys)
+        {
+            PathSafety.EnsureNoLinks(root, relative);
+        }
+
+        foreach (var relative in state.Files.Keys)
+        {
+            PathSafety.EnsureNoLinks(root, relative);
+        }
+
         var mutations = new List<Mutation>();
         foreach (var oldFile in state.Files.Keys)
         {
+            if (IsReserved(oldFile))
+            {
+                throw new SeikoException(
+                    $"deployment state contains a reserved path: {oldFile}",
+                    "deploy");
+            }
+
             if (!desired.ContainsKey(oldFile) && File.Exists(Native(root, oldFile)))
             {
                 mutations.Add(new Mutation(oldFile, null));
@@ -57,6 +75,27 @@ public static class Deployer
                 mutations.Add(new Mutation(relative, file));
             }
         }
+
+        var modes = new Dictionary<string, UnixFileMode>(StringComparer.Ordinal);
+        foreach (var (relative, file) in desired)
+        {
+            if (TryParseMode(relative, file.Modes, out var mode))
+            {
+                modes[relative] = mode;
+            }
+        }
+
+        var mutatedPaths = mutations
+            .Where(mutation => mutation.File is not null)
+            .Select(mutation => mutation.RelativePath)
+            .ToHashSet(StringComparer.Ordinal);
+        var modeChanges = modes
+            .Where(pair => !mutatedPaths.Contains(pair.Key)
+                && File.Exists(Native(root, pair.Key))
+                && ModeDiffers(Native(root, pair.Key), pair.Value))
+            .Select(pair => pair.Key)
+            .OrderBy(relative => relative, StringComparer.Ordinal)
+            .ToList();
 
         var newState = new LocalState
         {
@@ -105,6 +144,11 @@ public static class Deployer
                 transaction.SetNewGeneration(Relative(root, generationDirectory));
             }
 
+            foreach (var relative in modeChanges)
+            {
+                transaction.WillChange(relative);
+            }
+
             transaction.WriteJournal();
 
             var applied = 0;
@@ -128,13 +172,12 @@ public static class Deployer
                 var temp = destination + ".seiko-tmp-" + Guid.NewGuid().ToString("N");
                 FileLink.Create(mutation.File.SourcePath, temp);
                 File.Move(temp, destination, overwrite: true);
-                ApplyMode(destination, mutation.RelativePath, mutation.File.Modes);
                 AppliedForTests.Value?.Invoke(++applied);
             }
 
-            foreach (var (relative, file) in desired)
+            foreach (var relative in modes.Keys.OrderBy(key => key, StringComparer.Ordinal))
             {
-                ApplyMode(Native(root, relative), relative, file.Modes);
+                ApplyMode(Native(root, relative), relative, modes[relative]);
             }
 
             WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
@@ -172,6 +215,13 @@ public static class Deployer
                 if (relative is "sei.json" or "tooth.json")
                 {
                     continue;
+                }
+
+                if (IsReserved(relative))
+                {
+                    throw new SeikoException(
+                        $"sei '{item.Name}' declares a reserved path: {relative}",
+                        "deploy");
                 }
 
                 var hash = HashStoredFile(item, file, relative);
@@ -251,21 +301,64 @@ public static class Deployer
         }
     }
 
-    private static void ApplyMode(string path, string relative, Dictionary<string, string>? modes)
+    private static bool TryParseMode(
+        string relative,
+        Dictionary<string, string>? modes,
+        out UnixFileMode mode)
     {
-        if (OperatingSystem.IsWindows() || modes is null || !modes.TryGetValue(relative, out var mode))
+        mode = default;
+        if (OperatingSystem.IsWindows() || modes is null || !modes.TryGetValue(relative, out var text))
+        {
+            return false;
+        }
+
+        try
+        {
+            mode = (UnixFileMode)Convert.ToInt32(text, 8);
+            return true;
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException)
+        {
+            throw new SeikoException($"invalid mode '{text}' for {relative}", "deploy", ex);
+        }
+    }
+
+    private static bool ModeDiffers(string path, UnixFileMode mode)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        return File.GetUnixFileMode(path) != mode;
+    }
+
+    private static void ApplyMode(string path, string relative, UnixFileMode mode)
+    {
+        if (OperatingSystem.IsWindows())
         {
             return;
         }
 
         try
         {
-            File.SetUnixFileMode(path, (UnixFileMode)Convert.ToInt32(mode, 8));
+            File.SetUnixFileMode(path, mode);
         }
-        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            throw new SeikoException($"invalid mode '{mode}' for {relative}", "deploy", ex);
+            throw new SeikoException($"deployed file is missing: {relative}", "deploy", ex);
         }
+    }
+
+    private static bool IsReserved(string relative)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return relative.Equals("seiko.conf", comparison)
+            || relative.Equals("seiko.lock.json", comparison)
+            || relative.Equals(".seiko", comparison)
+            || relative.StartsWith(".seiko/", comparison);
     }
 
     private static string Relative(string root, string path)
@@ -285,18 +378,19 @@ public static class Deployer
 
     private static string HashStoredFile(DeployedSei sei, string file, string relative)
     {
+        var actual = Hashing.Sha256File(file);
         if (sei.Digests.Count == 0)
         {
-            return Hashing.Sha256File(file);
+            return actual;
         }
 
         if (!sei.Digests.TryGetValue(relative, out var digest)
-            || new FileInfo(file).Length != digest.Size)
+            || !actual.Equals(digest.Sha256, StringComparison.Ordinal))
         {
             throw CorruptStore(sei, relative);
         }
 
-        return digest.Sha256;
+        return actual;
     }
 
     private static void EnsureStoreUnchanged(DesiredFile file)

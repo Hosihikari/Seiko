@@ -13,7 +13,9 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
     private readonly HttpClient _client;
     private readonly Uri _baseUri;
+    private readonly Uri _indexUri;
     private readonly string? _token;
+    private readonly HashSet<string> _tokenHosts;
     private readonly DownloadSession _session;
     private readonly Dictionary<string, SeiIndex?> _cache = new(StringComparer.Ordinal);
 
@@ -48,7 +50,11 @@ public sealed class HttpSource : ISeiSource, IDisposable
             Timeout = Timeout.InfiniteTimeSpan,
         };
         _baseUri = new Uri(indexUri, ".");
+        _indexUri = indexUri;
         _token = ResolveToken(config);
+        _tokenHosts = new HashSet<string>(
+            config.TokenHosts ?? [],
+            StringComparer.OrdinalIgnoreCase);
         Index = FetchIndex(indexUri);
     }
 
@@ -515,12 +521,24 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private HttpRequestMessage NewRequest(HttpMethod method, Uri uri)
     {
         var request = new HttpRequestMessage(method, uri);
-        if (_token is not null)
+        if (_token is not null && TokenAllowed(uri))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
         }
 
         return request;
+    }
+
+    private bool TokenAllowed(Uri uri)
+    {
+        if (string.Equals(uri.Scheme, _indexUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(uri.Host, _indexUri.Host, StringComparison.OrdinalIgnoreCase)
+            && uri.Port == _indexUri.Port)
+        {
+            return true;
+        }
+
+        return uri.Scheme == Uri.UriSchemeHttps && _tokenHosts.Contains(uri.Host);
     }
 
     private IndexRoot FetchIndex(Uri uri)

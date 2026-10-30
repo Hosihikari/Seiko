@@ -66,8 +66,8 @@ public sealed class SourceConfig
 {
     public string Id { get; set; } = "";
     public string Index { get; set; } = "";
-    public int Priority { get; set; }
     public string? TokenEnv { get; set; }
+    public List<string>? TokenHosts { get; set; }
 }
 
 public sealed class SeiSpec

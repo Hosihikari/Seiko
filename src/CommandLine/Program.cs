@@ -256,15 +256,20 @@ sourceList.SetAction(parseResult => Run(
 
 var sourceAdd = new Command("add", "Add a source.");
 var sourceAddRoot = RootOption();
-var sourceAddPriority = new Option<int?>("--priority") { Description = "Source priority." };
 var sourceAddTokenEnv = new Option<string?>("--token-env") { Description = "Environment variable holding a bearer token." };
+var sourceAddTokenHosts = new Option<string[]>("--token-host")
+{
+    Description = "Extra host allowed to receive the bearer token (repeatable).",
+    Arity = ArgumentArity.OneOrMore,
+    AllowMultipleArgumentsPerToken = true,
+};
 var sourceAddId = new Argument<string>("id") { Description = "Source id." };
 var sourceAddIndex = new Argument<string>("index") { Description = "Index URL or local path." };
 sourceAdd.Add(sourceAddId);
 sourceAdd.Add(sourceAddIndex);
 sourceAdd.Add(sourceAddRoot);
-sourceAdd.Add(sourceAddPriority);
 sourceAdd.Add(sourceAddTokenEnv);
+sourceAdd.Add(sourceAddTokenHosts);
 sourceAdd.SetAction(parseResult => Run(
     "source_add",
     IsJson(parseResult),
@@ -272,7 +277,7 @@ sourceAdd.SetAction(parseResult => Run(
         parseResult.GetValue(sourceAddRoot),
         parseResult.GetValue(sourceAddId)!,
         parseResult.GetValue(sourceAddIndex)!,
-        parseResult.GetValue(sourceAddPriority) ?? 0,
+        parseResult.GetValue(sourceAddTokenHosts),
         parseResult.GetValue(sourceAddTokenEnv),
         IsJson(parseResult))));
 
@@ -676,12 +681,12 @@ static int SourceAddCommand(
     string? rootOption,
     string id,
     string index,
-    int priority,
+    string[]? tokenHosts,
     string? tokenEnv,
     bool json)
 {
     var root = rootOption ?? FindRoot();
-    var sources = new SeikoClient().SourceAdd(root, id, index, priority, tokenEnv);
+    var sources = new SeikoClient().SourceAdd(root, id, index, tokenEnv, tokenHosts);
     PrintSources("source_add", sources, json);
     return 0;
 }
@@ -697,7 +702,7 @@ static int SourceRemoveCommand(string? rootOption, string id, bool json)
 static void PrintSources(string command, IReadOnlyList<SourceConfig> sources, bool json)
 {
     var items = sources
-        .Select(source => new SourceItem(source.Id, source.Index, source.Priority))
+        .Select(source => new SourceItem(source.Id, source.Index, source.TokenHosts))
         .ToList();
     if (json)
     {
@@ -705,10 +710,11 @@ static void PrintSources(string command, IReadOnlyList<SourceConfig> sources, bo
         return;
     }
 
-    Console.WriteLine("ID\tINDEX\tPRIORITY");
+    Console.WriteLine("ID\tINDEX\tTOKEN HOSTS");
     foreach (var source in items)
     {
-        Console.WriteLine($"{source.Id}\t{source.Index}\t{source.Priority}");
+        var hosts = source.TokenHosts is null ? "" : string.Join(",", source.TokenHosts);
+        Console.WriteLine($"{source.Id}\t{source.Index}\t{hosts}");
     }
 }
 

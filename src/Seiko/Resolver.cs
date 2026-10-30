@@ -13,14 +13,24 @@ public sealed class ResolvedSei
     public string Version => ParsedVersion.ToNormalizedString();
 }
 
+// Resolution collects every constraint on a package and re-selects when a
+// later edge conflicts with an earlier choice, so a satisfiable graph is not
+// rejected just because the first constraint was satisfied by a version that
+// a subsequent constraint rules out.
 public sealed class Resolver
 {
+    private const int MaxSteps = 10000;
+    private const int MaxPrunes = 100;
+
     private readonly IReadOnlyList<ISeiSource> _sources;
     private readonly SeikoLock? _lock;
     private readonly string _rid;
     private readonly bool _allowPrerelease;
     private readonly IReadOnlySet<string>? _updateNames;
     private readonly Dictionary<string, ResolvedSei> _resolved = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<Constraint>> _constraints = new(StringComparer.Ordinal);
+    private readonly Queue<string> _pending = new();
+    private int _steps;
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -41,9 +51,17 @@ public sealed class Resolver
         var directNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
+            if (!SeiName.IsValid(spec.Name))
+            {
+                throw Fail($"invalid sei name '{spec.Name}'");
+            }
+
             directNames.Add(spec.Name);
-            ResolveSei(spec, new HashSet<string>(StringComparer.Ordinal));
+            AddConstraint(spec.Name, ParseRange(spec.Version, spec.Name), spec.Version, null);
+            _pending.Enqueue(spec.Name);
         }
+
+        Stabilize();
 
         foreach (var sei in _resolved.Values)
         {
@@ -54,39 +72,99 @@ public sealed class Resolver
         return _resolved.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
     }
 
-    private void ResolveSei(SeiSpec spec, HashSet<string> path)
+    private void Stabilize()
     {
-        if (!SeiName.IsValid(spec.Name))
+        var prunes = 0;
+        while (true)
         {
-            throw Fail($"invalid sei name '{spec.Name}'");
-        }
+            while (_pending.Count > 0)
+            {
+                Select(_pending.Dequeue());
+            }
 
-        if (path.Contains(spec.Name))
-        {
-            throw Fail($"dependency cycle: {string.Join(" -> ", path)} -> {spec.Name}");
-        }
-
-        var range = ParseRange(spec.Version, spec.Name);
-        if (_resolved.TryGetValue(spec.Name, out var existing))
-        {
-            if (range.Satisfies(existing.ParsedVersion))
+            if (!PruneUnreachable())
             {
                 return;
             }
 
-            throw Fail(
-                $"version conflict for {spec.Name}: resolved {existing.Version}, but {range} is required");
+            if (++prunes > MaxPrunes)
+            {
+                throw Fail("dependency resolution did not converge");
+            }
+        }
+    }
+
+    private void Select(string name)
+    {
+        if (!_constraints.TryGetValue(name, out var constraints) || constraints.Count == 0)
+        {
+            return;
         }
 
-        var source = FindSource(spec.Name, out var index);
-        var lockedVersion = GetLockedVersion(spec.Name);
+        if (!SeiName.IsValid(name))
+        {
+            throw Fail($"invalid sei name '{name}'");
+        }
+
+        if (++_steps > MaxSteps)
+        {
+            throw Fail("dependency resolution did not converge");
+        }
+
+        var source = FindSource(name, out var index);
+        var candidates = Candidates(name, source, index!, constraints);
+        if (candidates.Count == 0)
+        {
+            throw Conflict(name, source.Id, constraints);
+        }
+
+        var (entry, version) = Choose(name, candidates);
+        if (_resolved.TryGetValue(name, out var existing)
+            && existing.ParsedVersion.Equals(version))
+        {
+            return;
+        }
+
+        if (existing is not null)
+        {
+            RemoveOutgoing(name);
+        }
+
+        _resolved[name] = new ResolvedSei
+        {
+            Name = name,
+            ParsedVersion = version,
+            Entry = entry,
+            Source = source,
+        };
+
+        foreach (var dependency in entry.Dependencies)
+        {
+            AddConstraint(
+                dependency.Name,
+                ParseRange(dependency.Version, dependency.Name),
+                dependency.Version,
+                name);
+            _pending.Enqueue(dependency.Name);
+        }
+    }
+
+    private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
+        string name,
+        ISeiSource source,
+        SeiIndex index,
+        List<Constraint> constraints)
+    {
+        var lockedVersion = GetLockedVersion(name);
+        var allowPrerelease = _allowPrerelease
+            || constraints.Any(constraint => constraint.RangeText?.Contains('-') == true);
         var candidates = new List<(SeiVersionEntry Entry, NuGetVersion Version)>();
 
-        foreach (var entry in index!.Versions)
+        foreach (var entry in index.Versions)
         {
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
-                throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {spec.Name}");
+                throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
             }
 
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
@@ -94,12 +172,12 @@ public sealed class Resolver
                 continue;
             }
 
-            if (!range.Satisfies(version))
+            if (!constraints.All(constraint => constraint.Range.Satisfies(version)))
             {
                 continue;
             }
 
-            if (version.IsPrerelease && !_allowPrerelease && !(spec.Version?.Contains('-') ?? false))
+            if (version.IsPrerelease && !allowPrerelease)
             {
                 continue;
             }
@@ -107,42 +185,99 @@ public sealed class Resolver
             candidates.Add((entry, version));
         }
 
-        if (candidates.Count == 0)
-        {
-            throw Fail($"no version of {spec.Name} satisfies {range}");
-        }
+        return candidates;
+    }
 
-        var chosen = candidates.OrderByDescending(c => c.Version).First();
+    private (SeiVersionEntry Entry, NuGetVersion Version) Choose(
+        string name,
+        List<(SeiVersionEntry Entry, NuGetVersion Version)> candidates)
+    {
+        var chosen = candidates.OrderByDescending(candidate => candidate.Version).First();
+        var lockedVersion = GetLockedVersion(name);
         if (lockedVersion is not null)
         {
-            var lockedMatch = candidates.FirstOrDefault(c => c.Version.Equals(lockedVersion));
+            var lockedMatch = candidates.FirstOrDefault(candidate => candidate.Version.Equals(lockedVersion));
             if (lockedMatch.Entry is not null)
             {
                 chosen = lockedMatch;
             }
         }
 
-        var resolved = new ResolvedSei
-        {
-            Name = spec.Name,
-            ParsedVersion = chosen.Version,
-            Entry = chosen.Entry,
-            Source = source,
-        };
+        return chosen;
+    }
 
-        _resolved[spec.Name] = resolved;
-        path.Add(spec.Name);
-        try
+    private void AddConstraint(string name, VersionRange range, string? rangeText, string? from)
+    {
+        if (!_constraints.TryGetValue(name, out var list))
         {
-            foreach (var dependency in chosen.Entry.Dependencies)
+            list = [];
+            _constraints[name] = list;
+        }
+
+        list.Add(new Constraint(range, rangeText, from));
+    }
+
+    private void RemoveOutgoing(string name)
+    {
+        foreach (var (target, list) in _constraints)
+        {
+            if (list.RemoveAll(constraint => string.Equals(constraint.From, name, StringComparison.Ordinal)) > 0)
             {
-                ResolveSei(new SeiSpec { Name = dependency.Name, Version = dependency.Version }, path);
+                _pending.Enqueue(target);
             }
         }
-        finally
+    }
+
+    private bool PruneUnreachable()
+    {
+        var reachable = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<string>(
+            _constraints
+                .Where(pair => pair.Value.Any(constraint => constraint.From is null))
+                .Select(pair => pair.Key));
+
+        while (queue.Count > 0)
         {
-            path.Remove(spec.Name);
+            var name = queue.Dequeue();
+            if (!reachable.Add(name))
+            {
+                continue;
+            }
+
+            if (_resolved.TryGetValue(name, out var resolved))
+            {
+                foreach (var dependency in resolved.Entry.Dependencies)
+                {
+                    queue.Enqueue(dependency.Name);
+                }
+            }
         }
+
+        var removed = false;
+        foreach (var name in _resolved.Keys.ToList())
+        {
+            if (reachable.Contains(name))
+            {
+                continue;
+            }
+
+            RemoveOutgoing(name);
+            _resolved.Remove(name);
+            _constraints.Remove(name);
+            removed = true;
+        }
+
+        if (!removed)
+        {
+            return false;
+        }
+
+        foreach (var name in reachable)
+        {
+            _pending.Enqueue(name);
+        }
+
+        return true;
     }
 
     private void SelectArtifacts()
@@ -248,5 +383,18 @@ public sealed class Resolver
         return range;
     }
 
+    private static SeikoException Conflict(string name, string sourceId, List<Constraint> constraints)
+    {
+        var parts = constraints
+            .Select(constraint =>
+                $"{constraint.Range} (required by {(constraint.From is null ? "direct" : constraint.From)})")
+            .Distinct(StringComparer.Ordinal);
+        return new SeikoException(
+            $"version conflict for {name} in source '{sourceId}': no version satisfies {string.Join(", ", parts)}",
+            "resolve");
+    }
+
     private static SeikoException Fail(string message) => new(message, "resolve");
+
+    private sealed record Constraint(VersionRange Range, string? RangeText, string? From);
 }

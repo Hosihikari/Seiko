@@ -39,12 +39,19 @@ public static class ConfigLoader
                 throw new SeikoException($"{path}: each source needs id and index", "config");
             }
 
+            var tokenHosts = child.GetSection("tokenHosts")
+                .GetChildren()
+                .Select(section => section.Value)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
             config.Sources.Add(new SourceConfig
             {
                 Id = id,
                 Index = index,
-                Priority = int.TryParse(child["priority"], out var priority) ? priority : 0,
                 TokenEnv = child["tokenEnv"],
+                TokenHosts = tokenHosts.Count > 0 ? tokenHosts : null,
             });
         }
 

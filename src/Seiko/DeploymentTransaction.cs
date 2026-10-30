@@ -23,6 +23,7 @@ internal sealed class DeploymentTransaction
 
     public static DeploymentTransaction Begin(string root, string stateDirectory)
     {
+        EnsureStateDirectory(root, stateDirectory);
         Directory.CreateDirectory(stateDirectory);
         var journalPath = Path.Combine(stateDirectory, JournalName);
         if (File.Exists(journalPath))
@@ -49,6 +50,7 @@ internal sealed class DeploymentTransaction
             return;
         }
 
+        PathSafety.EnsureNoLinks(_root, normalized);
         var fullPath = Resolve(_root, normalized);
         if (Directory.Exists(fullPath))
         {
@@ -73,7 +75,11 @@ internal sealed class DeploymentTransaction
     }
 
     public void SetNewGeneration(string relative)
-        => _journal.NewGenerationPath = Normalize(relative);
+    {
+        var normalized = Normalize(relative);
+        PathSafety.EnsureNoLinks(_root, normalized);
+        _journal.NewGenerationPath = normalized;
+    }
 
     public void WriteJournal()
     {
@@ -106,6 +112,7 @@ internal sealed class DeploymentTransaction
 
     public static void Recover(string root, string stateDirectory)
     {
+        EnsureStateDirectory(root, stateDirectory);
         var journalPath = Path.Combine(stateDirectory, JournalName);
         var backupDirectory = Path.Combine(stateDirectory, BackupName);
         if (!File.Exists(journalPath))
@@ -154,9 +161,11 @@ internal sealed class DeploymentTransaction
         {
             var entry = journal.Entries[i];
             var relative = Normalize(entry.Path);
+            PathSafety.EnsureNoLinks(rootFull, relative);
             var destination = Resolve(rootFull, relative);
             if (entry.Existed)
             {
+                PathSafety.EnsureNoLinks(backupFull, relative);
                 var backup = Resolve(backupFull, relative);
                 if (!File.Exists(backup))
                 {
@@ -175,7 +184,9 @@ internal sealed class DeploymentTransaction
 
         if (journal.NewGenerationPath is { } generation)
         {
-            var path = Resolve(rootFull, Normalize(generation));
+            var normalized = Normalize(generation);
+            PathSafety.EnsureNoLinks(rootFull, normalized);
+            var path = Resolve(rootFull, normalized);
             if (Directory.Exists(path))
             {
                 Directory.Delete(path, recursive: true);
@@ -213,6 +224,15 @@ internal sealed class DeploymentTransaction
             temp,
             JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
         File.Move(temp, _journalPath, overwrite: true);
+    }
+
+    private static void EnsureStateDirectory(string root, string stateDirectory)
+    {
+        var relative = Path.GetRelativePath(
+                Path.GetFullPath(root),
+                Path.GetFullPath(stateDirectory))
+            .Replace('\\', '/');
+        PathSafety.EnsureNoLinks(root, relative);
     }
 
     private static string Normalize(string relative)
