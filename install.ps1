@@ -1,11 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Installs sk (Seiko) from GitHub Releases.
+Installs sk and seiko-mcp (Seiko) from GitHub Releases.
 
 .DESCRIPTION
-Downloads the NativeAOT sk.exe for this Windows architecture, verifies it
-against SHA256SUMS, and installs it into the user profile by default.
+Downloads the NativeAOT sk.exe and seiko-mcp.exe for this Windows
+architecture, verifies them against SHA256SUMS, and installs them into the
+user profile by default.
 
 .PARAMETER Version
 Install a specific version, for example v0.1.0.
@@ -88,6 +89,7 @@ $asset = "sk-$versionNumber-$rid.zip"
 $assetUrl = "$BaseUrl/$asset"
 $sumsUrl = "$BaseUrl/SHA256SUMS"
 $target = Join-Path $Dir "sk.exe"
+$mcpTarget = Join-Path $Dir "seiko-mcp.exe"
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("seiko-install-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -110,6 +112,7 @@ try {
         Write-Output "asset: $asset"
         Write-Output "url: $assetUrl"
         Write-Output "target: $target"
+        Write-Output "mcp-target: $mcpTarget"
         Write-Output "sha256: $expected"
         exit 0
     }
@@ -127,12 +130,21 @@ try {
     if (-not (Test-Path $binary)) {
         Fail "archive does not contain sk.exe"
     }
+    $mcpBinary = Join-Path $extract "seiko-mcp.exe"
+    if (-not (Test-Path $mcpBinary)) {
+        Fail "archive does not contain seiko-mcp.exe"
+    }
 
     New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-    $tmpTarget = Join-Path $Dir (".sk.tmp." + $PID + ".exe")
-    Copy-Item -Path $binary -Destination $tmpTarget -Force
-    Move-Item -Path $tmpTarget -Destination $target -Force
-    Write-Output "installed sk $versionNumber ($rid) to $target"
+    foreach ($item in @(
+        @{ Source = $binary; Target = $target; Name = "sk" },
+        @{ Source = $mcpBinary; Target = $mcpTarget; Name = "seiko-mcp" }
+    )) {
+        $tmpTarget = Join-Path $Dir ("." + $item.Name + ".tmp." + $PID + ".exe")
+        Copy-Item -Path $item.Source -Destination $tmpTarget -Force
+        Move-Item -Path $tmpTarget -Destination $item.Target -Force
+        Write-Output "installed $($item.Name) $versionNumber ($rid) to $($item.Target)"
+    }
 
     $pathEntries = [Environment]::GetEnvironmentVariable("Path", "User") -split ";"
     if ($pathEntries -notcontains $Dir) {

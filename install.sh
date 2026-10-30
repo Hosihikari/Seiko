@@ -10,7 +10,7 @@ BASE_URL=""
 
 usage() {
     cat <<'EOF'
-Install sk (Seiko) from GitHub Releases.
+Install sk and seiko-mcp (Seiko) from GitHub Releases.
 
 Usage: install.sh [options]
 
@@ -136,6 +136,7 @@ if [ -z "$INSTALL_DIR" ]; then
     INSTALL_DIR="$HOME/.local/bin"
 fi
 TARGET="$INSTALL_DIR/sk"
+MCP_TARGET="$INSTALL_DIR/seiko-mcp"
 
 tmp_dir=$(mktemp -d)
 cleanup() {
@@ -161,8 +162,8 @@ expected=$(awk -v f="$ASSET" '$2 == f || $2 == "*" f { print $1 }' "$sums_file" 
 [ -n "$expected" ] || die "SHA256SUMS does not contain $ASSET"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-    printf 'version: %s\nrid: %s\nasset: %s\nurl: %s\ntarget: %s\nsha256: %s\n' \
-        "$VERSION" "$RID" "$ASSET" "$ASSET_URL" "$TARGET" "$expected"
+    printf 'version: %s\nrid: %s\nasset: %s\nurl: %s\ntarget: %s\nmcp-target: %s\nsha256: %s\n' \
+        "$VERSION" "$RID" "$ASSET" "$ASSET_URL" "$TARGET" "$MCP_TARGET" "$expected"
     exit 0
 fi
 
@@ -178,14 +179,18 @@ esac
 
 tar -xzf "$archive" -C "$tmp_dir"
 [ -f "$tmp_dir/sk" ] || die "archive does not contain sk"
+[ -f "$tmp_dir/seiko-mcp" ] || die "archive does not contain seiko-mcp"
 
 mkdir -p "$INSTALL_DIR"
-tmp_target="$INSTALL_DIR/.sk.tmp.$$"
-cp "$tmp_dir/sk" "$tmp_target"
-chmod 755 "$tmp_target"
-mv -f "$tmp_target" "$TARGET"
+for name in sk seiko-mcp; do
+    tmp_target="$INSTALL_DIR/.$name.tmp.$$"
+    cp "$tmp_dir/$name" "$tmp_target"
+    chmod 755 "$tmp_target"
+    mv -f "$tmp_target" "$INSTALL_DIR/$name"
+done
 
 printf 'installed sk %s (%s) to %s\n' "$VERSION" "$RID" "$TARGET"
+printf 'installed seiko-mcp %s (%s) to %s\n' "$VERSION" "$RID" "$MCP_TARGET"
 
 case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
