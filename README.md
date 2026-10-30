@@ -20,7 +20,7 @@ Windows PowerShell:
 irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | iex
 ```
 
-The installer selects the latest stable release, verifies it against `SHA256SUMS`, and installs to `~/.local/bin` on Unix or `%LOCALAPPDATA%\Seiko\bin` on Windows. It does not modify `PATH` unless `--modify-path` (or `-ModifyPath`) is passed. Use `--version vX.Y.Z` to pin a release, `--dir <path>` for another directory, and `--dry-run` to inspect the plan.
+The installer selects the latest stable release, verifies it against `SHA256SUMS`, and installs `sk` and `seiko-mcp` to `~/.local/bin` on Unix or `%LOCALAPPDATA%\Seiko\bin` on Windows. It does not modify `PATH` unless `--modify-path` (or `-ModifyPath`) is passed. Use `--version vX.Y.Z` to pin a release, `--dir <path>` for another directory, and `--dry-run` to inspect the plan.
 
 Linux binaries require glibc (Ubuntu 22.04 or newer); musl/Alpine is not supported in this release. The binaries are not code-signed, so a browser download may trigger Gatekeeper or SmartScreen warnings; the installer uses the release assets directly.
 
@@ -31,7 +31,7 @@ gh attestation verify sk-0.2.0-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-Upgrade by re-running the installer; uninstall by deleting `sk` (or `sk.exe`) and removing the install directory from `PATH` if it was added.
+Upgrade by re-running the installer; uninstall by deleting `sk` and `seiko-mcp` (or `sk.exe` and `seiko-mcp.exe`) and removing the install directory from `PATH` if it was added.
 
 Current slice:
 
@@ -56,6 +56,31 @@ Current slice:
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
 - Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so `sk sync` refuses corrupted artifacts and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
 
+## MCP server
+
+`seiko-mcp` exposes the same operations over stdio. It is read-only by default; start it with `--allow-mutations` to register the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). Every mutating call still takes an explicit `root` argument. `--root <path>` sets the default install root; it defaults to the current directory.
+
+Claude Code:
+
+```bash
+claude mcp add seiko -- seiko-mcp --root /path/to/project
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "seiko": {
+      "command": "seiko-mcp",
+      "args": ["--root", "/path/to/project"]
+    }
+  }
+}
+```
+
+Add `"--allow-mutations"` to `args` to enable mutation tools. `seiko-mcp --help` lists the options and `seiko-mcp --version` prints the build.
+
 ## Official index
 
 The official static index is maintained in [Hosihikari/SeiIndex](https://github.com/Hosihikari/SeiIndex). `sk init` writes it as the `official` source; remove or replace that entry to use another index. Any static HTTPS index or local directory with the same layout works, and private sources use the same mechanism.
@@ -66,6 +91,7 @@ The official static index is maintained in [Hosihikari/SeiIndex](https://github.
 dotnet build Seiko.slnx
 dotnet test tests/Seiko.Tests/Seiko.Tests.csproj
 dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r win-x64 -p:PublishAot=true
+dotnet publish src/McpServer/Seiko.McpServer.csproj -c Release -r win-x64 -p:PublishAot=true
 ```
 
 ## Layout

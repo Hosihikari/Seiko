@@ -20,7 +20,7 @@ Windows PowerShell：
 irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | iex
 ```
 
-安装器选择最新稳定版，用 `SHA256SUMS` 校验，Unix 装到 `~/.local/bin`，Windows 装到 `%LOCALAPPDATA%\Seiko\bin`。默认不改 `PATH`；传 `--modify-path`（PowerShell 为 `-ModifyPath`）才会追加。`--version vX.Y.Z` 钉版本，`--dir <path>` 换目录，`--dry-run` 只打印计划。
+安装器选择最新稳定版，用 `SHA256SUMS` 校验，把 `sk` 与 `seiko-mcp` 装到 `~/.local/bin`（Unix）或 `%LOCALAPPDATA%\Seiko\bin`（Windows）。默认不改 `PATH`；传 `--modify-path`（PowerShell 为 `-ModifyPath`）才会追加。`--version vX.Y.Z` 钉版本，`--dir <path>` 换目录，`--dry-run` 只打印计划。
 
 Linux 二进制要求 glibc（Ubuntu 22.04 及以上）；本版本不支持 musl/Alpine。二进制未做代码签名，浏览器手动下载可能触发 Gatekeeper 或 SmartScreen 警告；安装脚本直接使用 Release 资产。
 
@@ -31,7 +31,7 @@ gh attestation verify sk-0.2.0-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-升级即重跑安装器；卸载删除 `sk`（Windows 为 `sk.exe`），如曾加入 PATH 再删除对应目录。
+升级即重跑安装器；卸载删除 `sk` 与 `seiko-mcp`（Windows 为 `.exe`），如曾加入 PATH 再删除对应目录。
 
 当前切片：
 
@@ -56,6 +56,31 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `seiko-mcp`：stdio 上的 MCP server；默认只读，`--allow-mutations` 才开放 `sync` 与 `rollback`。
 - 载荷文件按文件系统能力部署：优先 reflink（APFS、btrfs、XFS），否则同卷硬链接，最后复制。存储为每个文件记录 SHA-256，`sk sync` 拒绝损坏的构件，`sk cache verify` 也会校验载荷。硬链接的载荷文件不能原地编辑，否则会同时改到存储。
 
+## MCP server
+
+`seiko-mcp` 通过 stdio 暴露同一组操作。默认只读；带 `--allow-mutations` 启动才会注册变更工具（`sync`、`rollback`、`add`、`remove`、`update`、源/配置/缓存修改）。每个变更调用仍需显式传入 `root`。`--root <path>` 设置默认安装根，缺省为当前目录。
+
+Claude Code：
+
+```bash
+claude mcp add seiko -- seiko-mcp --root /path/to/project
+```
+
+Claude Desktop（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "seiko": {
+      "command": "seiko-mcp",
+      "args": ["--root", "/path/to/project"]
+    }
+  }
+}
+```
+
+在 `args` 中加入 `"--allow-mutations"` 可启用变更工具。`seiko-mcp --help` 列出选项，`seiko-mcp --version` 打印构建版本。
+
 ## 官方索引
 
 官方静态索引维护在 [Hosihikari/SeiIndex](https://github.com/Hosihikari/SeiIndex)。`sk init` 默认把它写成 `official` 源；删除或替换该条目即可改用其他索引。任何同布局的静态 HTTPS 索引或本地目录都可以作为源，私有源使用同一套机制。
@@ -66,6 +91,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 dotnet build Seiko.slnx
 dotnet test tests/Seiko.Tests/Seiko.Tests.csproj
 dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r win-x64 -p:PublishAot=true
+dotnet publish src/McpServer/Seiko.McpServer.csproj -c Release -r win-x64 -p:PublishAot=true
 ```
 
 ## 布局
