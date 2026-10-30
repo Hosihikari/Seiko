@@ -19,7 +19,7 @@ public sealed class ResolvedSei
 // that version avoids the conflicting constraint entirely.
 public sealed class Resolver
 {
-    private const int MaxAssignments = 100000;
+    private const long MaxTotalAssignments = 1_000_000;
 
     private readonly IReadOnlyList<ISeiSource> _sources;
     private readonly SeikoLock? _lock;
@@ -31,7 +31,7 @@ public sealed class Resolver
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
-    private int _assignments;
+    private long _totalAssignments;
     private bool _hintsGrew;
 
     public Resolver(
@@ -61,17 +61,12 @@ public sealed class Resolver
             directNames.Add(spec.Name);
         }
 
-        for (var attempt = 0; ; attempt++)
+        _totalAssignments = 0;
+        while (true)
         {
-            if (attempt > 100)
-            {
-                throw Fail("dependency resolution did not converge");
-            }
-
             _pending.Clear();
             _assigned.Clear();
             _lastConflict = null;
-            _assignments = 0;
             _hintsGrew = false;
 
             foreach (var spec in specs)
@@ -137,9 +132,9 @@ public sealed class Resolver
 
         foreach (var (entry, version) in Order(requirement.Name, candidates))
         {
-            if (++_assignments > MaxAssignments)
+            if (++_totalAssignments > MaxTotalAssignments)
             {
-                throw Fail("dependency resolution did not converge");
+                throw Fail("dependency resolution exceeded the work budget");
             }
 
             _assigned[requirement.Name] = new ResolvedSei
