@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Seiko;
@@ -7,6 +8,12 @@ namespace Seiko.McpServer;
 public sealed class SeikoMcpServer
 {
     private const string ProtocolVersion = "2025-06-18";
+
+    public static string Version { get; } =
+        typeof(SeikoMcpServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(SeikoMcpServer).Assembly.GetName().Version?.ToString()
+        ?? "0.0.0";
+
     private readonly string _defaultRoot;
     private readonly bool _allowMutations;
     private readonly SeikoClient _client = new();
@@ -79,7 +86,7 @@ public sealed class SeikoMcpServer
         {
             ["protocolVersion"] = string.IsNullOrWhiteSpace(requested) ? ProtocolVersion : requested,
             ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
-            ["serverInfo"] = new JsonObject { ["name"] = "seiko", ["version"] = "0.1.0" },
+            ["serverInfo"] = new JsonObject { ["name"] = "seiko-mcp", ["version"] = Version },
         };
     }
 
