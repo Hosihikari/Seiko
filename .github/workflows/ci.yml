@@ -61,8 +61,31 @@ jobs:
           }
       - name: Publish
         run: dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:StripSymbols=true
+      - name: Publish MCP server
+        run: dotnet publish src/McpServer/Seiko.McpServer.csproj -c Release -r ${{ matrix.rid }} -p:PublishAot=true -p:StripSymbols=true
+      - name: Smoke test MCP server
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="src/McpServer/bin/Release/net10.0/${{ matrix.rid }}/publish/seiko-mcp"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin="$bin.exe"
+          fi
+          "$bin" --version
+          "$bin" --help >/dev/null
+          out=$(printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | "$bin" --allow-mutations)
+          printf '%s\n' "$out" | grep -q '"name":"seiko-mcp"'
+          printf '%s\n' "$out" | grep -q '"rollback"'
       - uses: actions/upload-artifact@v7
         with:
           name: sk-cli-${{ matrix.rid }}
           path: src/CommandLine/bin/Release/net10.0/${{ matrix.rid }}/publish/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: seiko-mcp-${{ matrix.rid }}
+          path: src/McpServer/bin/Release/net10.0/${{ matrix.rid }}/publish/
           if-no-files-found: error

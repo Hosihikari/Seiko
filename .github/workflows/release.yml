@@ -112,6 +112,14 @@ jobs:
           -p:PublishAot=true
           -p:StripSymbols=true
           -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
+      - name: Publish MCP server
+        run: >
+          dotnet publish src/McpServer/Seiko.McpServer.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          -p:PublishAot=true
+          -p:StripSymbols=true
+          -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
       - name: Smoke test
         shell: bash
         run: |
@@ -122,11 +130,43 @@ jobs:
             temp_dir="$RUNNER_TEMP"
           fi
           bin="$temp_dir/publish-${{ matrix.rid }}/sk"
+          mcp="$temp_dir/publish-${{ matrix.rid }}/seiko-mcp"
           if [ "$RUNNER_OS" = "Windows" ]; then
             bin="$bin.exe"
+            mcp="$mcp.exe"
           fi
           "$bin" --version
           "$bin" --help >/dev/null
+          "$mcp" --version
+          "$mcp" --help >/dev/null
+
+          root="$temp_dir/mcp-root"
+          mkdir -p "$root"
+          cat > "$root/seiko.lock.json" <<'JSON'
+          {
+            "schemaVersion": 1,
+            "target": { "rid": "smoke" },
+            "sources": ["official"],
+            "sei": [
+              {
+                "name": "smoke",
+                "version": "1.0.0",
+                "source": "official",
+                "direct": true,
+                "artifact": { "sha256": "", "selectors": null },
+                "dependencies": []
+              }
+            ]
+          }
+          JSON
+          out=$(cd "$root" && printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list","arguments":{}}}' \
+            | "$mcp" --allow-mutations)
+          printf '%s\n' "$out" | grep -q '"name":"seiko-mcp"'
+          printf '%s\n' "$out" | grep -q '"rollback"'
+          printf '%s\n' "$out" | grep -q 'smoke'
       - name: Package and installer smoke test
         shell: bash
         run: |
@@ -145,12 +185,15 @@ jobs:
           stage="$temp_dir/stage-$rid"
           mkdir -p "$stage" "artifacts/release"
           bin="sk"
+          mcp="seiko-mcp"
           ext="tar.gz"
           if [ "$RUNNER_OS" = "Windows" ]; then
             bin="sk.exe"
+            mcp="seiko-mcp.exe"
             ext="zip"
           fi
           cp "$publish_dir/$bin" "$stage/$bin"
+          cp "$publish_dir/$mcp" "$stage/$mcp"
           cp LICENSE.md "$stage/"
           asset="sk-$version-$rid.$ext"
           if [ "$ext" = "zip" ]; then
@@ -205,9 +248,11 @@ jobs:
             install_dir_win=$(cygpath -w "$install_dir")
             pwsh -NoProfile -File ./install.ps1 -Version "$tag" -Dir "$install_dir_win" -BaseUrl http://127.0.0.1:8765
             "$install_dir/sk.exe" --version
+            "$install_dir/seiko-mcp.exe" --version
           else
             bash ./install.sh --version "$tag" --dir "$install_dir" --base-url http://127.0.0.1:8765
             "$install_dir/sk" --version
+            "$install_dir/seiko-mcp" --version
           fi
 
           mv artifacts/release/SHA256SUMS "$temp_dir/SHA256SUMS-$rid"
