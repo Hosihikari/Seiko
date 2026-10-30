@@ -98,6 +98,66 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_RejectsPrereleaseAuthorizedOnlyByAnAbandonedBranch()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            Version("a", "2.0.0-beta"));
+        fixture.AddSei(
+            "b",
+            Version("b", "1.0.0", new DepFixture("a", "[1.5.0,3.0.0)")),
+            Version(
+                "b",
+                "2.0.0",
+                new DepFixture("a", "[2.0.0-beta]"),
+                new DepFixture("c", "[2.0.0]")));
+        fixture.AddSei("c", Version("c", "1.0.0"));
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("b"),
+            new SpecFixture("a"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("prerelease", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "a.txt")));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "seiko.lock.json")));
+    }
+
+    [Fact]
+    public void Resolve_PrefersStableWhenAPrereleaseHintComesFromAnAbandonedBranch()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            Version("a", "2.0.0-beta"));
+        fixture.AddSei(
+            "b",
+            Version("b", "1.0.0", new DepFixture("a", "[1.0.0,2.0.0)")),
+            Version(
+                "b",
+                "2.0.0",
+                new DepFixture("a", "[2.0.0-beta]"),
+                new DepFixture("c", "[2.0.0]")));
+        fixture.AddSei("c", Version("c", "1.0.0"));
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("b"),
+            new SpecFixture("a"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "a").Version);
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "b").Version);
+    }
+
+    [Fact]
     public void Resolve_ReportsTheConstraintChainOnConflict()
     {
         using var fixture = new Fixture();

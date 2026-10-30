@@ -29,8 +29,10 @@ public sealed class Resolver
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private int _assignments;
+    private bool _hintsGrew;
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -48,12 +50,6 @@ public sealed class Resolver
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
     {
-        _pending.Clear();
-        _assigned.Clear();
-        _prereleaseHints.Clear();
-        _lastConflict = null;
-        _assignments = 0;
-
         var directNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
@@ -63,28 +59,53 @@ public sealed class Resolver
             }
 
             directNames.Add(spec.Name);
-            _pending.Add(CreateRequirement(spec.Name, spec.Version, null));
         }
 
-        if (!Search(0))
+        for (var attempt = 0; ; attempt++)
         {
-            throw _lastConflict ?? Fail("no version satisfies the declared ranges");
-        }
+            if (attempt > 100)
+            {
+                throw Fail("dependency resolution did not converge");
+            }
 
-        foreach (var sei in _assigned.Values)
-        {
-            sei.Direct = directNames.Contains(sei.Name);
-        }
+            _pending.Clear();
+            _assigned.Clear();
+            _lastConflict = null;
+            _assignments = 0;
+            _hintsGrew = false;
 
-        SelectArtifacts();
-        return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+            foreach (var spec in specs)
+            {
+                _pending.Add(CreateRequirement(spec.Name, spec.Version, null));
+            }
+
+            // Direct declarations are visible for the whole run; only hints
+            // discovered while exploring dependencies require a restart.
+            _hintsGrew = false;
+
+            if (Search(0))
+            {
+                foreach (var sei in _assigned.Values)
+                {
+                    sei.Direct = directNames.Contains(sei.Name);
+                }
+
+                SelectArtifacts();
+                return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+            }
+
+            if (!_hintsGrew)
+            {
+                throw _lastConflict ?? Fail("no version satisfies the declared ranges");
+            }
+        }
     }
 
     private bool Search(int index)
     {
         if (index >= _pending.Count)
         {
-            return true;
+            return ValidateFinalSolution();
         }
 
         var requirement = _pending[index];
@@ -107,28 +128,15 @@ public sealed class Resolver
         }
 
         var source = FindSource(requirement.Name, out var indexData);
-        var tried = new HashSet<string>(StringComparer.Ordinal);
-        while (true)
+        var candidates = Candidates(requirement.Name, source, indexData!, _pending);
+        if (candidates.Count == 0)
         {
-            // Recompute the candidate list on every attempt: a failed branch
-            // may have revealed a prerelease constraint for this package, and
-            // the hint has to widen the list here too, not only in the branch
-            // that discovered it.
-            var candidates = Candidates(requirement.Name, source, indexData!, _pending);
-            if (candidates.Count == 0)
-            {
-                _lastConflict = Conflict(requirement.Name, source.Id, _pending);
-                return false;
-            }
+            _lastConflict = Conflict(requirement.Name, source.Id, _pending);
+            return false;
+        }
 
-            var next = Order(requirement.Name, candidates)
-                .FirstOrDefault(candidate => !tried.Contains(candidate.Version.ToNormalizedString()));
-            if (next.Entry is null)
-            {
-                return false;
-            }
-
-            tried.Add(next.Version.ToNormalizedString());
+        foreach (var (entry, version) in Order(requirement.Name, candidates))
+        {
             if (++_assignments > MaxAssignments)
             {
                 throw Fail("dependency resolution did not converge");
@@ -137,13 +145,13 @@ public sealed class Resolver
             _assigned[requirement.Name] = new ResolvedSei
             {
                 Name = requirement.Name,
-                ParsedVersion = next.Version,
-                Entry = next.Entry,
+                ParsedVersion = version,
+                Entry = entry,
                 Source = source,
             };
 
             var added = 0;
-            foreach (var dependency in next.Entry.Dependencies)
+            foreach (var dependency in entry.Dependencies)
             {
                 if (!SeiName.IsValid(dependency.Name))
                 {
@@ -161,7 +169,17 @@ public sealed class Resolver
 
             _pending.RemoveRange(_pending.Count - added, added);
             _assigned.Remove(requirement.Name);
+
+            if (_hintsGrew)
+            {
+                // A deeper branch found a prerelease range this run did not
+                // consider; restart with the wider hint set instead of
+                // committing to a partial result.
+                return false;
+            }
         }
+
+        return false;
     }
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
@@ -327,16 +345,50 @@ public sealed class Resolver
         var range = ParseRange(version, name);
         if (version?.Contains('-') == true)
         {
-            if (!_prereleaseHints.TryGetValue(name, out var ranges))
+            if (!_prereleaseHintTexts.TryGetValue(name, out var texts))
             {
-                ranges = [];
-                _prereleaseHints[name] = ranges;
+                texts = new HashSet<string>(StringComparer.Ordinal);
+                _prereleaseHintTexts[name] = texts;
             }
 
-            ranges.Add(range);
+            if (texts.Add(version))
+            {
+                if (!_prereleaseHints.TryGetValue(name, out var ranges))
+                {
+                    ranges = [];
+                    _prereleaseHints[name] = ranges;
+                }
+
+                ranges.Add(range);
+                _hintsGrew = true;
+            }
         }
 
         return new Requirement(name, range, version, from);
+    }
+
+    private bool ValidateFinalSolution()
+    {
+        foreach (var (name, resolved) in _assigned)
+        {
+            if (!resolved.ParsedVersion.IsPrerelease || _allowPrerelease)
+            {
+                continue;
+            }
+
+            var authorized = _pending.Any(requirement =>
+                string.Equals(requirement.Name, name, StringComparison.Ordinal)
+                && requirement.RangeText?.Contains('-') == true);
+            if (!authorized)
+            {
+                _lastConflict = new SeikoException(
+                    $"prerelease {name} {resolved.Version} is not required by the resolved graph",
+                    "resolve");
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private bool HintAllows(string name, NuGetVersion version)
