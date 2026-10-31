@@ -417,6 +417,7 @@ public sealed class SeikoMcpServer
                 ["current"] = item.Current,
                 ["latestInRange"] = item.LatestInRange,
                 ["latest"] = item.Latest,
+                ["latestInstallable"] = item.LatestInstallable,
             });
         }
 
@@ -433,7 +434,8 @@ public sealed class SeikoMcpServer
             StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
-            OptionalString(arguments, "proxy"));
+            OptionalString(arguments, "proxy"),
+            latestInstallable: Bool(arguments, "latestInstallable"));
         return SyncResultJson(result);
     }
 
@@ -461,7 +463,8 @@ public sealed class SeikoMcpServer
             StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
-            OptionalString(arguments, "proxy"));
+            OptionalString(arguments, "proxy"),
+            latestInstallable: Bool(arguments, "latestInstallable"));
         return SyncResultJson(result);
     }
 
@@ -484,7 +487,12 @@ public sealed class SeikoMcpServer
         }
 
         var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
-        var result = _client.Sync(root, StorePath(arguments), Bool(arguments, "pre"), mode);
+        var result = _client.Sync(
+            root,
+            StorePath(arguments),
+            Bool(arguments, "pre"),
+            mode,
+            latestInstallable: Bool(arguments, "latestInstallable"));
         return new JsonObject
         {
             ["sei"] = result.SeiInstalled,
@@ -687,6 +695,7 @@ public sealed class SeikoMcpServer
                 ["frozen"] = new JsonObject { ["type"] = "boolean" },
                 ["locked"] = new JsonObject { ["type"] = "boolean" },
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
+                ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
@@ -819,6 +828,7 @@ public sealed class SeikoMcpServer
                 ["latest"] = new JsonObject { ["type"] = "boolean" },
                 ["store"] = new JsonObject { ["type"] = "string" },
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
+                ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
             },
@@ -826,22 +836,30 @@ public sealed class SeikoMcpServer
         };
 
     private static JsonObject SyncMutationSchema(bool requireSpec)
-        => new()
+    {
+        var properties = new JsonObject
+        {
+            ["root"] = new JsonObject { ["type"] = "string" },
+            [requireSpec ? "spec" : "name"] = new JsonObject { ["type"] = "string" },
+            ["store"] = new JsonObject { ["type"] = "string" },
+            ["pre"] = new JsonObject { ["type"] = "boolean" },
+            ["jobs"] = new JsonObject { ["type"] = "integer" },
+            ["proxy"] = new JsonObject { ["type"] = "string" },
+        };
+        if (requireSpec)
+        {
+            properties["latestInstallable"] = new JsonObject { ["type"] = "boolean" };
+        }
+
+        return new JsonObject
         {
             ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["root"] = new JsonObject { ["type"] = "string" },
-                [requireSpec ? "spec" : "name"] = new JsonObject { ["type"] = "string" },
-                ["store"] = new JsonObject { ["type"] = "string" },
-                ["pre"] = new JsonObject { ["type"] = "boolean" },
-                ["jobs"] = new JsonObject { ["type"] = "integer" },
-                ["proxy"] = new JsonObject { ["type"] = "string" },
-            },
+            ["properties"] = properties,
             ["required"] = new JsonArray(
                 JsonValue.Create("root"),
                 JsonValue.Create(requireSpec ? "spec" : "name")),
         };
+    }
 
     private static JsonObject RollbackSchema()
         => new()

@@ -98,6 +98,106 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_LatestInstallableSkipsVersionsWithoutArtifacts()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Selectors = new Dictionary<string, string> { ["rid"] = "linux-x64" },
+                        Files = { ["a.txt"] = "two" },
+                    },
+                ],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "*"));
+        var client = new SeikoClient();
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        Assert.Equal("resolve", error.Code);
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, latestInstallable: true);
+
+        Assert.Equal("1.0.0", client.ReadLock(fixture.Root)!.Sei.Single().Version);
+    }
+
+    [Fact]
+    public void Resolve_LatestInstallableRequiresCarrierInTheGraph()
+    {
+        using var withoutCarrier = new Fixture();
+        withoutCarrier.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                        Files = { ["a.txt"] = "two" },
+                    },
+                ],
+            });
+        withoutCarrier.AddSei("marker", Version("marker", "1.0.0"));
+        withoutCarrier.WriteConfig("win-x64", new SpecFixture("a", "*"));
+        var client = new SeikoClient();
+        client.Sync(withoutCarrier.Root, withoutCarrier.StoreDirectory, latestInstallable: true);
+        Assert.Equal("1.0.0", client.ReadLock(withoutCarrier.Root)!.Sei.Single().Version);
+
+        using var withCarrier = new Fixture();
+        withCarrier.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                        Files = { ["a.txt"] = "two" },
+                    },
+                ],
+            });
+        withCarrier.AddSei("marker", Version("marker", "1.0.0"));
+        withCarrier.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "*"),
+            new SpecFixture("marker", "*"));
+        client.Sync(withCarrier.Root, withCarrier.StoreDirectory, latestInstallable: true);
+        Assert.Equal("2.0.0", client.ReadLock(withCarrier.Root)!.Sei.Single(sei => sei.Name == "a").Version);
+    }
+
+    [Fact]
+    public void Resolve_LatestInstallableIsRejectedWithFrozen()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("a", Version("a", "1.0.0"));
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "*"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(
+                fixture.Root,
+                fixture.StoreDirectory,
+                mode: SyncMode.Frozen,
+                latestInstallable: true));
+
+        Assert.Equal("usage", error.Code);
+    }
+
+    [Fact]
     public void Resolve_DoesNotTreatBuildMetadataAsPrereleaseAuthorization()
     {
         using var fixture = new Fixture();

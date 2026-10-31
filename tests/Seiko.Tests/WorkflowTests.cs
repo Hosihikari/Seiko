@@ -142,6 +142,40 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Outdated_ReportsLatestInstallable()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Selectors = new Dictionary<string, string> { ["rid"] = "linux-x64" },
+                        Files = { ["hello.txt"] = "two" },
+                    },
+                ],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "*"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory, latestInstallable: true);
+
+        var item = Assert.Single(client.Outdated(fixture.Root));
+
+        Assert.Equal("1.0.0", item.Current);
+        Assert.Equal("2.0.0", item.Latest);
+        Assert.Equal("1.0.0", item.LatestInstallable);
+    }
+
+    [Fact]
     public void Cache_StatusVerifyAndClean()
     {
         using var fixture = new Fixture();

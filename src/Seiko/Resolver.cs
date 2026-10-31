@@ -26,26 +26,31 @@ public sealed class Resolver
     private readonly string _rid;
     private readonly bool _allowPrerelease;
     private readonly IReadOnlySet<string>? _updateNames;
+    private readonly bool _latestInstallable;
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _excluded = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private long _totalAssignments;
     private bool _hintsGrew;
+    private bool _excludedGrew;
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
         SeikoLock? existingLock,
         string rid,
         bool allowPrerelease,
-        IReadOnlySet<string>? updateNames = null)
+        IReadOnlySet<string>? updateNames = null,
+        bool latestInstallable = false)
     {
         _sources = sources;
         _lock = existingLock;
         _rid = rid;
         _allowPrerelease = allowPrerelease;
         _updateNames = updateNames;
+        _latestInstallable = latestInstallable;
     }
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
@@ -68,6 +73,7 @@ public sealed class Resolver
             _assigned.Clear();
             _lastConflict = null;
             _hintsGrew = false;
+            _excludedGrew = false;
 
             foreach (var spec in specs)
             {
@@ -85,11 +91,34 @@ public sealed class Resolver
                     sei.Direct = directNames.Contains(sei.Name);
                 }
 
-                SelectArtifacts();
-                return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+                var missing = SelectArtifacts();
+                if (missing is null)
+                {
+                    return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+                }
+
+                var (missingName, missingVersion, message) = missing.Value;
+                if (!_latestInstallable)
+                {
+                    throw Fail(message);
+                }
+
+                if (!_excluded.TryGetValue(missingName, out var versions))
+                {
+                    versions = new HashSet<string>(StringComparer.Ordinal);
+                    _excluded[missingName] = versions;
+                }
+
+                if (!versions.Add(missingVersion))
+                {
+                    throw Fail(message);
+                }
+
+                _excludedGrew = true;
+                continue;
             }
 
-            if (!_hintsGrew)
+            if (!_hintsGrew && !_excludedGrew)
             {
                 throw _lastConflict ?? Fail("no version satisfies the declared ranges");
             }
@@ -198,6 +227,12 @@ public sealed class Resolver
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
             }
 
+            if (_excluded.TryGetValue(name, out var excluded)
+                && excluded.Contains(version.ToNormalizedString()))
+            {
+                continue;
+            }
+
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
             {
                 continue;
@@ -247,7 +282,7 @@ public sealed class Resolver
         return ordered;
     }
 
-    private void SelectArtifacts()
+    private (string Name, string Version, string Message)? SelectArtifacts()
     {
         var graphNames = _assigned.Keys.ToHashSet(StringComparer.Ordinal);
         foreach (var sei in _assigned.Values)
@@ -255,7 +290,7 @@ public sealed class Resolver
             var scored = new List<(ArtifactEntry Artifact, int Score)>();
             foreach (var artifact in sei.Entry.Artifacts)
             {
-                var score = Score(artifact, graphNames);
+                var score = ScoreArtifact(artifact, _rid, graphNames);
                 if (score >= 0)
                 {
                     scored.Add((artifact, score));
@@ -264,7 +299,9 @@ public sealed class Resolver
 
             if (scored.Count == 0)
             {
-                throw Fail(
+                return (
+                    sei.Name,
+                    sei.Version,
                     $"no artifact of {sei.Name} {sei.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames.OrderBy(n => n, StringComparer.Ordinal))}]");
             }
 
@@ -278,9 +315,11 @@ public sealed class Resolver
 
             sei.Artifact = top[0].Artifact;
         }
+
+        return null;
     }
 
-    private int Score(ArtifactEntry artifact, HashSet<string> graphNames)
+    internal static int ScoreArtifact(ArtifactEntry artifact, string rid, IReadOnlySet<string> graphNames)
     {
         if (artifact.Selectors is null || artifact.Selectors.Count == 0)
         {
@@ -291,7 +330,7 @@ public sealed class Resolver
         {
             if (key.Equals("rid", StringComparison.OrdinalIgnoreCase))
             {
-                if (!value.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                if (!value.Equals(rid, StringComparison.OrdinalIgnoreCase))
                 {
                     return -1;
                 }

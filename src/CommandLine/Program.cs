@@ -41,6 +41,10 @@ var syncFrozen = new Option<bool>("--frozen") { Description = "Replay seiko.lock
 var syncLocked = new Option<bool>("--locked") { Description = "Fail if the lock is out of date." };
 var syncJobs = new Option<int?>("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
 var syncProxy = ProxyOption();
+var syncLatestInstallable = new Option<bool>("--latest-installable")
+{
+    Description = "Pick the highest version that has an artifact for the resolved graph.",
+};
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
@@ -48,6 +52,7 @@ sync.Add(syncFrozen);
 sync.Add(syncLocked);
 sync.Add(syncJobs);
 sync.Add(syncProxy);
+sync.Add(syncLatestInstallable);
 sync.SetAction(parseResult => Run(
     "sync",
     IsJson(parseResult),
@@ -59,6 +64,7 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncLocked),
         parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(syncProxy),
+        parseResult.GetValue(syncLatestInstallable),
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
@@ -68,6 +74,10 @@ var addStore = StoreOption();
 var addPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
 var addJobs = JobsOption();
 var addProxy = ProxyOption();
+var addLatestInstallable = new Option<bool>("--latest-installable")
+{
+    Description = "Pick the highest version that has an artifact for the resolved graph.",
+};
 var addSpec = new Argument<string>("spec") { Description = "Sei name with an optional @range." };
 add.Add(addSpec);
 add.Add(addRoot);
@@ -75,6 +85,7 @@ add.Add(addStore);
 add.Add(addPre);
 add.Add(addJobs);
 add.Add(addProxy);
+add.Add(addLatestInstallable);
 add.SetAction(parseResult => Run(
     "add",
     IsJson(parseResult),
@@ -85,6 +96,7 @@ add.SetAction(parseResult => Run(
         parseResult.GetValue(addPre),
         parseResult.GetValue(addJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(addProxy),
+        parseResult.GetValue(addLatestInstallable),
         IsJson(parseResult))));
 
 var remove = new Command("remove", "Remove a direct sei declaration and sync.");
@@ -119,6 +131,10 @@ var updatePre = new Option<bool>("--pre") { Description = "Allow prerelease vers
 var updateJobs = JobsOption();
 var updateProxy = ProxyOption();
 var updateLatest = new Option<bool>("--latest") { Description = "Rewrite direct ranges to the latest version." };
+var updateLatestInstallable = new Option<bool>("--latest-installable")
+{
+    Description = "Pick the highest version that has an artifact for the resolved graph.",
+};
 var updateName = new Argument<string?>("name")
 {
     Description = "Direct sei name; all direct declarations when omitted.",
@@ -131,6 +147,7 @@ update.Add(updatePre);
 update.Add(updateJobs);
 update.Add(updateProxy);
 update.Add(updateLatest);
+update.Add(updateLatestInstallable);
 update.SetAction(parseResult => Run(
     "update",
     IsJson(parseResult),
@@ -142,6 +159,7 @@ update.SetAction(parseResult => Run(
         parseResult.GetValue(updatePre),
         parseResult.GetValue(updateJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(updateProxy),
+        parseResult.GetValue(updateLatestInstallable),
         IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
@@ -535,6 +553,7 @@ static int Sync(
     bool locked,
     int jobs,
     string? proxy,
+    bool latestInstallable,
     bool json)
 {
     if (frozen && locked)
@@ -549,11 +568,28 @@ static int Sync(
     if (showProgress)
     {
         using var display = new ProgressDisplay();
-        result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy, display, Log.Debug);
+        result = new SeikoClient().Sync(
+            root,
+            store,
+            pre,
+            mode,
+            jobs,
+            proxy,
+            display,
+            Log.Debug,
+            latestInstallable: latestInstallable);
     }
     else
     {
-        result = new SeikoClient().Sync(root, store, pre, mode, jobs, proxy, log: Log.Debug);
+        result = new SeikoClient().Sync(
+            root,
+            store,
+            pre,
+            mode,
+            jobs,
+            proxy,
+            log: Log.Debug,
+            latestInstallable: latestInstallable);
     }
     if (json)
     {
@@ -574,6 +610,7 @@ static int Add(
     bool pre,
     int jobs,
     string? proxy,
+    bool latestInstallable,
     bool json)
     => RunMutation(
         "add",
@@ -586,7 +623,8 @@ static int Add(
             jobs,
             proxy,
             progress,
-            log));
+            log,
+            latestInstallable: latestInstallable));
 
 static int Remove(
     string? rootOption,
@@ -617,6 +655,7 @@ static int Update(
     bool pre,
     int jobs,
     string? proxy,
+    bool latestInstallable,
     bool json)
     => RunMutation(
         "update",
@@ -630,7 +669,8 @@ static int Update(
             jobs,
             proxy,
             progress,
-            log));
+            log,
+            latestInstallable: latestInstallable));
 
 static int Why(string? rootOption, string name, bool json)
 {
@@ -674,10 +714,10 @@ static int Outdated(string? rootOption, string? proxy, bool pre, bool json)
         return 0;
     }
 
-    Console.WriteLine("NAME	CURRENT	LATEST-IN-RANGE	LATEST");
+    Console.WriteLine("NAME	CURRENT	LATEST-IN-RANGE	LATEST	LATEST-INSTALLABLE");
     foreach (var item in items)
     {
-        Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}");
+        Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}	{item.LatestInstallable ?? "-"}");
     }
 
     return 0;
