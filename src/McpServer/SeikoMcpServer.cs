@@ -553,7 +553,7 @@ public sealed class SeikoMcpServer
         }
 
         var full = SeikoClient.CanonicalizePath(store);
-        if (_allowedRoots.Count == 0)
+        if (_allowedRoots.Count == 0 && _allowedStores.Count == 0)
         {
             return full;
         }
