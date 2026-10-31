@@ -303,5 +303,6 @@ jobs:
         with:
           tag_name: ${{ needs.validate.outputs.tag }}
           name: Seiko ${{ needs.validate.outputs.tag }}
+          generate_release_notes: true
           prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
           files: dist/*
