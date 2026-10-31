@@ -39,6 +39,19 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_AcceptsAdvisorySeverityWithWhitespace()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Advisory = new AdvisoryInfo { Severity = " CRITICAL " };
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Empty(result.Findings);
+    }
+
+    [Fact]
     public void Verify_RejectsInvalidAdvisory()
     {
         using var fixture = NewFixture();

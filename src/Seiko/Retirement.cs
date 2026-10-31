@@ -3,7 +3,7 @@ namespace Seiko;
 internal static class Retirement
 {
     public static bool IsCritical(SeiVersionEntry entry)
-        => string.Equals(entry.Advisory?.Severity, "critical", StringComparison.OrdinalIgnoreCase);
+        => string.Equals(entry.Advisory?.Severity?.Trim(), "critical", StringComparison.OrdinalIgnoreCase);
 
     public static string? EffectiveDeprecated(SeiVersionEntry entry, string? packageDeprecated)
         => string.IsNullOrWhiteSpace(entry.Deprecated) ? packageDeprecated : entry.Deprecated;

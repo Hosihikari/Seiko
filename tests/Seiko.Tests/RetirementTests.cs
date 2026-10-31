@@ -35,6 +35,32 @@ public sealed class RetirementTests
     }
 
     [Fact]
+    public void Sync_TrimsCriticalSeverity()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+                Advisory = new AdvisoryInfo { Severity = " CRITICAL " },
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("1.0.0", Assert.Single(result.Lock.Sei).Version);
+        Assert.Contains(result.Warnings, warning =>
+            warning.Contains("skipped critical version(s) of hello: 2.0.0", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Sync_SelectsCriticalVersionWithAllowCritical()
     {
         using var fixture = new Fixture();
