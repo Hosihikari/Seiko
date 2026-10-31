@@ -31,7 +31,7 @@ gh attestation verify sk-0.2.1-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-Upgrade by re-running the installer; uninstall by deleting `sk` and `seiko-mcp` (or `sk.exe` and `seiko-mcp.exe`) and removing the install directory from `PATH` if it was added.
+Releases before 0.2.1 contain only `sk`; pinning one with `--version` installs the CLI without `seiko-mcp`. Upgrade by re-running the installer; uninstall by deleting `sk` and `seiko-mcp` (or `sk.exe` and `seiko-mcp.exe`) and removing the install directory from `PATH` if it was added.
 
 Current slice:
 

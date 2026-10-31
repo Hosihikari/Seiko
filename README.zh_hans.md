@@ -31,7 +31,7 @@ gh attestation verify sk-0.2.1-linux-x64.tar.gz --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-升级即重跑安装器；卸载删除 `sk` 与 `seiko-mcp`（Windows 为 `.exe`），如曾加入 PATH 再删除对应目录。
+0.2.1 之前的 Release 只包含 `sk`；用 `--version` 钉到这些版本时只安装 CLI，不含 `seiko-mcp`。升级即重跑安装器；卸载删除 `sk` 与 `seiko-mcp`（Windows 为 `.exe`），如曾加入 PATH 再删除对应目录。
 
 当前切片：
 
