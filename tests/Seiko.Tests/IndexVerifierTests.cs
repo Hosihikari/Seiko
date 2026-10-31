@@ -95,6 +95,36 @@ public sealed class IndexVerifierTests
         Assert.Contains(result.Findings, finding => finding.Code == "artifact-duplicate");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Verify_RejectsFileAndDirectoryPrefixConflicts(bool reversed)
+    {
+        using var fixture = new Fixture();
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (reversed)
+        {
+            files["tool/x"] = "x";
+            files["tool"] = "tool";
+        }
+        else
+        {
+            files["tool"] = "tool";
+            files["tool/x"] = "x";
+        }
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = files }],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
     [Fact]
     public void Verify_CheckArtifactsValidatesManifest()
     {

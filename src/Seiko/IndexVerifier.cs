@@ -650,6 +650,24 @@ public static class IndexVerifier
                 }
             }
 
+            foreach (var name in seenNames)
+            {
+                var parts = name.Split('/');
+                var ancestor = "";
+                for (var i = 0; i < parts.Length - 1; i++)
+                {
+                    ancestor = ancestor.Length == 0 ? parts[i] : $"{ancestor}/{parts[i]}";
+                    if (seenNames.Contains(ancestor))
+                    {
+                        context.Error(
+                            "artifact-path",
+                            $"sei '{reference.Sei}' {reference.Version}: archive path '{ancestor}' is both a file and a directory of '{name}'",
+                            reference.Path);
+                        return;
+                    }
+                }
+            }
+
             var manifests = archive.Entries
                 .Where(entry => ArchiveLimits.NormalizeName(entry.FullName) == "sei.json")
                 .ToList();
