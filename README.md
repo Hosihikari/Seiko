@@ -38,23 +38,24 @@ Current slice:
 - `sk init` — writes a `seiko.conf` template with the official index as source `official`.
 - `sk sync` — reads `seiko.conf`, resolves sei from a static index (local or HTTPS), selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
 - `sk sync --frozen` — replays `seiko.lock.json` without resolving; the declared direct set must match the lock's direct entries; `--locked` fails if the lock is out of date; `sk install` is an alias.
-- `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync.
+- `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync. `sync`, `add`, and `update` accept `--latest-installable` to skip versions with no artifact for the resolved graph; the default remains the highest version.
 - `sk why <name>` — shows the dependency chains to a sei.
-- `sk outdated` — shows newer in-range and overall versions.
+- `sk outdated` — shows newer in-range, overall, and latest installable versions.
 - `sk list` — lists installed sei from the lock.
-- `sk rollback` — restores the previous deployment generation from the content-addressed store.
+- `sk rollback [--to <n>] [--proxy <url>]` — restores the previous deployment generation from the content-addressed store; missing target artifacts are downloaded again.
 - `sk search <term>` — searches sei names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
 - Sources may be a local path or an http(s) index; the official index is `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`; `tokenEnv` supplies a bearer token for private sources. The token is only sent to the index origin and to hosts listed in the source's `tokenHosts` (https); artifacts on other hosts never receive it.
 - `sk index verify [path] [--check-artifacts] [--strict]` — validates an index directory: schema, names, versions, artifact URLs, SHA-256, and with `--check-artifacts` the artifact bytes and the embedded `sei.json`; `--strict` also fails on warnings.
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
 - `sk source add|remove|list` — manage sources (`--token-env` and repeated `--token-host`); `sk config get|set rid` — read or write the platform override.
-- `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's current lock or its retained rollback generations.
+- `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's current lock or its retained rollback generations. Sync and rollback re-download artifacts whose digest metadata or payload is missing or corrupt.
 - `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.
-- `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes).
-- Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so `sk sync` refuses corrupted artifacts and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
+- `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). `--allowed-root` and `--allowed-store` optionally restrict mutation paths.
+- Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so a corrupt cached artifact is downloaded again and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
+- Unix modes are limited to `0000–0777`: setuid, setgid, and sticky bits are rejected by deployment and `sk index verify`. Extraction is capped at 100,000 entries, 1 GiB per entry, and 4 GiB total.
 
 ## MCP server
 
