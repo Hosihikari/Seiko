@@ -54,6 +54,25 @@ public sealed class DoctorTests
     }
 
     [Fact]
+    public void Doctor_CleanSkipsPartialsHeldByDownload()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var artifact = new string('a', 64);
+        var partial = Path.Combine(fixture.StoreDirectory, ".partial", artifact);
+        Directory.CreateDirectory(partial);
+        using var held = ProcessLock.Acquire(
+            Path.Combine(fixture.StoreDirectory, ".locks", artifact + ".lock"),
+            "test artifact");
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory, clean: true);
+
+        Assert.True(Directory.Exists(partial));
+        Assert.Equal(0, result.CleanCount);
+        Assert.Contains(result.Findings, finding => finding.Code == "partial-in-use");
+    }
+
+    [Fact]
     public void Doctor_ReportsIncompleteDeploymentTransaction()
     {
         using var fixture = new Fixture();

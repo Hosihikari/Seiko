@@ -12,6 +12,29 @@ public sealed class ProcessLock : IDisposable
         _stream = stream;
     }
 
+    public static ProcessLock? TryAcquire(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        try
+        {
+            return new ProcessLock(
+                new FileStream(
+                    path,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public static ProcessLock Acquire(string path, string description, string code = "lock")
     {
         var directory = Path.GetDirectoryName(path);

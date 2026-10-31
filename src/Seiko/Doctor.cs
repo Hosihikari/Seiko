@@ -285,6 +285,18 @@ public sealed class Doctor
         var count = 0;
         foreach (var path in Directory.EnumerateFileSystemEntries(partialRoot).ToList())
         {
+            var name = Path.GetFileName(path);
+            using var artifactLock = ProcessLock.TryAcquire(
+                Path.Combine(storePath, ".locks", name + ".lock"));
+            if (artifactLock is null)
+            {
+                findings.Add(Warning(
+                    "partial-in-use",
+                    $"partial download {name} is in use by another process; skipped",
+                    path));
+                continue;
+            }
+
             try
             {
                 if (Directory.Exists(path))
