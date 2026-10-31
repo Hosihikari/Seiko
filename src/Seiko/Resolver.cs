@@ -271,6 +271,11 @@ public sealed class Resolver
                 continue;
             }
 
+            if (version.IsPrerelease && !allowPrerelease && !HintAllows(name, version))
+            {
+                continue;
+            }
+
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
             {
                 AddSkipped(_skippedYanked, name, entry.Version);
@@ -285,11 +290,6 @@ public sealed class Resolver
             if (Retirement.IsCritical(entry) && !_allowCritical)
             {
                 AddSkipped(_skippedCritical, name, AdvisoryLabel(entry, entry.Version));
-                continue;
-            }
-
-            if (version.IsPrerelease && !allowPrerelease && !HintAllows(name, version))
-            {
                 continue;
             }
 
