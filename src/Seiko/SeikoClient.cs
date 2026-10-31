@@ -810,7 +810,11 @@ public sealed class SeikoClient
         return size;
     }
 
-    public RollbackResult Rollback(string root, string? storeRoot = null, int? toGeneration = null)
+    public RollbackResult Rollback(
+        string root,
+        string? storeRoot = null,
+        int? toGeneration = null,
+        string? proxy = null)
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -846,12 +850,25 @@ public sealed class SeikoClient
 
         var store = new Store(storePath);
         var sei = new List<DeployedSei>();
+        var needsFetch = false;
         foreach (var locked in snapshotLock.Sei)
         {
-            var stored = store.TryGet(locked.Artifact.Sha256)
-                ?? throw new SeikoException(
-                    $"rollback: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in the store",
-                    "io");
+            StoredSei? stored;
+            try
+            {
+                stored = store.TryGet(locked.Artifact.Sha256);
+            }
+            catch (SeikoException ex) when (ex.Code == "cache-repair")
+            {
+                needsFetch = true;
+                break;
+            }
+
+            if (stored is null)
+            {
+                needsFetch = true;
+                break;
+            }
 
             if (!string.Equals(stored.Manifest.Name, locked.Name, StringComparison.Ordinal)
                 || !NuGetVersion.TryParse(stored.Manifest.Version, out var storedVersion)
@@ -867,6 +884,31 @@ public sealed class SeikoClient
                 stored.Directory,
                 stored.Manifest,
                 stored.Digests));
+        }
+
+        if (needsFetch)
+        {
+            using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+            var config = ConfigLoader.Load(root);
+            var sources = LoadSources(config, root, proxy, session);
+            using var sourceScope = new SourceScope(sources);
+            var specs = snapshotLock.Sei
+                .Where(item => item.Direct)
+                .Select(item => new SeiSpec { Name = item.Name, Version = $"[{item.Version}]" })
+                .ToList();
+            var resolved = LockReplay.Resolve(sources, snapshotLock, specs);
+            sei = resolved
+                .Select(item =>
+                {
+                    var stored = store.Ensure(item, session, CancellationToken.None);
+                    return new DeployedSei(
+                        item.Name,
+                        item.Version,
+                        stored.Directory,
+                        stored.Manifest,
+                        stored.Digests);
+                })
+                .ToList();
         }
 
         var deployment = Deployer.Deploy(

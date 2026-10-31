@@ -54,8 +54,16 @@ public sealed class Store
         var manifestPath = Path.Combine(directory, "sei.json");
         if (File.Exists(manifestPath))
         {
-            session.ReportCompleted(sei.Name, sei.Artifact.Source.Size);
-            return LoadStored(sei, directory, manifestPath);
+            try
+            {
+                var stored = LoadStored(sei, directory, manifestPath);
+                session.ReportCompleted(sei.Name, sei.Artifact.Source.Size);
+                return stored;
+            }
+            catch (SeikoException ex) when (ex.Code == "cache-repair")
+            {
+                // Missing metadata or payload: re-download under the artifact lock.
+            }
         }
 
         var partialRoot = Path.Combine(Root, ".partial");
@@ -67,7 +75,14 @@ public sealed class Store
 
         if (File.Exists(manifestPath))
         {
-            return LoadStored(sei, directory, manifestPath);
+            try
+            {
+                return LoadStored(sei, directory, manifestPath);
+            }
+            catch (SeikoException ex) when (ex.Code == "cache-repair")
+            {
+                // The artifact directory is replaced below.
+            }
         }
 
         Directory.CreateDirectory(partialDirectory);
@@ -172,6 +187,16 @@ public sealed class Store
         string directory,
         IReadOnlyDictionary<string, StoreFileDigest> digests)
     {
+        var recorded = new HashSet<string>(digests.Keys, StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(directory, file).Replace('\\', '/');
+            if (!recorded.Contains(relative))
+            {
+                throw CorruptedStore(directory, file);
+            }
+        }
+
         foreach (var (relative, digest) in digests)
         {
             var path = ResolveStoreFile(directory, relative);
@@ -206,25 +231,15 @@ public sealed class Store
 
     private static SeikoException CorruptedStore(string directory, string path)
         => new(
-            $"store artifact is corrupted ({path}); delete {directory} and run `sk sync` to download it again",
-            "checksum");
+            $"cache artifact is missing or corrupted ({path}); it will be downloaded again",
+            "cache-repair");
 
     private IReadOnlyDictionary<string, StoreFileDigest> LoadDigests(string artifact, string directory)
     {
-        var state = StoreDigests.TryRead(Root, artifact);
-        if (state is null)
-        {
-            // Artifacts extracted by older versions have no digest record yet;
-            // adopt their current contents as the baseline.
-            state = StoreDigests.Compute(directory, artifact);
-            try
-            {
-                StoreDigests.Write(Root, state);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-            }
-        }
+        var state = StoreDigests.TryRead(Root, artifact)
+            ?? throw new SeikoException(
+                $"cache metadata for {directory} is missing or unreadable",
+                "cache-repair");
 
         var digests = new Dictionary<string, StoreFileDigest>(StringComparer.Ordinal);
         foreach (var file in state.Files ?? [])

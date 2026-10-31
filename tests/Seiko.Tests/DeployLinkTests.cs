@@ -42,7 +42,7 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
-    public void Sync_RejectsTamperedCachedManifest()
+    public void Sync_RepairsTamperedCachedManifest()
     {
         using var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
@@ -70,31 +70,37 @@ public sealed class DeployLinkTests
             manifestPath,
             JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal("checksum", error.Code);
-        Assert.Contains("sei.json", error.Message);
+        var restored = JsonSerializer.Deserialize(
+            File.ReadAllBytes(manifestPath),
+            SeikoJsonContext.Default.SeiManifest)!;
+        Assert.Equal("0644", restored.Modes!["hello.txt"]);
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]
-    public void Sync_BackfillsMissingDigests()
+    public void Sync_RepairsMissingDigestsAndPayload()
     {
         using var fixture = NewFixture();
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var path = DigestPath(fixture);
+        var storeFile = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
         File.Delete(path);
+        File.Delete(storeFile);
+        File.Delete(Path.Combine(fixture.Root, "hello.txt"));
 
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.True(File.Exists(path));
+        Assert.True(File.Exists(storeFile));
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
         Assert.Contains(ReadDigests(fixture).Files, file => file.Path == "hello.txt");
     }
 
     [Fact]
-    public void Sync_RejectsCorruptStorePayload()
+    public void Sync_RepairsCorruptStorePayload()
     {
         using var fixture = NewFixture();
         var client = new SeikoClient();
@@ -103,11 +109,10 @@ public sealed class DeployLinkTests
         File.WriteAllText(storeFile, "HELLO");
         File.Delete(Path.Combine(fixture.Root, "hello.txt"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal("checksum", error.Code);
-        Assert.Contains("corrupted", error.Message);
+        Assert.Equal("hello", File.ReadAllText(storeFile));
+        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]
@@ -136,23 +141,22 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
-    public void Sync_RejectsMissingStorePayload()
+    public void Sync_RepairsMissingStorePayload()
     {
         using var fixture = NewFixture();
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        File.Delete(Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt"));
+        var storeFile = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
+        File.Delete(storeFile);
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal("checksum", error.Code);
-        Assert.Contains("corrupted", error.Message);
+        Assert.True(File.Exists(storeFile));
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]
-    public void Sync_RejectsUnlistedStoreFile()
+    public void Sync_RepairsUnlistedStoreFile()
     {
         using var fixture = NewFixture();
         var client = new SeikoClient();
@@ -160,11 +164,10 @@ public sealed class DeployLinkTests
         var directory = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture));
         File.WriteAllText(Path.Combine(directory, "injected.txt"), "injected");
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal("checksum", error.Code);
-        Assert.Contains("corrupted", error.Message);
+        Assert.False(File.Exists(Path.Combine(directory, "injected.txt")));
+        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]

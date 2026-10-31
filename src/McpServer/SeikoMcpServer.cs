@@ -496,7 +496,11 @@ public sealed class SeikoMcpServer
     private string Rollback(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
-        var result = _client.Rollback(root, StorePath(arguments), Int(arguments, "to"));
+        var result = _client.Rollback(
+            root,
+            StorePath(arguments),
+            Int(arguments, "to"),
+            OptionalString(arguments, "proxy"));
         return new JsonObject
         {
             ["generation"] = result.Generation,
@@ -848,6 +852,7 @@ public sealed class SeikoMcpServer
                 ["root"] = new JsonObject { ["type"] = "string" },
                 ["store"] = new JsonObject { ["type"] = "string" },
                 ["to"] = new JsonObject { ["type"] = "integer" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };

@@ -277,7 +277,7 @@ public sealed class SecurityTests
     }
 
     [Fact]
-    public void Sync_RejectsSameSizeStoreCorruptionWithACleanDeployedCopy()
+    public void Sync_RepairsSameSizeStoreCorruptionWithACleanDeployedCopy()
     {
         using var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
@@ -295,12 +295,12 @@ public sealed class SecurityTests
         File.WriteAllBytes(rootFile, content);
 
         var artifact = client.ReadLock(fixture.Root)!.Sei.Single().Artifact.Sha256;
-        File.WriteAllText(Path.Combine(fixture.StoreDirectory, artifact, "hello.txt"), "HELLO");
+        var storeFile = Path.Combine(fixture.StoreDirectory, artifact, "hello.txt");
+        File.WriteAllText(storeFile, "HELLO");
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal("checksum", error.Code);
+        Assert.Equal("hello", File.ReadAllText(storeFile));
     }
 
     [Fact]

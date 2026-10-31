@@ -34,6 +34,33 @@ public sealed class RollbackTests
     }
 
     [Fact]
+    public void Rollback_RedownloadsMissingStoreArtifact()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }] },
+            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }] });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var snapshot = LockFile.Read(
+            Path.Combine(fixture.Root, ".seiko", "generations", "1", "lock.json"))!;
+        var sha = snapshot.Sei.Single().Artifact.Sha256;
+        Directory.Delete(Path.Combine(fixture.StoreDirectory, sha), recursive: true);
+        File.Delete(Path.Combine(fixture.StoreDirectory, ".meta", sha + ".json"));
+
+        var result = client.Rollback(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(1, result.Generation);
+        Assert.Equal("v1", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.True(Directory.Exists(Path.Combine(fixture.StoreDirectory, sha)));
+    }
+
+    [Fact]
     public void Rollback_RequiresPreviousGeneration()
     {
         using var fixture = new Fixture();

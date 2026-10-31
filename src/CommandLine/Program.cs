@@ -156,9 +156,11 @@ var rollback = new Command("rollback", "Restore a previous generation.");
 var rollbackRoot = RootOption();
 var rollbackStore = StoreOption();
 var rollbackTo = new Option<int?>("--to") { Description = "Generation number to roll back to." };
+var rollbackProxy = ProxyOption();
 rollback.Add(rollbackRoot);
 rollback.Add(rollbackStore);
 rollback.Add(rollbackTo);
+rollback.Add(rollbackProxy);
 rollback.SetAction(parseResult => Run(
     "rollback",
     IsJson(parseResult),
@@ -166,6 +168,7 @@ rollback.SetAction(parseResult => Run(
         parseResult.GetValue(rollbackRoot),
         parseResult.GetValue(rollbackStore),
         parseResult.GetValue(rollbackTo),
+        parseResult.GetValue(rollbackProxy),
         IsJson(parseResult))));
 
 var search = new Command("search", "Search sei names in the configured indexes.");
@@ -949,7 +952,7 @@ static int Info(string? rootOption, string name, string? proxy, bool json)
     return 0;
 }
 
-static int Rollback(string? rootOption, string? store, int? toGeneration, bool json)
+static int Rollback(string? rootOption, string? store, int? toGeneration, string? proxy, bool json)
 {
     if (toGeneration is < 1)
     {
@@ -957,7 +960,7 @@ static int Rollback(string? rootOption, string? store, int? toGeneration, bool j
     }
 
     var root = rootOption ?? FindRoot();
-    var result = new SeikoClient().Rollback(root, store, toGeneration);
+    var result = new SeikoClient().Rollback(root, store, toGeneration, proxy);
     if (json)
     {
         WriteJson(
