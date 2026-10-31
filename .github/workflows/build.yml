@@ -164,7 +164,7 @@ jobs:
           if [ -n "${PLATFORM:-}" ]; then
             platform_arg=(--platform "$PLATFORM")
           fi
-          docker run --rm "${platform_arg[@]}" -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -s "$RID" <<'SH'
+          docker run --rm -i "${platform_arg[@]}" -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -s "$RID" <<'SH'
           set -eu
           rid="$1"
           apk add --no-cache clang build-base zlib-dev
