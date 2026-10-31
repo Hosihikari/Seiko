@@ -1057,7 +1057,57 @@ public sealed class SeikoClient
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var direct in lockFile.Sei.Where(sei => sei.Direct).OrderBy(sei => sei.Name, StringComparer.Ordinal))
         {
-            Visit(direct.Name, []);
+            var path = new List<string>();
+            var pending = new Stack<WhyFrame>();
+            pending.Push(new WhyFrame(direct.Name));
+            while (pending.Count > 0)
+            {
+                var frame = pending.Peek();
+                if (!frame.Entered)
+                {
+                    frame.Entered = true;
+                    if (path.Contains(frame.Name, StringComparer.Ordinal))
+                    {
+                        pending.Pop();
+                        continue;
+                    }
+
+                    path.Add(frame.Name);
+                    if (string.Equals(frame.Name, name, StringComparison.Ordinal))
+                    {
+                        var key = string.Join("\0", path);
+                        if (seen.Add(key))
+                        {
+                            chains.Add(path.ToList());
+                        }
+
+                        path.RemoveAt(path.Count - 1);
+                        pending.Pop();
+                        continue;
+                    }
+
+                    if (!byName.TryGetValue(frame.Name, out var locked))
+                    {
+                        path.RemoveAt(path.Count - 1);
+                        pending.Pop();
+                        continue;
+                    }
+
+                    frame.Dependencies = locked.Dependencies
+                        .OrderBy(dependency => dependency.Name, StringComparer.Ordinal)
+                        .ToList();
+                }
+
+                if (frame.Dependencies is not null && frame.Index < frame.Dependencies.Count)
+                {
+                    var dependency = frame.Dependencies[frame.Index++];
+                    pending.Push(new WhyFrame(dependency.Name));
+                    continue;
+                }
+
+                path.RemoveAt(path.Count - 1);
+                pending.Pop();
+            }
         }
 
         if (chains.Count == 0)
@@ -1066,33 +1116,19 @@ public sealed class SeikoClient
         }
 
         return chains;
+    }
 
-        void Visit(string current, List<string> path)
+    private sealed class WhyFrame
+    {
+        public WhyFrame(string name)
         {
-            if (path.Contains(current, StringComparer.Ordinal))
-            {
-                return;
-            }
-
-            path.Add(current);
-            if (string.Equals(current, name, StringComparison.Ordinal))
-            {
-                var key = string.Join("\0", path);
-                if (seen.Add(key))
-                {
-                    chains.Add(path.ToList());
-                }
-            }
-            else if (byName.TryGetValue(current, out var locked))
-            {
-                foreach (var dependency in locked.Dependencies.OrderBy(d => d.Name, StringComparer.Ordinal))
-                {
-                    Visit(dependency.Name, path);
-                }
-            }
-
-            path.RemoveAt(path.Count - 1);
+            Name = name;
         }
+
+        public string Name { get; }
+        public List<SeiDependency>? Dependencies { get; set; }
+        public int Index { get; set; }
+        public bool Entered { get; set; }
     }
 
     public IReadOnlyList<OutdatedSei> Outdated(

@@ -133,22 +133,20 @@ public static class LockReplay
         }
 
         var reachable = new HashSet<string>(StringComparer.Ordinal);
-        void Visit(string name)
+        var pending = new Stack<string>(
+            lockFile.Sei.Where(entry => entry.Direct).Select(entry => entry.Name));
+        while (pending.Count > 0)
         {
+            var name = pending.Pop();
             if (!reachable.Add(name))
             {
-                return;
+                continue;
             }
 
             foreach (var dependency in byName[name].Dependencies)
             {
-                Visit(dependency.Name);
+                pending.Push(dependency.Name);
             }
-        }
-
-        foreach (var direct in lockFile.Sei.Where(entry => entry.Direct))
-        {
-            Visit(direct.Name);
         }
 
         foreach (var locked in lockFile.Sei)
