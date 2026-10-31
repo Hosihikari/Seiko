@@ -88,7 +88,7 @@ public static class IndexVerifier
             if (listed is not null && !listed.Contains(name))
             {
                 context.Error(
-                    "sei-unlisted",
+                    "sei-not-listed",
                     $"sei '{name}' is not listed in index.json",
                     Relative(root, file));
             }
@@ -202,6 +202,14 @@ public static class IndexVerifier
         }
 
         context.Sei++;
+        if (index.Deprecated is not null && string.IsNullOrWhiteSpace(index.Deprecated))
+        {
+            context.Warning(
+                "deprecated-empty",
+                $"sei '{name}' has an empty deprecated message",
+                relative);
+        }
+
         var versions = index.Versions ?? [];
         if (versions.Count == 0)
         {
@@ -331,6 +339,28 @@ public static class IndexVerifier
                 "deprecated-empty",
                 $"sei '{name}' {entry.Version} has an empty deprecated message",
                 path);
+        }
+
+        if (entry.Advisory is { } advisory)
+        {
+            var severity = (advisory.Severity ?? "").Trim().ToLowerInvariant();
+            if (severity is not ("low" or "moderate" or "high" or "critical"))
+            {
+                context.Error(
+                    "advisory-severity",
+                    $"sei '{name}' {entry.Version} has invalid advisory severity '{advisory.Severity}'",
+                    path);
+            }
+
+            if (advisory.Url is not null
+                && (!Uri.TryCreate(advisory.Url, UriKind.Absolute, out var uri)
+                    || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)))
+            {
+                context.Error(
+                    "advisory-url",
+                    $"sei '{name}' {entry.Version} has invalid advisory URL '{advisory.Url}'",
+                    path);
+            }
         }
 
         return version;

@@ -9,6 +9,7 @@ public sealed class SyncResult
 {
     public required SeikoLock Lock { get; init; }
     public required int FilesDeployed { get; init; }
+    public IReadOnlyList<string> Warnings { get; init; } = [];
     public int SeiInstalled => Lock.Sei.Count;
 }
 
@@ -45,7 +46,8 @@ public sealed class SeikoClient
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
         IReadOnlySet<string>? updateNames = null,
-        bool latestInstallable = false)
+        bool latestInstallable = false,
+        bool allowCritical = false)
     {
         root = Path.GetFullPath(root);
         cancellationToken.ThrowIfCancellationRequested();
@@ -70,7 +72,8 @@ public sealed class SeikoClient
             log,
             cancellationToken,
             updateNames,
-            latestInstallable);
+            latestInstallable,
+            allowCritical);
     }
 
     private SyncResult SyncLocked(
@@ -84,7 +87,8 @@ public sealed class SeikoClient
         Action<string>? log,
         CancellationToken cancellationToken,
         IReadOnlySet<string>? updateNames,
-        bool latestInstallable)
+        bool latestInstallable,
+        bool allowCritical)
     {
         Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root);
@@ -104,6 +108,7 @@ public sealed class SeikoClient
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
+        IReadOnlyList<string> warnings;
 
         if (mode == SyncMode.Frozen)
         {
@@ -114,11 +119,20 @@ public sealed class SeikoClient
 
             resolved = LockReplay.Resolve(sources, existingLock, specs);
             lockFile = existingLock;
+            warnings = Retirement.Warnings(resolved);
         }
         else
         {
-            var resolver = new Resolver(sources, existingLock, rid, allowPrerelease, updateNames, latestInstallable);
+            var resolver = new Resolver(
+                sources,
+                existingLock,
+                rid,
+                allowPrerelease,
+                updateNames,
+                latestInstallable,
+                allowCritical);
             resolved = resolver.Resolve(specs);
+            warnings = resolver.Warnings();
             lockFile = LockFile.FromResolution(rid, sources, resolved);
 
             if (mode == SyncMode.Locked)
@@ -170,6 +184,7 @@ public sealed class SeikoClient
         {
             Lock = lockFile,
             FilesDeployed = deployment.FileCount,
+            Warnings = warnings,
         };
     }
 
@@ -234,7 +249,8 @@ public sealed class SeikoClient
         IProgress<SyncProgress>? progress = null,
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
-        bool latestInstallable = false)
+        bool latestInstallable = false,
+        bool allowCritical = false)
     {
         root = Path.GetFullPath(root);
         var at = specification.LastIndexOf('@');
@@ -279,7 +295,8 @@ public sealed class SeikoClient
             log,
             cancellationToken,
             updateNames: null,
-            latestInstallable);
+            latestInstallable,
+            allowCritical);
     }
 
     public SyncResult Remove(
@@ -292,7 +309,8 @@ public sealed class SeikoClient
         IProgress<SyncProgress>? progress = null,
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
-        bool latestInstallable = false)
+        bool latestInstallable = false,
+        bool allowCritical = false)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
@@ -335,7 +353,8 @@ public sealed class SeikoClient
             log,
             cancellationToken,
             updateNames: null,
-            latestInstallable);
+            latestInstallable,
+            allowCritical);
     }
 
     public SyncResult Update(
@@ -349,7 +368,8 @@ public sealed class SeikoClient
         IProgress<SyncProgress>? progress = null,
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
-        bool latestInstallable = false)
+        bool latestInstallable = false,
+        bool allowCritical = false)
     {
         root = Path.GetFullPath(root);
         if (latest && latestInstallable)
@@ -420,7 +440,8 @@ public sealed class SeikoClient
             log,
             cancellationToken,
             updateNames,
-            latestInstallable);
+            latestInstallable,
+            allowCritical);
     }
 
     private static string? FindLatestVersion(
@@ -439,7 +460,8 @@ public sealed class SeikoClient
             NuGetVersion? best = null;
             foreach (var entry in index.Versions)
             {
-                if (entry.Yanked || !NuGetVersion.TryParse(entry.Version, out var version))
+                if (entry.Yanked || Retirement.IsCritical(entry)
+                    || !NuGetVersion.TryParse(entry.Version, out var version))
                 {
                     continue;
                 }
@@ -966,6 +988,12 @@ public sealed class SeikoClient
                 }
 
                 var sei = source.GetSei(name);
+                if (sei is not null && sei.Unlisted)
+                {
+                    seen.Add(name);
+                    continue;
+                }
+
                 var latest = sei is null ? null : LatestVersion(sei);
                 if (latest is null)
                 {
@@ -1002,10 +1030,11 @@ public sealed class SeikoClient
                     entry.Version,
                     entry.Yanked,
                     entry.Deprecated,
+                    entry.Advisory,
                     entry.Dependencies,
                     entry.Artifacts.Count))
                 .ToList();
-            return new SeiInfo(name, source.Id, versions);
+            return new SeiInfo(name, source.Id, sei.Unlisted, sei.Deprecated, versions);
         }
 
         throw new SeikoException($"sei '{name}' not found in any source", "source");
@@ -1118,7 +1147,8 @@ public sealed class SeikoClient
             var rid = string.IsNullOrWhiteSpace(lockFile.Target.Rid) ? DefaultRid() : lockFile.Target.Rid;
             foreach (var entry in index.Versions)
             {
-                if (entry.Yanked || !NuGetVersion.TryParse(entry.Version, out var version))
+                if (entry.Yanked || Retirement.IsCritical(entry)
+                    || !NuGetVersion.TryParse(entry.Version, out var version))
                 {
                     continue;
                 }
@@ -1174,7 +1204,9 @@ public sealed class SeikoClient
                 Entry = entry,
                 Version = NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : null,
             })
-            .Where(item => item.Version is not null && !item.Entry.Yanked)
+            .Where(item => item.Version is not null
+                && !item.Entry.Yanked
+                && !Retirement.IsCritical(item.Entry))
             .ToList();
 
         var stable = candidates

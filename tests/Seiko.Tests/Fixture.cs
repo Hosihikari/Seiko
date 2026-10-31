@@ -21,6 +21,8 @@ internal sealed class VersionFixture
     public List<DepFixture> Dependencies { get; init; } = [];
     public List<ArtifactFixture> Artifacts { get; init; } = [];
     public bool Yanked { get; init; }
+    public string? Deprecated { get; init; }
+    public AdvisoryInfo? Advisory { get; init; }
 }
 
 internal sealed class Fixture : IDisposable
@@ -98,6 +100,8 @@ internal sealed class Fixture : IDisposable
                     .ToList(),
                 Artifacts = artifacts,
                 Yanked = version.Yanked,
+                Deprecated = version.Deprecated,
+                Advisory = version.Advisory,
             });
         }
 
@@ -105,6 +109,18 @@ internal sealed class Fixture : IDisposable
         if (!_sei.Contains(name, StringComparer.Ordinal))
         {
             _sei.Add(name);
+        }
+
+        WriteSei(name);
+    }
+
+    public void MarkPackage(string name, bool unlisted, string? deprecated = null)
+    {
+        var index = _indexes[name];
+        index.Unlisted = unlisted;
+        if (deprecated is not null)
+        {
+            index.Deprecated = deprecated;
         }
 
         WriteSei(name);

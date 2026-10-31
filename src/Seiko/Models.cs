@@ -28,6 +28,8 @@ public sealed class SeiIndex
 {
     public int SchemaVersion { get; set; } = 1;
     public string Name { get; set; } = "";
+    public bool Unlisted { get; set; }
+    public string? Deprecated { get; set; }
     public List<SeiVersionEntry> Versions { get; set; } = [];
 }
 
@@ -38,6 +40,13 @@ public sealed class SeiVersionEntry
     public List<ArtifactEntry> Artifacts { get; set; } = [];
     public bool Yanked { get; set; }
     public string? Deprecated { get; set; }
+    public AdvisoryInfo? Advisory { get; set; }
+}
+
+public sealed class AdvisoryInfo
+{
+    public string Severity { get; set; } = "";
+    public string? Url { get; set; }
 }
 
 public sealed class ArtifactEntry
@@ -155,7 +164,13 @@ public sealed record SeiVersionInfo(
     string Version,
     bool Yanked,
     string? Deprecated,
+    AdvisoryInfo? Advisory,
     IReadOnlyList<SeiDependency> Dependencies,
     int ArtifactCount);
 
-public sealed record SeiInfo(string Name, string Source, IReadOnlyList<SeiVersionInfo> Versions);
+public sealed record SeiInfo(
+    string Name,
+    string Source,
+    bool Unlisted,
+    string? Deprecated,
+    IReadOnlyList<SeiVersionInfo> Versions);

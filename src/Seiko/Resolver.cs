@@ -10,6 +10,7 @@ public sealed class ResolvedSei
     public required ISeiSource Source { get; init; }
     public bool Direct { get; set; }
     public ArtifactEntry Artifact { get; set; } = null!;
+    public string? PackageDeprecated { get; init; }
     public string Version => ParsedVersion.ToNormalizedString();
 }
 
@@ -27,6 +28,9 @@ public sealed class Resolver
     private readonly bool _allowPrerelease;
     private readonly IReadOnlySet<string>? _updateNames;
     private readonly bool _latestInstallable;
+    private readonly bool _allowCritical;
+    private readonly SortedDictionary<string, SortedSet<string>> _skippedYanked = new(StringComparer.Ordinal);
+    private readonly SortedDictionary<string, SortedSet<string>> _skippedCritical = new(StringComparer.Ordinal);
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
@@ -41,7 +45,8 @@ public sealed class Resolver
         string rid,
         bool allowPrerelease,
         IReadOnlySet<string>? updateNames = null,
-        bool latestInstallable = false)
+        bool latestInstallable = false,
+        bool allowCritical = false)
     {
         _sources = sources;
         _lock = existingLock;
@@ -49,6 +54,31 @@ public sealed class Resolver
         _allowPrerelease = allowPrerelease;
         _updateNames = updateNames;
         _latestInstallable = latestInstallable;
+        _allowCritical = allowCritical;
+    }
+
+    public IReadOnlyList<string> Warnings()
+    {
+        var warnings = SkippedWarnings();
+        warnings.AddRange(Retirement.Warnings(_assigned.Values.ToList()));
+        return warnings;
+    }
+
+    private List<string> SkippedWarnings()
+    {
+        var warnings = new List<string>();
+        foreach (var (name, versions) in _skippedYanked)
+        {
+            warnings.Add($"skipped yanked version(s) of {name}: {string.Join(", ", versions)}");
+        }
+
+        foreach (var (name, versions) in _skippedCritical)
+        {
+            warnings.Add(
+                $"skipped critical version(s) of {name}: {string.Join(", ", versions)}; pass --allow-critical to install");
+        }
+
+        return warnings;
     }
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
@@ -99,7 +129,16 @@ public sealed class Resolver
 
             if (!_hintsGrew)
             {
-                throw _lastConflict ?? Fail("no version satisfies the declared ranges");
+                var failure = _lastConflict ?? Fail("no version satisfies the declared ranges");
+                var skipped = SkippedWarnings();
+                if (skipped.Count > 0)
+                {
+                    throw new SeikoException(
+                        $"{failure.Message} ({string.Join("; ", skipped)})",
+                        failure.Code ?? "resolve");
+                }
+
+                throw failure;
             }
         }
     }
@@ -171,6 +210,7 @@ public sealed class Resolver
                 ParsedVersion = version,
                 Entry = entry,
                 Source = source,
+                PackageDeprecated = indexData!.Deprecated,
             };
 
             var added = 0;
@@ -226,13 +266,25 @@ public sealed class Resolver
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
             }
 
-            if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
+            if (!constraints.All(constraint => constraint.Range.Satisfies(version)))
             {
                 continue;
             }
 
-            if (!constraints.All(constraint => constraint.Range.Satisfies(version)))
+            if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
             {
+                AddSkipped(_skippedYanked, name, entry.Version);
+                if (Retirement.IsCritical(entry))
+                {
+                    AddSkipped(_skippedCritical, name, AdvisoryLabel(entry, entry.Version));
+                }
+
+                continue;
+            }
+
+            if (Retirement.IsCritical(entry) && !_allowCritical)
+            {
+                AddSkipped(_skippedCritical, name, AdvisoryLabel(entry, entry.Version));
                 continue;
             }
 
@@ -457,6 +509,25 @@ public sealed class Resolver
     private static string Describe(string? from) => from is null ? "direct" : from;
 
     private static SeikoException Fail(string message) => new(message, "resolve");
+
+    private static void AddSkipped(
+        SortedDictionary<string, SortedSet<string>> target,
+        string name,
+        string version)
+    {
+        if (!target.TryGetValue(name, out var versions))
+        {
+            versions = new SortedSet<string>(StringComparer.Ordinal);
+            target[name] = versions;
+        }
+
+        versions.Add(version);
+    }
+
+    private static string AdvisoryLabel(SeiVersionEntry entry, string version)
+        => string.IsNullOrWhiteSpace(entry.Advisory?.Url)
+            ? version
+            : $"{version} ({entry.Advisory.Url})";
 
     private sealed record Requirement(
         string Name,

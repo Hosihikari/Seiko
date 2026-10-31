@@ -89,6 +89,7 @@ public static class LockReplay
                 Source = source,
                 Direct = locked.Direct,
                 Artifact = artifact,
+                PackageDeprecated = index.Deprecated,
             });
         }
 

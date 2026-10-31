@@ -45,6 +45,10 @@ var syncLatestInstallable = new Option<bool>("--latest-installable")
 {
     Description = "Pick the highest version that has an artifact for the resolved graph.",
 };
+var syncAllowCritical = new Option<bool>("--allow-critical")
+{
+    Description = "Allow resolving versions with a critical advisory.",
+};
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
@@ -53,6 +57,7 @@ sync.Add(syncLocked);
 sync.Add(syncJobs);
 sync.Add(syncProxy);
 sync.Add(syncLatestInstallable);
+sync.Add(syncAllowCritical);
 sync.SetAction(parseResult => Run(
     "sync",
     IsJson(parseResult),
@@ -65,6 +70,7 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(syncProxy),
         parseResult.GetValue(syncLatestInstallable),
+        parseResult.GetValue(syncAllowCritical),
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
@@ -78,6 +84,10 @@ var addLatestInstallable = new Option<bool>("--latest-installable")
 {
     Description = "Pick the highest version that has an artifact for the resolved graph.",
 };
+var addAllowCritical = new Option<bool>("--allow-critical")
+{
+    Description = "Allow resolving versions with a critical advisory.",
+};
 var addSpec = new Argument<string>("spec") { Description = "Sei name with an optional @range." };
 add.Add(addSpec);
 add.Add(addRoot);
@@ -86,6 +96,7 @@ add.Add(addPre);
 add.Add(addJobs);
 add.Add(addProxy);
 add.Add(addLatestInstallable);
+add.Add(addAllowCritical);
 add.SetAction(parseResult => Run(
     "add",
     IsJson(parseResult),
@@ -97,6 +108,7 @@ add.SetAction(parseResult => Run(
         parseResult.GetValue(addJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(addProxy),
         parseResult.GetValue(addLatestInstallable),
+        parseResult.GetValue(addAllowCritical),
         IsJson(parseResult))));
 
 var remove = new Command("remove", "Remove a direct sei declaration and sync.");
@@ -135,6 +147,10 @@ var updateLatestInstallable = new Option<bool>("--latest-installable")
 {
     Description = "Pick the highest version that has an artifact for the resolved graph.",
 };
+var updateAllowCritical = new Option<bool>("--allow-critical")
+{
+    Description = "Allow resolving versions with a critical advisory.",
+};
 var updateName = new Argument<string?>("name")
 {
     Description = "Direct sei name; all direct declarations when omitted.",
@@ -148,6 +164,7 @@ update.Add(updateJobs);
 update.Add(updateProxy);
 update.Add(updateLatest);
 update.Add(updateLatestInstallable);
+update.Add(updateAllowCritical);
 update.SetAction(parseResult => Run(
     "update",
     IsJson(parseResult),
@@ -160,6 +177,7 @@ update.SetAction(parseResult => Run(
         parseResult.GetValue(updateJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(updateProxy),
         parseResult.GetValue(updateLatestInstallable),
+        parseResult.GetValue(updateAllowCritical),
         IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
@@ -551,6 +569,7 @@ static int Sync(
     int jobs,
     string? proxy,
     bool latestInstallable,
+    bool allowCritical,
     bool json)
 {
     if (frozen && locked)
@@ -574,7 +593,8 @@ static int Sync(
             proxy,
             display,
             Log.Debug,
-            latestInstallable: latestInstallable);
+            latestInstallable: latestInstallable,
+            allowCritical: allowCritical);
     }
     else
     {
@@ -586,13 +606,18 @@ static int Sync(
             jobs,
             proxy,
             log: Log.Debug,
-            latestInstallable: latestInstallable);
+            latestInstallable: latestInstallable,
+            allowCritical: allowCritical);
     }
     if (json)
     {
         WriteJson(
             CliJsonContext.Default.SyncEnvelope,
-            new SyncEnvelope(1, "sync", new SyncData(result.SeiInstalled, result.FilesDeployed, mode.ToString())));
+            new SyncEnvelope(1, "sync", new SyncData(
+                result.SeiInstalled,
+                result.FilesDeployed,
+                mode.ToString(),
+                result.Warnings.ToList())));
         return 0;
     }
 
@@ -608,6 +633,7 @@ static int Add(
     int jobs,
     string? proxy,
     bool latestInstallable,
+    bool allowCritical,
     bool json)
     => RunMutation(
         "add",
@@ -621,7 +647,8 @@ static int Add(
             proxy,
             progress,
             log,
-            latestInstallable: latestInstallable));
+            latestInstallable: latestInstallable,
+            allowCritical: allowCritical));
 
 static int Remove(
     string? rootOption,
@@ -653,6 +680,7 @@ static int Update(
     int jobs,
     string? proxy,
     bool latestInstallable,
+    bool allowCritical,
     bool json)
     => RunMutation(
         "update",
@@ -667,7 +695,8 @@ static int Update(
             proxy,
             progress,
             log,
-            latestInstallable: latestInstallable));
+            latestInstallable: latestInstallable,
+            allowCritical: allowCritical));
 
 static int Why(string? rootOption, string name, bool json)
 {
@@ -871,7 +900,11 @@ static int RunMutation(
     {
         WriteJson(
             CliJsonContext.Default.SyncEnvelope,
-            new SyncEnvelope(1, command, new SyncData(result.SeiInstalled, result.FilesDeployed, SyncMode.Normal.ToString())));
+            new SyncEnvelope(1, command, new SyncData(
+                result.SeiInstalled,
+                result.FilesDeployed,
+                SyncMode.Normal.ToString(),
+                result.Warnings.ToList())));
     }
     else
     {
@@ -883,6 +916,11 @@ static int RunMutation(
 
 static void PrintSyncResult(SyncResult result)
 {
+    foreach (var warning in result.Warnings)
+    {
+        Log.Warning(warning);
+    }
+
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
     foreach (var sei in result.Lock.Sei)
     {
@@ -961,11 +999,14 @@ static int Info(string? rootOption, string name, string? proxy, bool json)
         var data = new InfoData(
             info.Name,
             info.Source,
+            info.Unlisted,
+            info.Deprecated,
             info.Versions
                 .Select(version => new InfoVersion(
                     version.Version,
                     version.Yanked,
                     version.Deprecated,
+                    version.Advisory,
                     version.ArtifactCount,
                     version.Dependencies.ToList()))
                 .ToList());
@@ -973,13 +1014,28 @@ static int Info(string? rootOption, string name, string? proxy, bool json)
         return 0;
     }
 
-    Console.WriteLine($"{info.Name} ({info.Source})");
+    var packageFlags = info.Unlisted ? " unlisted" : "";
+    if (!string.IsNullOrWhiteSpace(info.Deprecated))
+    {
+        packageFlags += $" deprecated: {info.Deprecated}";
+    }
+
+    Console.WriteLine($"{info.Name} ({info.Source}){packageFlags}");
     foreach (var version in info.Versions)
     {
         var flags = version.Yanked ? " yanked" : "";
         if (!string.IsNullOrWhiteSpace(version.Deprecated))
         {
             flags += $" deprecated: {version.Deprecated}";
+        }
+
+        if (version.Advisory is { } advisory)
+        {
+            flags += $" advisory: {advisory.Severity}";
+            if (!string.IsNullOrWhiteSpace(advisory.Url))
+            {
+                flags += $" ({advisory.Url})";
+            }
         }
 
         Console.WriteLine($"  {version.Version}{flags}  deps={version.Dependencies.Count} artifacts={version.ArtifactCount}");

@@ -10,7 +10,7 @@ public sealed record ListItem(
     bool Direct,
     Dictionary<string, string>? Selectors);
 
-public sealed record SyncData(int Sei, int Files, string Mode);
+public sealed record SyncData(int Sei, int Files, string Mode, List<string> Warnings);
 
 public sealed record RollbackData(int Generation, int Sei, int Files);
 
@@ -32,10 +32,16 @@ public sealed record InfoVersion(
     string Version,
     bool Yanked,
     string? Deprecated,
+    AdvisoryInfo? Advisory,
     int Artifacts,
     List<SeiDependency> Dependencies);
 
-public sealed record InfoData(string Name, string Source, List<InfoVersion> Versions);
+public sealed record InfoData(
+    string Name,
+    string Source,
+    bool Unlisted,
+    string? Deprecated,
+    List<InfoVersion> Versions);
 
 public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
 

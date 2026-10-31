@@ -20,6 +20,43 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_AcceptsUnlistedPackageAndAdvisory()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Unlisted = true;
+        sei.Deprecated = "use hello2 instead";
+        sei.Versions[0].Advisory = new AdvisoryInfo
+        {
+            Severity = "critical",
+            Url = "https://example.com/advisories/1",
+        };
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Empty(result.Findings);
+    }
+
+    [Fact]
+    public void Verify_RejectsInvalidAdvisory()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Advisory = new AdvisoryInfo
+        {
+            Severity = "urgent",
+            Url = "not a url",
+        };
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "advisory-severity");
+        Assert.Contains(result.Findings, finding => finding.Code == "advisory-url");
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsValidatesManifest()
     {
         using var fixture = NewFixture();
@@ -100,7 +137,7 @@ public sealed class IndexVerifierTests
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
         Assert.Contains(result.Findings, finding => finding.Code == "sei-missing");
-        Assert.Contains(result.Findings, finding => finding.Code == "sei-unlisted");
+        Assert.Contains(result.Findings, finding => finding.Code == "sei-not-listed");
     }
 
     [Fact]

@@ -246,6 +246,13 @@ public sealed class SeikoMcpServer
                 ["version"] = version.Version,
                 ["yanked"] = version.Yanked,
                 ["deprecated"] = version.Deprecated,
+                ["advisory"] = version.Advisory is null
+                    ? null
+                    : new JsonObject
+                    {
+                        ["severity"] = version.Advisory.Severity,
+                        ["url"] = version.Advisory.Url,
+                    },
                 ["artifacts"] = version.ArtifactCount,
                 ["dependencies"] = DependenciesNode(version.Dependencies),
             });
@@ -255,6 +262,8 @@ public sealed class SeikoMcpServer
         {
             ["name"] = info.Name,
             ["source"] = info.Source,
+            ["unlisted"] = info.Unlisted,
+            ["deprecated"] = info.Deprecated,
             ["versions"] = versions,
         }.ToJsonString();
     }
@@ -435,7 +444,8 @@ public sealed class SeikoMcpServer
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"),
-            latestInstallable: Bool(arguments, "latestInstallable"));
+            latestInstallable: Bool(arguments, "latestInstallable"),
+            allowCritical: Bool(arguments, "allowCritical"));
         return SyncResultJson(result);
     }
 
@@ -449,7 +459,8 @@ public sealed class SeikoMcpServer
             StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
-            OptionalString(arguments, "proxy"));
+            OptionalString(arguments, "proxy"),
+            allowCritical: Bool(arguments, "allowCritical"));
         return SyncResultJson(result);
     }
 
@@ -464,8 +475,20 @@ public sealed class SeikoMcpServer
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"),
-            latestInstallable: Bool(arguments, "latestInstallable"));
+            latestInstallable: Bool(arguments, "latestInstallable"),
+            allowCritical: Bool(arguments, "allowCritical"));
         return SyncResultJson(result);
+    }
+
+    private static JsonArray WarningsNode(SyncResult result)
+    {
+        var warnings = new JsonArray();
+        foreach (var warning in result.Warnings)
+        {
+            warnings.Add((JsonNode)JsonValue.Create(warning));
+        }
+
+        return warnings;
     }
 
     private static string SyncResultJson(SyncResult result)
@@ -474,6 +497,7 @@ public sealed class SeikoMcpServer
             ["sei"] = result.SeiInstalled,
             ["files"] = result.FilesDeployed,
             ["mode"] = SyncMode.Normal.ToString(),
+            ["warnings"] = WarningsNode(result),
         }.ToJsonString();
 
     private string Sync(JsonObject arguments)
@@ -492,12 +516,14 @@ public sealed class SeikoMcpServer
             StorePath(arguments),
             Bool(arguments, "pre"),
             mode,
-            latestInstallable: Bool(arguments, "latestInstallable"));
+            latestInstallable: Bool(arguments, "latestInstallable"),
+            allowCritical: Bool(arguments, "allowCritical"));
         return new JsonObject
         {
             ["sei"] = result.SeiInstalled,
             ["files"] = result.FilesDeployed,
             ["mode"] = mode.ToString(),
+            ["warnings"] = WarningsNode(result),
         }.ToJsonString();
     }
 
@@ -770,6 +796,7 @@ public sealed class SeikoMcpServer
                 ["locked"] = new JsonObject { ["type"] = "boolean" },
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
                 ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
+                ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
@@ -902,6 +929,7 @@ public sealed class SeikoMcpServer
                 ["store"] = new JsonObject { ["type"] = "string" },
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
                 ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
+                ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
             },
@@ -923,6 +951,8 @@ public sealed class SeikoMcpServer
         {
             properties["latestInstallable"] = new JsonObject { ["type"] = "boolean" };
         }
+
+        properties["allowCritical"] = new JsonObject { ["type"] = "boolean" };
 
         return new JsonObject
         {
