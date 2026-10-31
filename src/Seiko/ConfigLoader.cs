@@ -42,7 +42,7 @@ public static class ConfigLoader
             if (!string.IsNullOrWhiteSpace(child["tokenEnv"]))
             {
                 throw new SeikoException(
-                    $"{path}: tokenEnv is no longer supported; set SEIKO_TOKEN_<HOST> for the source host",
+                    $"{path}: seiko.conf does not name token variables; set SEIKO_TOKEN_<HOST> for the source host",
                     "config");
             }
 
