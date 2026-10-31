@@ -312,6 +312,52 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void Deploy_RejectsUnicodeEquivalentPathConflicts()
+    {
+        using var first = new Fixture();
+        first.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["café.txt"] = "NFC" } }],
+        });
+        first.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
+        using var second = new Fixture();
+        second.AddSei("b", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["café.txt"] = "NFD" } }],
+        });
+        second.WriteConfig("win-x64", new SpecFixture("b", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(first.Root, first.StoreDirectory);
+        client.Sync(second.Root, second.StoreDirectory);
+        var storedA = new Store(first.StoreDirectory).TryGet(
+            client.ReadLock(first.Root)!.Sei.Single().Artifact.Sha256)!;
+        var storedB = new Store(second.StoreDirectory).TryGet(
+            client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256)!;
+        var root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var error = Assert.Throws<SeikoException>(() => Deployer.Deploy(
+                root,
+                [
+                    new DeployedSei("a", "1.0.0", storedA.Directory, storedA.Manifest, storedA.Digests),
+                    new DeployedSei("b", "1.0.0", storedB.Directory, storedB.Manifest, storedB.Digests),
+                ],
+                Path.Combine(root, ".seiko"),
+                new SeikoLock { Target = new PlatformInfo { Rid = "win-x64" } }));
+
+            Assert.Equal("deploy", error.Code);
+            Assert.Contains("path conflict", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void CacheClean_DeduplicatesUnicodeRootAliases()
     {
         var id = Guid.NewGuid().ToString("N");

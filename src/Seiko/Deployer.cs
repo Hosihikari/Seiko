@@ -225,15 +225,16 @@ public static class Deployer
                         "deploy");
                 }
 
-                if (caseInsensitive.TryGetValue(relative, out var other)
+                var normalized = relative.Normalize(System.Text.NormalizationForm.FormC);
+                if (caseInsensitive.TryGetValue(normalized, out var other)
                     && !string.Equals(other, relative, StringComparison.Ordinal))
                 {
                     throw new SeikoException(
-                        $"case-only path conflict: {other} and {relative}",
+                        $"path conflict: {other} and {relative} differ only by case or Unicode normalization",
                         "deploy");
                 }
 
-                caseInsensitive[relative] = relative;
+                caseInsensitive[normalized] = relative;
 
                 var hash = HashStoredFile(item, file, relative);
                 if (desired.TryGetValue(relative, out var existing))
