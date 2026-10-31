@@ -83,7 +83,8 @@ case "$uname_s" in
         case "$uname_m" in
             x86_64|amd64) arch=x64 ;;
             aarch64|arm64) arch=arm64 ;;
-            armv7l|armv7|armv6l|armv8l|arm) arch=arm ;;
+            armv7l|armv7|armv8l|arm) arch=arm ;;
+            armv6l|armv6) die "unsupported Linux architecture: $uname_m; ARMv6 is not published" ;;
             *) die "unsupported Linux architecture: $uname_m" ;;
         esac
         if ls /lib/ld-musl-*.so.1 >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; then

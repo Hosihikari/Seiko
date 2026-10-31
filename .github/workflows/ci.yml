@@ -30,6 +30,8 @@ jobs:
         run: dotnet build Seiko.slnx -c Release --no-restore
       - name: Test
         run: dotnet test tests/Seiko.Tests/Seiko.Tests.csproj -c Release --no-build
+      - name: Installer architecture detection
+        run: bash tests/installer-detect.sh
 
   aot:
     name: NativeAOT (${{ matrix.rid }})
