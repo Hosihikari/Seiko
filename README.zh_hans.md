@@ -27,7 +27,7 @@ irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | i
 校验下载的归档：
 
 ```bash
-gh attestation verify sk-0.2.1-linux-x64.tar.gz --repo Hosihikari/Seiko
+gh attestation verify 'sk-<version>-linux-x64.tar.gz' --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 

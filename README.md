@@ -27,7 +27,7 @@ Supported targets are `win-x64`, `win-arm64`, `win-x86`, `linux-x64`, `linux-arm
 Verify a downloaded archive:
 
 ```bash
-gh attestation verify sk-0.2.1-linux-x64.tar.gz --repo Hosihikari/Seiko
+gh attestation verify 'sk-<version>-linux-x64.tar.gz' --repo Hosihikari/Seiko
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
