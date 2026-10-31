@@ -352,6 +352,11 @@ public sealed class SeikoClient
         bool latestInstallable = false)
     {
         root = Path.GetFullPath(root);
+        if (latest && latestInstallable)
+        {
+            throw new SeikoException("--latest and --latest-installable are mutually exclusive", "usage");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         RootRegistry.Register(storePath, root);

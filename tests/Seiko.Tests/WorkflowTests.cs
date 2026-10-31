@@ -69,6 +69,32 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void UpdateLatestIsRejectedWithLatestInstallable()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "*"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        var before = File.ReadAllText(configPath);
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Update(
+                fixture.Root,
+                latest: true,
+                storeRoot: fixture.StoreDirectory,
+                latestInstallable: true));
+
+        Assert.Equal("usage", error.Code);
+        Assert.Equal(before, File.ReadAllText(configPath));
+    }
+
+    [Fact]
     public void Add_DoesNotEditConfigWhenTheRootLockIsHeld()
     {
         using var fixture = new Fixture();
