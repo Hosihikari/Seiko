@@ -168,6 +168,44 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Search_FallsThroughWhenTheFirstSourceCannotProvideThePackage()
+    {
+        using var first = new Fixture();
+        first.AddSei("foo", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "first" } }],
+        });
+        first.WriteConfig("win-x64");
+        File.Delete(Path.Combine(first.SourceDirectory, "sei", "foo.json"));
+
+        using var second = new Fixture();
+        second.AddSei("foo", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "second" } }],
+        });
+        second.WriteConfig("win-x64");
+        var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
+        var secondIndex = Path.Combine(second.SourceDirectory, "index.json").Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(first.Root, "seiko.conf"),
+            $$"""
+            sources = [
+              { id = "first", index = "{{firstIndex}}" },
+              { id = "second", index = "{{secondIndex}}" }
+            ]
+            rid = "win-x64"
+            sei = []
+            """);
+
+        var result = Assert.Single(new SeikoClient().Search(first.Root, "foo"));
+
+        Assert.Equal("foo", result.Name);
+        Assert.Equal("second", result.Source);
+    }
+
+    [Fact]
     public void Outdated_ReportsLatestInstallable()
     {
         using var fixture = new Fixture();
