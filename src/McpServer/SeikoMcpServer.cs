@@ -18,10 +18,6 @@ public sealed class SeikoMcpServer
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
 
-    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
-        ? StringComparison.OrdinalIgnoreCase
-        : StringComparison.Ordinal;
-
     private readonly string _defaultRoot;
     private readonly bool _allowMutations;
     private readonly IReadOnlyList<string> _allowedRoots;
@@ -554,7 +550,7 @@ public sealed class SeikoMcpServer
         if (!string.IsNullOrWhiteSpace(root))
         {
             var full = SeikoClient.CanonicalizePath(root);
-            if (required && _allowedRoots.Count > 0 && !IsUnderAny(full, _allowedRoots))
+            if (required && _allowedRoots.Count > 0 && !RootedPath.IsUnderAny(full, _allowedRoots))
             {
                 throw new SeikoException($"root '{full}' is outside --allowed-root", "usage");
             }
@@ -581,7 +577,7 @@ public sealed class SeikoMcpServer
 
         if (_allowedStores.Count > 0)
         {
-            if (!IsUnderAny(full, _allowedStores))
+            if (!RootedPath.IsUnderAny(full, _allowedStores))
             {
                 throw new SeikoException($"store '{full}' is outside --allowed-store", "usage");
             }
@@ -589,33 +585,12 @@ public sealed class SeikoMcpServer
             return full;
         }
 
-        if (!IsUnderAny(full, new[] { _defaultStore }))
+        if (!RootedPath.IsUnderAny(full, new[] { _defaultStore }))
         {
             throw new SeikoException($"store '{full}' is outside the default store", "usage");
         }
 
         return full;
-    }
-
-    private static bool IsUnderAny(string path, IEnumerable<string> roots)
-    {
-        foreach (var root in roots)
-        {
-            if (string.Equals(path, root, PathComparison))
-            {
-                return true;
-            }
-
-            var prefix = root.EndsWith(Path.DirectorySeparatorChar)
-                ? root
-                : root + Path.DirectorySeparatorChar;
-            if (path.StartsWith(prefix, PathComparison))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static string RequiredString(JsonObject arguments, string name)

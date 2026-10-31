@@ -17,6 +17,45 @@ public sealed class PathResolutionTests
         Assert.Throws<SeikoException>(() => RelativePath.Parse(value));
     }
 
+    [Theory]
+    [InlineData("a/b", true)]
+    [InlineData("a b/c", true)]
+    [InlineData("", false)]
+    [InlineData("a\\b", false)]
+    [InlineData("/absolute", false)]
+    [InlineData("../up", false)]
+    [InlineData("a//b", false)]
+    [InlineData("./a", false)]
+    [InlineData("a/../b", false)]
+    public void IsSafeStrict_ChecksStoredPaths(string value, bool expected)
+    {
+        Assert.Equal(expected, RelativePath.IsSafeStrict(value));
+    }
+
+    [Fact]
+    public void IsSafeStrict_RejectsWindowsInvalidFileNames()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Assert.False(RelativePath.IsSafeStrict("a:b"));
+    }
+
+    [Fact]
+    public void IsUnder_UsesDirectoryBoundaries()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "seiko-root");
+
+        Assert.True(RootedPath.IsUnder(root, root));
+        Assert.True(RootedPath.IsUnder(Path.Combine(root, "a"), root));
+        Assert.False(RootedPath.IsUnder(root + "x", root));
+
+        var upper = root.ToUpperInvariant();
+        Assert.Equal(OperatingSystem.IsWindows(), RootedPath.IsUnder(upper, root));
+    }
+
     [Fact]
     public void Parse_NormalizesSeparators()
     {

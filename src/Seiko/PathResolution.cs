@@ -12,10 +12,16 @@ internal readonly struct RelativePath
 
     public string Value { get; }
 
+    private static readonly char[] WindowsInvalidFileNameChars = Path
+        .GetInvalidFileNameChars()
+        .Where(character => character is not ('/' or '\\'))
+        .ToArray();
+
     public static RelativePath Parse(string value, string code = "deploy")
     {
         var normalized = value.Replace('\\', '/');
         if (string.IsNullOrWhiteSpace(normalized)
+            || normalized.Contains('\0')
             || Path.IsPathRooted(normalized)
             || normalized.Split('/').Any(segment => segment is "" or "." or ".."))
         {
@@ -23,6 +29,26 @@ internal readonly struct RelativePath
         }
 
         return new RelativePath(normalized);
+    }
+
+    // Stricter form used for stored metadata: a backslash is rejected instead
+    // of normalized, and Windows-invalid file names are refused up front.
+    public static bool IsSafeStrict(string? value)
+    {
+        if (string.IsNullOrEmpty(value)
+            || value.Contains('\0')
+            || value.Contains('\\')
+            || Path.IsPathRooted(value))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows() && value.IndexOfAny(WindowsInvalidFileNameChars) >= 0)
+        {
+            return false;
+        }
+
+        return !value.Split('/').Any(segment => segment is "" or "." or "..");
     }
 
     public override string ToString() => Value;
@@ -48,4 +74,23 @@ internal static class RootedPath
 
         return full;
     }
+
+    public static bool IsUnder(string path, string root)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (string.Equals(path, root, comparison))
+        {
+            return true;
+        }
+
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        return path.StartsWith(prefix, comparison);
+    }
+
+    public static bool IsUnderAny(string path, IEnumerable<string> roots)
+        => roots.Any(root => IsUnder(path, root));
 }
