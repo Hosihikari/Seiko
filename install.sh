@@ -234,12 +234,14 @@ case ":$PATH:" in
                     ;;
                 *) profile="" ;;
             esac
-            if [ -n "$profile" ] && ! grep -Fq "$INSTALL_DIR" "$profile" 2>/dev/null; then
-                if [ "$shell_name" = fish ]; then
-                    printf '\nfish_add_path "%s"\n' "$INSTALL_DIR" >> "$profile"
-                else
-                    printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$profile"
-                fi
+            if [ "$shell_name" = fish ]; then
+                managed_line="fish_add_path \"$INSTALL_DIR\""
+            else
+                managed_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+            fi
+
+            if [ -n "$profile" ] && ! grep -Fxq "$managed_line" "$profile" 2>/dev/null; then
+                printf '\n%s\n' "$managed_line" >> "$profile"
                 printf 'updated %s; restart the shell or source it\n' "$profile"
             elif [ -z "$profile" ]; then
                 printf 'could not detect the login shell; add this to PATH manually:\n  export PATH="%s:$PATH"\n' "$INSTALL_DIR"
