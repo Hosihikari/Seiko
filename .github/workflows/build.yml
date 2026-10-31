@@ -180,7 +180,7 @@ jobs:
               *) args+=("$a") ;;
             esac
           done
-          exec zig cc -target arm-linux-musleabihf "${args[@]}"
+          exec zig cc -target arm-linux-musleabihf -Wl,--no-start-stop-gc "${args[@]}"
           EOF
             chmod +x /usr/local/bin/zig-cc
             extra="-p:CppCompilerAndLinker=/usr/local/bin/zig-cc"
