@@ -86,6 +86,25 @@ public sealed class SyncModeTests
     }
 
     [Fact]
+    public void Sync_FrozenMatchesNonCanonicalIndexVersions()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal("1.0.0", Assert.Single(client.ReadLock(fixture.Root)!.Sei).Version);
+
+        var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+
+        Assert.Equal(1, result.SeiInstalled);
+    }
+
+    [Fact]
     public void Sync_LockedRejectsStaleLock()
     {
         using var fixture = new Fixture();

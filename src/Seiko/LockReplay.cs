@@ -48,8 +48,26 @@ public static class LockReplay
 
             var index = source.GetSei(locked.Name)
                 ?? throw Fail($"--frozen: {locked.Name} is not in source '{locked.Source}'");
-            var entry = index.Versions.FirstOrDefault(v => string.Equals(v.Version, locked.Version, StringComparison.Ordinal))
-                ?? throw Fail($"--frozen: {locked.Name} {locked.Version} not found in source '{locked.Source}'");
+            if (!NuGetVersion.TryParse(locked.Version, out var version))
+            {
+                throw Fail($"--frozen: invalid locked version '{locked.Version}' for {locked.Name}");
+            }
+
+            var matches = index.Versions
+                .Where(entry => NuGetVersion.TryParse(entry.Version, out var entryVersion)
+                    && entryVersion.Equals(version))
+                .ToList();
+            if (matches.Count == 0)
+            {
+                throw Fail($"--frozen: {locked.Name} {locked.Version} not found in source '{locked.Source}'");
+            }
+
+            if (matches.Count > 1)
+            {
+                throw Fail($"--frozen: {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'");
+            }
+
+            var entry = matches[0];
 
             var artifact = entry.Artifacts.FirstOrDefault(a =>
                     string.Equals(a.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
@@ -60,11 +78,6 @@ public static class LockReplay
             if (!DependenciesEqual(entry.Dependencies, locked.Dependencies))
             {
                 throw Fail($"--frozen: dependencies of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
-            }
-
-            if (!NuGetVersion.TryParse(locked.Version, out var version))
-            {
-                throw Fail($"--frozen: invalid locked version '{locked.Version}' for {locked.Name}");
             }
 
             result.Add(new ResolvedSei
