@@ -277,7 +277,6 @@ sourceList.SetAction(parseResult => Run(
 
 var sourceAdd = new Command("add", "Add a source.");
 var sourceAddRoot = RootOption();
-var sourceAddTokenEnv = new Option<string?>("--token-env") { Description = "Environment variable holding a bearer token." };
 var sourceAddTokenHosts = new Option<string[]>("--token-host")
 {
     Description = "Extra host allowed to receive the bearer token (repeatable).",
@@ -289,7 +288,6 @@ var sourceAddIndex = new Argument<string>("index") { Description = "Index URL or
 sourceAdd.Add(sourceAddId);
 sourceAdd.Add(sourceAddIndex);
 sourceAdd.Add(sourceAddRoot);
-sourceAdd.Add(sourceAddTokenEnv);
 sourceAdd.Add(sourceAddTokenHosts);
 sourceAdd.SetAction(parseResult => Run(
     "source_add",
@@ -299,7 +297,6 @@ sourceAdd.SetAction(parseResult => Run(
         parseResult.GetValue(sourceAddId)!,
         parseResult.GetValue(sourceAddIndex)!,
         parseResult.GetValue(sourceAddTokenHosts),
-        parseResult.GetValue(sourceAddTokenEnv),
         IsJson(parseResult))));
 
 var sourceRemove = new Command("remove", "Remove a source.");
@@ -736,11 +733,10 @@ static int SourceAddCommand(
     string id,
     string index,
     string[]? tokenHosts,
-    string? tokenEnv,
     bool json)
 {
     var root = rootOption ?? FindRoot();
-    var sources = new SeikoClient().SourceAdd(root, id, index, tokenEnv, tokenHosts);
+    var sources = new SeikoClient().SourceAdd(root, id, index, tokenHosts);
     PrintSources("source_add", sources, json);
     return 0;
 }

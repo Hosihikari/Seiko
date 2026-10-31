@@ -70,7 +70,7 @@ public sealed class SecurityTests
     }
 
     [Fact]
-    public void Sync_SendsTokensOnlyToTheIndexOrigin()
+    public void Sync_DoesNotSendTokensOverHttp()
     {
         using var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
@@ -88,25 +88,44 @@ public sealed class SecurityTests
             artifactServer.BaseUrl + index.Versions[0].Artifacts[0].Source.Url;
         File.WriteAllBytes(seiPath, JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
 
-        var configPath = Path.Combine(fixture.Root, "seiko.conf");
-        var config = File.ReadAllText(configPath)
-            .Replace(
-                $"index = \"{indexServer.BaseUrl}index.json\"",
-                $"index = \"{indexServer.BaseUrl}index.json\", tokenEnv = \"SEIKO_TEST_TOKEN\"");
-        File.WriteAllText(configPath, config);
-
-        Environment.SetEnvironmentVariable("SEIKO_TEST_TOKEN", "secret-token");
+        var host = new Uri(indexServer.BaseUrl).Host;
+        var tokenVariable = HttpSource.TokenEnvironmentName(host);
+        Environment.SetEnvironmentVariable(tokenVariable, "secret-token");
         try
         {
             new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         }
         finally
         {
-            Environment.SetEnvironmentVariable("SEIKO_TEST_TOKEN", null);
+            Environment.SetEnvironmentVariable(tokenVariable, null);
         }
 
-        Assert.Contains(indexServer.Authorizations, value => value == "Bearer secret-token");
+        Assert.DoesNotContain(indexServer.Authorizations, value => value is not null);
         Assert.DoesNotContain(artifactServer.Authorizations, value => value is not null);
+    }
+
+    [Fact]
+    public void Config_RejectsTokenEnv()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            configPath,
+            File.ReadAllText(configPath).Replace("index = ", "tokenEnv = \"ANY_SECRET\", index = "));
+
+        var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
+
+        Assert.Equal("config", error.Code);
+        Assert.Contains("SEIKO_TOKEN_", error.Message);
+    }
+
+    [Fact]
+    public void HttpSource_TokenEnvironmentNameNormalizesHost()
+    {
+        Assert.Equal(
+            "SEIKO_TOKEN_PACKAGES_EXAMPLE_COM",
+            HttpSource.TokenEnvironmentName("Packages.Example.com"));
     }
 
     [Theory]

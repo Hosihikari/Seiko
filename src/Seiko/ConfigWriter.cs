@@ -143,11 +143,6 @@ public static class ConfigWriter
                 $"id = \"{Escape(source.Id)}\"",
                 $"index = \"{Escape(source.Index)}\"",
             };
-            if (!string.IsNullOrWhiteSpace(source.TokenEnv))
-            {
-                parts.Add($"tokenEnv = \"{Escape(source.TokenEnv)}\"");
-            }
-
             if (source.TokenHosts is { Count: > 0 } tokenHosts)
             {
                 var hosts = tokenHosts.Select(host => $"\"{Escape(host)}\"");

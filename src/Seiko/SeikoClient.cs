@@ -473,7 +473,6 @@ public sealed class SeikoClient
         string root,
         string id,
         string index,
-        string? tokenEnv = null,
         IReadOnlyList<string>? tokenHosts = null)
     {
         root = Path.GetFullPath(root);
@@ -500,7 +499,6 @@ public sealed class SeikoClient
         {
             Id = id,
             Index = index,
-            TokenEnv = string.IsNullOrWhiteSpace(tokenEnv) ? null : tokenEnv,
             TokenHosts = hosts.Count > 0 ? hosts : null,
         });
         ConfigWriter.WriteSources(root, config.Sources);

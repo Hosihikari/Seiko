@@ -39,6 +39,13 @@ public static class ConfigLoader
                 throw new SeikoException($"{path}: each source needs id and index", "config");
             }
 
+            if (!string.IsNullOrWhiteSpace(child["tokenEnv"]))
+            {
+                throw new SeikoException(
+                    $"{path}: tokenEnv is no longer supported; set SEIKO_TOKEN_<HOST> for the source host",
+                    "config");
+            }
+
             var tokenHosts = child.GetSection("tokenHosts")
                 .GetChildren()
                 .Select(section => section.Value)
@@ -50,7 +57,6 @@ public static class ConfigLoader
             {
                 Id = id,
                 Index = index,
-                TokenEnv = child["tokenEnv"],
                 TokenHosts = tokenHosts.Count > 0 ? tokenHosts : null,
             });
         }

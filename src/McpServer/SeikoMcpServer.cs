@@ -316,7 +316,6 @@ public sealed class SeikoMcpServer
             root,
             id,
             index,
-            OptionalString(arguments, "tokenEnv"),
             StringArray(arguments, "tokenHosts"));
         return SourcesJson(sources);
     }
@@ -732,7 +731,6 @@ public sealed class SeikoMcpServer
                 ["root"] = new JsonObject { ["type"] = "string" },
                 ["id"] = new JsonObject { ["type"] = "string" },
                 ["index"] = new JsonObject { ["type"] = "string" },
-                ["tokenEnv"] = new JsonObject { ["type"] = "string" },
                 ["tokenHosts"] = new JsonObject
                 {
                     ["type"] = "array",

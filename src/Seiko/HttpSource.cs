@@ -14,7 +14,6 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private readonly HttpClient _client;
     private readonly Uri _baseUri;
     private readonly Uri _indexUri;
-    private readonly string? _token;
     private readonly HashSet<string> _tokenHosts;
     private readonly DownloadSession _session;
     private readonly Dictionary<string, SeiIndex?> _cache = new(StringComparer.Ordinal);
@@ -51,7 +50,6 @@ public sealed class HttpSource : ISeiSource, IDisposable
         };
         _baseUri = new Uri(indexUri, ".");
         _indexUri = indexUri;
-        _token = ResolveToken(config);
         _tokenHosts = new HashSet<string>(
             config.TokenHosts ?? [],
             StringComparer.OrdinalIgnoreCase);
@@ -553,24 +551,43 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private HttpRequestMessage NewRequest(HttpMethod method, Uri uri)
     {
         var request = new HttpRequestMessage(method, uri);
-        if (_token is not null && TokenAllowed(uri))
+        var token = TokenFor(uri);
+        if (token is not null)
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         }
 
         return request;
     }
 
-    private bool TokenAllowed(Uri uri)
+    // The project owns seiko.conf, so it must not be able to name an arbitrary
+    // environment variable. The destination host selects the token instead;
+    // an attacker's index can only receive a token the user set for that host.
+    private string? TokenFor(Uri uri)
     {
-        if (string.Equals(uri.Scheme, _indexUri.Scheme, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(uri.Host, _indexUri.Host, StringComparison.OrdinalIgnoreCase)
-            && uri.Port == _indexUri.Port)
+        if (uri.Scheme != Uri.UriSchemeHttps)
         {
-            return true;
+            return null;
         }
 
-        return uri.Scheme == Uri.UriSchemeHttps && _tokenHosts.Contains(uri.Host);
+        var sameOrigin = string.Equals(uri.Host, _indexUri.Host, StringComparison.OrdinalIgnoreCase)
+            && uri.Port == _indexUri.Port;
+        if (!sameOrigin && !_tokenHosts.Contains(uri.Host))
+        {
+            return null;
+        }
+
+        var token = Environment.GetEnvironmentVariable(TokenEnvironmentName(uri.Host));
+        return string.IsNullOrWhiteSpace(token) ? null : token;
+    }
+
+    internal static string TokenEnvironmentName(string host)
+    {
+        var normalized = new string(host
+            .ToUpperInvariant()
+            .Select(character => char.IsAsciiLetterOrDigit(character) ? character : '_')
+            .ToArray());
+        return "SEIKO_TOKEN_" + normalized;
     }
 
     private IndexRoot FetchIndex(Uri uri)
@@ -611,22 +628,6 @@ public sealed class HttpSource : ISeiSource, IDisposable
         {
             _session.HttpSlots.Release();
         }
-    }
-
-    private static string? ResolveToken(SourceConfig config)
-    {
-        if (string.IsNullOrWhiteSpace(config.TokenEnv))
-        {
-            return null;
-        }
-
-        var token = Environment.GetEnvironmentVariable(config.TokenEnv);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            throw new SeikoException($"source '{config.Id}': tokenEnv '{config.TokenEnv}' is not set", "config");
-        }
-
-        return token;
     }
 
     private static string SafeUri(Uri uri) => Urls.Redact(uri);
