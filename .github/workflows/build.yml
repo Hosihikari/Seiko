@@ -121,7 +121,7 @@ jobs:
           EOF
           sudo sed -i -e 's/^deb http/deb [arch=amd64] http/' -e 's/^deb mirror/deb [arch=amd64] mirror/' /etc/apt/sources.list
           sudo apt-get update
-          sudo apt-get install -y clang llvm lld binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf zlib1g-dev:armhf qemu-user-static
+          sudo apt-get install -y clang llvm lld binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf zlib1g-dev:armhf libicu70:armhf qemu-user-static
       - name: Ensure vswhere on PATH
         if: runner.os == 'Windows'
         shell: pwsh
@@ -189,7 +189,7 @@ jobs:
           prefix=""
           case "${{ matrix.mode }}" in
             macos-x64) prefix="arch -x86_64" ;;
-            cross-arm-glibc) prefix="qemu-arm-static -L /usr/arm-linux-gnueabihf" ;;
+            cross-arm-glibc) prefix="qemu-arm-static -L /usr/arm-linux-gnueabihf -E LD_LIBRARY_PATH=/usr/lib/arm-linux-gnueabihf" ;;
           esac
           bash .github/scripts/smoke.sh \
             "$temp_dir/publish-${{ matrix.rid }}/sk$ext" \
