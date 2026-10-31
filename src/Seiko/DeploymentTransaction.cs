@@ -205,31 +205,53 @@ internal sealed class DeploymentTransaction
         }
     }
 
-    private static bool RemoveEmptyDirectories(string path)
+    private static void RemoveEmptyDirectories(string path)
     {
-        var info = new DirectoryInfo(path);
-        if (!info.Exists)
+        var order = new List<string>();
+        var pending = new Stack<string>();
+        pending.Push(path);
+        while (pending.Count > 0)
         {
-            return true;
+            var current = pending.Pop();
+            var info = new DirectoryInfo(current);
+            if (!info.Exists || (info.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                continue;
+            }
+
+            order.Add(current);
+            try
+            {
+                foreach (var child in Directory.EnumerateDirectories(current))
+                {
+                    pending.Push(child);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
-        if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+        for (var i = order.Count - 1; i >= 0; i--)
         {
-            return false;
+            var current = order[i];
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(current).Any())
+                {
+                    Directory.Delete(current);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
-
-        foreach (var child in Directory.EnumerateDirectories(path))
-        {
-            RemoveEmptyDirectories(child);
-        }
-
-        if (Directory.EnumerateFileSystemEntries(path).Any())
-        {
-            return false;
-        }
-
-        Directory.Delete(path);
-        return true;
     }
 
     private static void Cleanup(string journalPath, string backupDirectory)
