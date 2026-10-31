@@ -20,7 +20,7 @@ Windows PowerShell:
 irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | iex
 ```
 
-The installer selects the latest stable release, verifies it against `SHA256SUMS`, and installs `sk` and `seiko-mcp` to `~/.local/bin` on Unix or `%LOCALAPPDATA%\Seiko\bin` on Windows. It does not modify `PATH` unless `--modify-path` (or `-ModifyPath`) is passed. Use `--version vX.Y.Z` to pin a release, `--dir <path>` for another directory, and `--dry-run` to inspect the plan. Pinned releases must contain both `sk` and `seiko-mcp`; tags before v0.2.1 contain only `sk` and are not supported.
+The installer selects the latest stable release, verifies it against `SHA256SUMS`, and installs `sk` and `seiko-mcp` to `~/.local/bin` on Unix or `%LOCALAPPDATA%\Seiko\bin` on Windows. It does not modify `PATH` unless `--modify-path` (or `-ModifyPath`) is passed. Use `--version vX.Y.Z` to pin a release, `--dir <path>` for another directory, and `--dry-run` to inspect the plan.
 
 Supported targets are `win-x64`, `win-arm64`, `win-x86`, `linux-x64`, `linux-arm64`, `linux-arm`, `linux-musl-x64`, `linux-musl-arm64`, `osx-x64`, and `osx-arm64`. The glibc builds require Ubuntu 22.04 or newer; musl builds are published for x64 and arm64. The binaries are not code-signed, so a browser download may trigger Gatekeeper or SmartScreen warnings; the installer uses the release assets directly.
 

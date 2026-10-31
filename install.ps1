@@ -9,8 +9,7 @@ architecture, verifies them against SHA256SUMS, and installs them into the
 user profile by default.
 
 .PARAMETER Version
-Install a specific version, for example vX.Y.Z. Tags before v0.2.1 contain
-only sk and are not supported.
+Install a specific version, for example v0.1.0.
 
 .PARAMETER Dir
 Install directory. Defaults to %LOCALAPPDATA%\Seiko\bin.
