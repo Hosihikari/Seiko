@@ -959,18 +959,20 @@ public sealed class SeikoClient
         {
             foreach (var name in source.Index.Sei ?? new List<string>())
             {
-                if (!name.Contains(term, StringComparison.OrdinalIgnoreCase))
+                if (!name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || seen.Contains(name))
                 {
                     continue;
                 }
 
                 var sei = source.GetSei(name);
                 var latest = sei is null ? null : LatestVersion(sei);
-                if (latest is null || !seen.Add(name))
+                if (latest is null)
                 {
                     continue;
                 }
 
+                seen.Add(name);
                 results.Add(new SeiSummary(name, latest.Version, source.Id));
             }
         }
