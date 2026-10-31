@@ -110,6 +110,124 @@ public sealed class McpTests
         Assert.Equal("2025-06-18", result["protocolVersion"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void MutationRoot_OutsideAllowlistIsRejected()
+    {
+        var allowed = NewDirectory();
+        var outside = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(allowed, allowMutations: true, allowedRoots: [allowed]);
+
+            var result = CallTool(server, "sync", new JsonObject { ["root"] = outside });
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.Contains("outside --allowed-root", ToolText(result));
+        }
+        finally
+        {
+            Directory.Delete(allowed, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MutationRoot_InsideAllowedDirectoryIsAccepted()
+    {
+        var allowed = NewDirectory();
+        var nested = Path.Combine(allowed, "nested");
+        Directory.CreateDirectory(nested);
+        try
+        {
+            var server = new SeikoMcpServer(allowed, allowMutations: true, allowedRoots: [allowed]);
+
+            var result = CallTool(server, "sync", new JsonObject { ["root"] = nested });
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.DoesNotContain("allowed-root", ToolText(result));
+        }
+        finally
+        {
+            Directory.Delete(allowed, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ReadOnlyRoot_IsNotRestrictedByAllowlist()
+    {
+        var allowed = NewDirectory();
+        var outside = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(allowed, allowMutations: false, allowedRoots: [allowed]);
+
+            var result = CallTool(server, "list", new JsonObject { ["root"] = outside });
+
+            Assert.False(result["isError"]!.GetValue<bool>());
+        }
+        finally
+        {
+            Directory.Delete(allowed, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MutationStore_OutsideAllowlistIsRejected()
+    {
+        var allowed = NewDirectory();
+        var store = NewDirectory();
+        var outside = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(
+                allowed,
+                allowMutations: true,
+                allowedRoots: [allowed],
+                allowedStores: [store]);
+
+            var result = CallTool(
+                server,
+                "sync",
+                new JsonObject { ["root"] = allowed, ["store"] = outside });
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.Contains("outside --allowed-store", ToolText(result));
+        }
+        finally
+        {
+            Directory.Delete(allowed, recursive: true);
+            Directory.Delete(store, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    private static string NewDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static JsonObject CallTool(SeikoMcpServer server, string name, JsonObject arguments)
+    {
+        var request = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = 1,
+            ["method"] = "tools/call",
+            ["params"] = new JsonObject
+            {
+                ["name"] = name,
+                ["arguments"] = arguments,
+            },
+        }.ToJsonString();
+        return JsonNode.Parse(server.Handle(request)!)!.AsObject()["result"]!.AsObject();
+    }
+
+    private static string ToolText(JsonObject result)
+        => result["content"]!.AsArray()[0]!.AsObject()["text"]!.GetValue<string>();
+
     private static List<string> ToolNames(string response)
     {
         var tools = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject()["tools"]!.AsArray();

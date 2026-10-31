@@ -14,14 +14,38 @@ public sealed class SeikoMcpServer
         ?? typeof(SeikoMcpServer).Assembly.GetName().Version?.ToString()
         ?? "0.0.0";
 
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     private readonly string _defaultRoot;
     private readonly bool _allowMutations;
+    private readonly IReadOnlyList<string> _allowedRoots;
+    private readonly IReadOnlyList<string> _allowedStores;
+    private readonly string _defaultStore;
     private readonly SeikoClient _client = new();
 
-    public SeikoMcpServer(string defaultRoot, bool allowMutations)
+    public SeikoMcpServer(
+        string defaultRoot,
+        bool allowMutations,
+        IReadOnlyList<string>? allowedRoots = null,
+        IReadOnlyList<string>? allowedStores = null)
     {
         _defaultRoot = Path.GetFullPath(defaultRoot);
         _allowMutations = allowMutations;
+        _allowedRoots = (allowedRoots ?? [])
+            .Select(SeikoClient.CanonicalizePath)
+            .Distinct(PathComparer)
+            .ToList();
+        _allowedStores = (allowedStores ?? [])
+            .Select(SeikoClient.CanonicalizePath)
+            .Distinct(PathComparer)
+            .ToList();
+        _defaultStore = SeikoClient.CanonicalizePath(SeikoClient.DefaultStorePath());
     }
 
     public string? Handle(string line)
@@ -351,7 +375,7 @@ public sealed class SeikoMcpServer
     private string CacheClean(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
-        var result = _client.CacheClean(root, OptionalString(arguments, "store"));
+        var result = _client.CacheClean(root, StorePath(arguments));
         return new JsonObject
         {
             ["removed"] = result.Removed,
@@ -406,7 +430,7 @@ public sealed class SeikoMcpServer
         var result = _client.Add(
             root,
             spec,
-            OptionalString(arguments, "store"),
+            StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"));
@@ -420,7 +444,7 @@ public sealed class SeikoMcpServer
         var result = _client.Remove(
             root,
             name,
-            OptionalString(arguments, "store"),
+            StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"));
@@ -434,7 +458,7 @@ public sealed class SeikoMcpServer
             root,
             OptionalString(arguments, "name"),
             Bool(arguments, "latest"),
-            OptionalString(arguments, "store"),
+            StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"));
@@ -460,7 +484,7 @@ public sealed class SeikoMcpServer
         }
 
         var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
-        var result = _client.Sync(root, OptionalString(arguments, "store"), Bool(arguments, "pre"), mode);
+        var result = _client.Sync(root, StorePath(arguments), Bool(arguments, "pre"), mode);
         return new JsonObject
         {
             ["sei"] = result.SeiInstalled,
@@ -472,7 +496,7 @@ public sealed class SeikoMcpServer
     private string Rollback(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
-        var result = _client.Rollback(root, OptionalString(arguments, "store"), Int(arguments, "to"));
+        var result = _client.Rollback(root, StorePath(arguments), Int(arguments, "to"));
         return new JsonObject
         {
             ["generation"] = result.Generation,
@@ -491,15 +515,64 @@ public sealed class SeikoMcpServer
         var root = OptionalString(arguments, "root");
         if (!string.IsNullOrWhiteSpace(root))
         {
-            return Path.GetFullPath(root);
+            var full = SeikoClient.CanonicalizePath(root);
+            if (required && _allowedRoots.Count > 0 && !IsUnderAny(full, _allowedRoots))
+            {
+                throw new SeikoException($"root '{full}' is outside --allowed-root", "usage");
+            }
+
+            return full;
         }
 
         if (required)
         {
-            throw new SeikoException("root is required for mutation tools");
+            throw new SeikoException("root is required for mutation tools", "usage");
         }
 
         return _defaultRoot;
+    }
+
+    private string? StorePath(JsonObject arguments)
+    {
+        var store = OptionalString(arguments, "store");
+        if (store is null)
+        {
+            return null;
+        }
+
+        var full = SeikoClient.CanonicalizePath(store);
+        if (_allowedRoots.Count == 0)
+        {
+            return full;
+        }
+
+        if (IsUnderAny(full, _allowedStores) || IsUnderAny(full, new[] { _defaultStore }))
+        {
+            return full;
+        }
+
+        throw new SeikoException($"store '{full}' is outside --allowed-store", "usage");
+    }
+
+    private static bool IsUnderAny(string path, IEnumerable<string> roots)
+    {
+        foreach (var root in roots)
+        {
+            if (string.Equals(path, root, PathComparison))
+            {
+                return true;
+            }
+
+            var prefix = root.EndsWith(Path.DirectorySeparatorChar)
+                ? root
+                : root + Path.DirectorySeparatorChar;
+            if (path.StartsWith(prefix, PathComparison))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string RequiredString(JsonObject arguments, string name)

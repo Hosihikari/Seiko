@@ -2,6 +2,8 @@ using Seiko.McpServer;
 
 var root = Directory.GetCurrentDirectory();
 var allowMutations = false;
+var allowedRoots = new List<string>();
+var allowedStores = new List<string>();
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -15,6 +17,24 @@ for (var i = 0; i < args.Length; i++)
             }
 
             root = args[++i];
+            break;
+        case "--allowed-root":
+            if (i + 1 >= args.Length)
+            {
+                Console.Error.WriteLine("seiko-mcp: --allowed-root requires a value");
+                return 2;
+            }
+
+            allowedRoots.Add(args[++i]);
+            break;
+        case "--allowed-store":
+            if (i + 1 >= args.Length)
+            {
+                Console.Error.WriteLine("seiko-mcp: --allowed-store requires a value");
+                return 2;
+            }
+
+            allowedStores.Add(args[++i]);
             break;
         case "--allow-mutations":
             allowMutations = true;
@@ -33,7 +53,7 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-var server = new SeikoMcpServer(root, allowMutations);
+var server = new SeikoMcpServer(root, allowMutations, allowedRoots, allowedStores);
 while (Console.ReadLine() is { } line)
 {
     if (string.IsNullOrWhiteSpace(line))
@@ -59,8 +79,10 @@ static void PrintHelp()
         Usage: seiko-mcp [--root <path>] [--allow-mutations]
 
         Options:
-          --root <path>      Install root to operate on (default: current directory)
-          --allow-mutations  Register mutating tools; each mutation still requires an explicit root
+          --root <path>          Install root to operate on (default: current directory)
+          --allow-mutations      Register mutating tools; each mutation still requires an explicit root
+          --allowed-root <path>  Restrict mutation roots to this directory (repeatable)
+          --allowed-store <path> Restrict mutation stores to this directory (repeatable)
           -h, --help         Show this help
           -V, --version      Show version information
         """);

@@ -1151,6 +1151,8 @@ public sealed class SeikoClient
         return $"{os}-{architecture}";
     }
 
+    public static string CanonicalizePath(string path) => RootRegistry.Resolve(path);
+
     public static string DefaultStorePath()
     {
         var configured = Environment.GetEnvironmentVariable("SEIKO_STORE");
