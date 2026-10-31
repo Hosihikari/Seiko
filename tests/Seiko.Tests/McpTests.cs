@@ -231,6 +231,36 @@ public sealed class McpTests
         }
     }
 
+    [Fact]
+    public void MutationStore_DefaultStoreMustPassTheAllowlist()
+    {
+        var root = NewDirectory();
+        var store = NewDirectory();
+        var outside = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(
+                root,
+                allowMutations: true,
+                allowedStores: [store],
+                defaultStore: outside);
+
+            var result = CallTool(
+                server,
+                "sync",
+                new JsonObject { ["root"] = root });
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.Contains("outside --allowed-store", ToolText(result));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(store, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
     private static string NewDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));

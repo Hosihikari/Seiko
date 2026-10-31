@@ -33,7 +33,8 @@ public sealed class SeikoMcpServer
         string defaultRoot,
         bool allowMutations,
         IReadOnlyList<string>? allowedRoots = null,
-        IReadOnlyList<string>? allowedStores = null)
+        IReadOnlyList<string>? allowedStores = null,
+        string? defaultStore = null)
     {
         _defaultRoot = Path.GetFullPath(defaultRoot);
         _allowMutations = allowMutations;
@@ -45,7 +46,7 @@ public sealed class SeikoMcpServer
             .Select(SeikoClient.CanonicalizePath)
             .Distinct(PathComparer)
             .ToList();
-        _defaultStore = SeikoClient.CanonicalizePath(SeikoClient.DefaultStorePath());
+        _defaultStore = SeikoClient.CanonicalizePath(defaultStore ?? SeikoClient.DefaultStorePath());
     }
 
     public string? Handle(string line)
@@ -543,26 +544,31 @@ public sealed class SeikoMcpServer
         return _defaultRoot;
     }
 
-    private string? StorePath(JsonObject arguments)
+    private string StorePath(JsonObject arguments)
     {
         var store = OptionalString(arguments, "store");
-        if (store is null)
-        {
-            return null;
-        }
-
-        var full = SeikoClient.CanonicalizePath(store);
+        var full = SeikoClient.CanonicalizePath(store ?? _defaultStore);
         if (_allowedRoots.Count == 0 && _allowedStores.Count == 0)
         {
             return full;
         }
 
-        if (IsUnderAny(full, _allowedStores) || IsUnderAny(full, new[] { _defaultStore }))
+        if (_allowedStores.Count > 0)
         {
+            if (!IsUnderAny(full, _allowedStores))
+            {
+                throw new SeikoException($"store '{full}' is outside --allowed-store", "usage");
+            }
+
             return full;
         }
 
-        throw new SeikoException($"store '{full}' is outside --allowed-store", "usage");
+        if (!IsUnderAny(full, new[] { _defaultStore }))
+        {
+            throw new SeikoException($"store '{full}' is outside the default store", "usage");
+        }
+
+        return full;
     }
 
     private static bool IsUnderAny(string path, IEnumerable<string> roots)
