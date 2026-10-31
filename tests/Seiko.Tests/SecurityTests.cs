@@ -561,6 +561,91 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void Recover_RejectsTemporaryPathThroughSymlink()
+    {
+        using var fixture = new Fixture();
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var outside = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "escape"), outside);
+            }
+            catch (Exception ex) when (ex is IOException
+                or UnauthorizedAccessException
+                or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            var canary = Path.Combine(outside, "canary.tmp");
+            File.WriteAllText(canary, "canary");
+            var journal = new DeploymentJournal
+            {
+                SchemaVersion = 1,
+                TemporaryPaths = ["escape/canary.tmp"],
+            };
+            File.WriteAllBytes(
+                Path.Combine(stateDirectory, "transaction.json"),
+                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+            Assert.Throws<SeikoException>(() => DeploymentTransaction.Recover(fixture.Root, stateDirectory));
+
+            Assert.Equal("canary", File.ReadAllText(canary));
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Sync_RejectsTemporaryPathThroughSymlinkBeforeReadingConfig()
+    {
+        using var fixture = new Fixture();
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var outside = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "escape"), outside);
+            }
+            catch (Exception ex) when (ex is IOException
+                or UnauthorizedAccessException
+                or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            var canary = Path.Combine(outside, "canary.tmp");
+            File.WriteAllText(canary, "canary");
+            var journal = new DeploymentJournal
+            {
+                SchemaVersion = 1,
+                TemporaryPaths = ["escape/canary.tmp"],
+            };
+            File.WriteAllBytes(
+                Path.Combine(stateDirectory, "transaction.json"),
+                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+            Assert.Throws<SeikoException>(
+                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+            Assert.Equal("canary", File.ReadAllText(canary));
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Recover_RejectsEscapingJournalPath()
     {
         using var fixture = new Fixture();

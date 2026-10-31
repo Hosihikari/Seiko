@@ -170,6 +170,7 @@ internal sealed class DeploymentTransaction
         foreach (var temporary in journal.TemporaryPaths ?? [])
         {
             var normalized = Normalize(temporary);
+            PathSafety.EnsureNoLinks(rootFull, normalized);
             var path = Resolve(rootFull, normalized);
             if (File.Exists(path))
             {
