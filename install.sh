@@ -15,7 +15,8 @@ Install sk and seiko-mcp (Seiko) from GitHub Releases.
 Usage: install.sh [options]
 
 Options:
-  --version <tag>    Install a specific version (for example v0.1.0).
+  --version <tag>    Install a specific version (for example vX.Y.Z; tags before
+                     v0.2.1 contain only sk and are not supported).
   --dir <path>       Install directory (default: ~/.local/bin).
   --modify-path      Append the install directory to the login shell profile.
   --dry-run          Resolve the release and checksum without installing.
