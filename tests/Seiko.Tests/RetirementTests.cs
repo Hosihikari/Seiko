@@ -169,6 +169,39 @@ public sealed class RetirementTests
     }
 
     [Fact]
+    public void Update_LatestSelectsCriticalVersionOnlyWhenAllowed()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+                Advisory = new AdvisoryInfo { Severity = "critical" },
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+        var client = new SeikoClient();
+
+        var skipped = client.Update(fixture.Root, latest: true, storeRoot: fixture.StoreDirectory);
+        Assert.Equal("1.0.0", Assert.Single(skipped.Lock.Sei).Version);
+
+        var allowed = client.Update(
+            fixture.Root,
+            latest: true,
+            storeRoot: fixture.StoreDirectory,
+            allowCritical: true);
+        Assert.Equal("2.0.0", Assert.Single(allowed.Lock.Sei).Version);
+        Assert.Contains(allowed.Warnings, warning =>
+            warning.Contains("hello 2.0.0 is critical", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Frozen_ReplaysCriticalVersionAndWarns()
     {
         using var fixture = new Fixture();

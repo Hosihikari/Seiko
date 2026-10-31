@@ -417,7 +417,7 @@ public sealed class SeikoClient
             using var sourceScope = new SourceScope(sources);
             foreach (var target in targets)
             {
-                var version = FindLatestVersion(sources, target.Name, allowPrerelease)
+                var version = FindLatestVersion(sources, target.Name, allowPrerelease, allowCritical)
                     ?? throw new SeikoException($"no version of {target.Name} found in any source", "source");
                 target.Version = $"[{version}]";
             }
@@ -447,7 +447,8 @@ public sealed class SeikoClient
     private static string? FindLatestVersion(
         IReadOnlyList<ISeiSource> sources,
         string name,
-        bool allowPrerelease)
+        bool allowPrerelease,
+        bool allowCritical)
     {
         foreach (var source in sources)
         {
@@ -460,7 +461,8 @@ public sealed class SeikoClient
             NuGetVersion? best = null;
             foreach (var entry in index.Versions)
             {
-                if (entry.Yanked || Retirement.IsCritical(entry)
+                if (entry.Yanked
+                    || (Retirement.IsCritical(entry) && !allowCritical)
                     || !NuGetVersion.TryParse(entry.Version, out var version))
                 {
                     continue;
