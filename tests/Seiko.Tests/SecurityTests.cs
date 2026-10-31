@@ -561,6 +561,52 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void Recover_RejectsLinkedBackupRoot()
+    {
+        using var fixture = new Fixture();
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var installed = Path.Combine(fixture.Root, "tool");
+        File.WriteAllText(installed, "installed");
+
+        var outside = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "tool"), "external");
+            try
+            {
+                Directory.CreateSymbolicLink(Path.Combine(stateDirectory, "transaction"), outside);
+            }
+            catch (Exception ex) when (ex is IOException
+                or UnauthorizedAccessException
+                or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            var journal = new DeploymentJournal
+            {
+                SchemaVersion = 1,
+                Entries = [new DeploymentJournalEntry { Path = "tool", Existed = true }],
+            };
+            File.WriteAllBytes(
+                Path.Combine(stateDirectory, "transaction.json"),
+                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+            Assert.Throws<SeikoException>(
+                () => DeploymentTransaction.Recover(fixture.Root, stateDirectory));
+
+            Assert.Equal("installed", File.ReadAllText(installed));
+            Assert.Equal("external", File.ReadAllText(Path.Combine(outside, "tool")));
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Recover_RejectsTemporaryPathThroughSymlink()
     {
         using var fixture = new Fixture();

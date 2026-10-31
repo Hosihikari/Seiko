@@ -154,9 +154,14 @@ internal sealed class DeploymentTransaction
                 "deploy");
         }
 
+        var rootFull = Path.GetFullPath(root);
+        var backupFull = Path.GetFullPath(backupDirectory);
+        var backupRelative = Path.GetRelativePath(rootFull, backupFull).Replace('\\', '/');
+        PathSafety.EnsureNoLinks(rootFull, backupRelative);
+
         if (!journal.Committed)
         {
-            Restore(Path.GetFullPath(root), Path.GetFullPath(backupDirectory), journal);
+            Restore(rootFull, backupFull, journal);
         }
 
         Cleanup(journalPath, backupDirectory);
