@@ -53,7 +53,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`。
 - `--json`：输出 `{schemaVersion, command, data}` 信封；错误也使用同一信封并带错误码。
 - `-v/--verbose` 输出调试日志与展开堆栈；`-q/--quiet` 静默进度与日志输出。进度条只在交互式 stdout 显示。
-- `seiko-mcp`：stdio 上的 MCP server；默认只读，`--allow-mutations` 才开放 `sync` 与 `rollback`。
+- `seiko-mcp`：stdio 上的 MCP server；默认只读，`--allow-mutations` 才开放变更工具（`sync`、`rollback`、`add`、`remove`、`update`、源/配置/缓存修改）。
 - 载荷文件按文件系统能力部署：优先 reflink（APFS、btrfs、XFS），否则同卷硬链接，最后复制。存储为每个文件记录 SHA-256，`sk sync` 拒绝损坏的构件，`sk cache verify` 也会校验载荷。硬链接的载荷文件不能原地编辑，否则会同时改到存储。
 
 ## MCP server

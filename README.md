@@ -53,7 +53,7 @@ Current slice:
 - `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.
-- `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds `sync` and `rollback`.
+- `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes).
 - Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so `sk sync` refuses corrupted artifacts and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
 
 ## MCP server
