@@ -98,6 +98,22 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_DoesNotTreatBuildMetadataAsPrereleaseAuthorization()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            Version("a", "1.0.0"),
+            Version("a", "2.0.0-beta"));
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0,3.0.0+abc-def]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "a").Version);
+    }
+
+    [Fact]
     public void Resolve_RejectsPrereleaseAuthorizedOnlyByAnAbandonedBranch()
     {
         using var fixture = new Fixture();

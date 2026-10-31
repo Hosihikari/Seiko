@@ -188,7 +188,7 @@ public sealed class Resolver
             .ToList();
         var lockedVersion = GetLockedVersion(name);
         var allowPrerelease = _allowPrerelease
-            || constraints.Any(constraint => constraint.RangeText?.Contains('-') == true);
+            || constraints.Any(constraint => RangeAllowsPrerelease(constraint.Range));
         var candidates = new List<(SeiVersionEntry Entry, NuGetVersion Version)>();
 
         foreach (var entry in index.Versions)
@@ -226,7 +226,7 @@ public sealed class Resolver
         var explicitPrerelease = _allowPrerelease
             || _pending.Any(requirement =>
                 string.Equals(requirement.Name, name, StringComparison.Ordinal)
-                && requirement.RangeText?.Contains('-') == true);
+                && RangeAllowsPrerelease(requirement.Range));
         var ordered = explicitPrerelease
             ? candidates.OrderByDescending(candidate => candidate.Version).ToList()
             : candidates
@@ -338,7 +338,7 @@ public sealed class Resolver
     private Requirement CreateRequirement(string name, string? version, string? from)
     {
         var range = ParseRange(version, name);
-        if (version?.Contains('-') == true)
+        if (version is not null && RangeAllowsPrerelease(range))
         {
             if (!_prereleaseHintTexts.TryGetValue(name, out var texts))
             {
@@ -373,7 +373,7 @@ public sealed class Resolver
 
             var authorized = _pending.Any(requirement =>
                 string.Equals(requirement.Name, name, StringComparison.Ordinal)
-                && requirement.RangeText?.Contains('-') == true);
+                && RangeAllowsPrerelease(requirement.Range));
             if (!authorized)
             {
                 _lastConflict = new SeikoException(
@@ -389,6 +389,11 @@ public sealed class Resolver
     private bool HintAllows(string name, NuGetVersion version)
         => _prereleaseHints.TryGetValue(name, out var ranges)
             && ranges.Any(range => range.Satisfies(version));
+
+    private static bool RangeAllowsPrerelease(VersionRange range)
+        => range.MinVersion?.IsPrerelease == true
+            || range.MaxVersion?.IsPrerelease == true
+            || range.Float is { IncludePrerelease: true };
 
     private static VersionRange ParseRange(string? text, string sei)
     {
