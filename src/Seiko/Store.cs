@@ -30,7 +30,7 @@ public sealed class Store
         }
 
         var digests = LoadDigests(sha256, directory);
-        VerifyPayloadFiles(directory, digests);
+        VerifyFiles(directory, digests);
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
         if (manifest.SchemaVersion != 1)
@@ -161,25 +161,19 @@ public sealed class Store
     private StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)
     {
         var digests = LoadDigests(Hashing.NormalizeSha256(sei.Artifact.Source.Sha256), directory);
-        VerifyPayloadFiles(directory, digests);
+        VerifyFiles(directory, digests);
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json for {sei.Name} {sei.Version}", "io");
         Validate(sei, manifest);
         return new StoredSei(directory, manifest, digests);
     }
 
-    private static void VerifyPayloadFiles(
+    private static void VerifyFiles(
         string directory,
         IReadOnlyDictionary<string, StoreFileDigest> digests)
     {
         foreach (var (relative, digest) in digests)
         {
-            if (relative == "sei.json")
-            {
-                // The manifest is verified before it is consumed; see LoadStored.
-                continue;
-            }
-
             var path = ResolveStoreFile(directory, relative);
             var info = new FileInfo(path);
             if (!info.Exists

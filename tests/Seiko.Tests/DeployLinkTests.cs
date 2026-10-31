@@ -42,6 +42,43 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void Sync_RejectsTamperedCachedManifest()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0644" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var manifestPath = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "sei.json");
+        var manifest = JsonSerializer.Deserialize(
+            File.ReadAllBytes(manifestPath),
+            SeikoJsonContext.Default.SeiManifest)!;
+        manifest.Modes!["hello.txt"] = "0777";
+        File.WriteAllBytes(
+            manifestPath,
+            JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("checksum", error.Code);
+        Assert.Contains("sei.json", error.Message);
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void Sync_BackfillsMissingDigests()
     {
         using var fixture = NewFixture();
