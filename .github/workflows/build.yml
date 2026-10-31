@@ -73,12 +73,6 @@ jobs:
             image: mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot-arm64v8
             installer: container
             blocking: true
-          - rid: linux-musl-arm
-            os: ubuntu-22.04
-            mode: alpine-cross-arm32
-            image: mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot-amd64
-            installer: none
-            blocking: false
           - rid: osx-x64
             os: macos-15
             mode: macos-x64
@@ -96,11 +90,6 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
-      - name: Set up QEMU
-        if: matrix.mode == 'alpine-cross-arm32'
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-        with:
-          platforms: arm
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         if: ${{ !startsWith(matrix.mode, 'alpine') }}
         with:
@@ -158,37 +147,14 @@ jobs:
         env:
           RID: ${{ matrix.rid }}
           IMAGE: ${{ matrix.image }}
-          PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
-          platform_arg=()
-          if [ -n "${PLATFORM:-}" ]; then
-            platform_arg=(--platform "$PLATFORM")
-          fi
-          docker run --rm -i "${platform_arg[@]}" -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -s "$RID" <<'SH'
+          docker run --rm -i -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -s "$RID" <<'SH'
           set -eu
           rid="$1"
-          extra=""
-          if [ "$rid" = "linux-musl-arm" ]; then
-            apk add --no-cache clang build-base zlib-dev zig bash
-            cat > /usr/local/bin/zig-cc <<'EOF'
-          #!/usr/bin/env bash
-          args=()
-          for a in "$@"; do
-            case "$a" in
-              --target=*|-fuse-ld=*|-pie|-Wl,-pie) ;;
-              *) args+=("$a") ;;
-            esac
-          done
-          exec zig cc -target arm-linux-musleabihf -Wl,--no-start-stop-gc "${args[@]}"
-          EOF
-            chmod +x /usr/local/bin/zig-cc
-            extra="-p:CppCompilerAndLinker=/usr/local/bin/zig-cc"
-          else
-            apk add --no-cache clang build-base zlib-dev
-          fi
-          dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r "$rid" -p:PublishAot=true -p:StripSymbols=true $extra -o "/src/artifacts/publish-$rid"
-          dotnet publish src/McpServer/Seiko.McpServer.csproj -c Release -r "$rid" -p:PublishAot=true -p:StripSymbols=true $extra -o "/src/artifacts/publish-$rid"
+          apk add --no-cache clang build-base zlib-dev
+          dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r "$rid" -p:PublishAot=true -p:StripSymbols=true -o "/src/artifacts/publish-$rid"
+          dotnet publish src/McpServer/Seiko.McpServer.csproj -c Release -r "$rid" -p:PublishAot=true -p:StripSymbols=true -o "/src/artifacts/publish-$rid"
           SH
           sudo chown -R "$(id -u):$(id -g)" artifacts
       - name: Smoke test
@@ -218,14 +184,9 @@ jobs:
         env:
           RID: ${{ matrix.rid }}
           IMAGE: ${{ matrix.image }}
-          PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
-          platform_arg=()
-          if [ -n "${PLATFORM:-}" ]; then
-            platform_arg=(--platform "$PLATFORM")
-          fi
-          docker run --rm "${platform_arg[@]}" -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -c '
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -c '
           apk add --no-cache bash >/dev/null &&
           bash /src/.github/scripts/smoke.sh \
             "/src/artifacts/publish-'"$RID"'/sk" \
@@ -309,11 +270,7 @@ jobs:
             done
 
             if [ "${{ matrix.installer }}" = "container" ]; then
-              platform_arg=()
-              if [ -n "${{ matrix.platform }}" ]; then
-                platform_arg=(--platform "${{ matrix.platform }}")
-              fi
-              docker run --rm "${platform_arg[@]}" --network host -v "$GITHUB_WORKSPACE:/src" -w /src "${{ matrix.image }}" sh -c '
+              docker run --rm --network host -v "$GITHUB_WORKSPACE:/src" -w /src "${{ matrix.image }}" sh -c '
                 apk add --no-cache curl tar >/dev/null &&
                 sh /src/install.sh --version "'"$tag"'" --dir /tmp/install --base-url http://127.0.0.1:8765 &&
                 /tmp/install/sk --version &&

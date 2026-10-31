@@ -22,7 +22,7 @@ irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | i
 
 安装器选择最新稳定版，用 `SHA256SUMS` 校验，把 `sk` 与 `seiko-mcp` 装到 `~/.local/bin`（Unix）或 `%LOCALAPPDATA%\Seiko\bin`（Windows）。默认不改 `PATH`；传 `--modify-path`（PowerShell 为 `-ModifyPath`）才会追加。`--version vX.Y.Z` 钉版本，`--dir <path>` 换目录，`--dry-run` 只打印计划。
 
-支持的目标：`win-x64`、`win-arm64`、`win-x86`、`linux-x64`、`linux-arm64`、`linux-arm`、`linux-musl-x64`、`linux-musl-arm64`、`linux-musl-arm`、`osx-x64`、`osx-arm64`。glibc 版本要求 Ubuntu 22.04 及以上。二进制未做代码签名，浏览器手动下载可能触发 Gatekeeper 或 SmartScreen 警告；安装脚本直接使用 Release 资产。
+支持的目标：`win-x64`、`win-arm64`、`win-x86`、`linux-x64`、`linux-arm64`、`linux-arm`、`linux-musl-x64`、`linux-musl-arm64`、`osx-x64`、`osx-arm64`。glibc 版本要求 Ubuntu 22.04 及以上；musl 版本提供 x64 与 arm64。二进制未做代码签名，浏览器手动下载可能触发 Gatekeeper 或 SmartScreen 警告；安装脚本直接使用 Release 资产。
 
 校验下载的归档：
 

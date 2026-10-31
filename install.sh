@@ -87,6 +87,9 @@ case "$uname_s" in
             *) die "unsupported Linux architecture: $uname_m" ;;
         esac
         if ls /lib/ld-musl-*.so.1 >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; then
+            if [ "$arch" = arm ]; then
+                die "unsupported Linux architecture: $uname_m (musl arm32 is not published)"
+            fi
             RID="linux-musl-$arch"
         else
             RID="linux-$arch"
