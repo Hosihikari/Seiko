@@ -152,7 +152,25 @@ internal static class RootRegistry
             var matches = entries
                 .Where(name => string.Equals(name, segment, StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            return matches.Count == 1 ? Path.Combine(parent, matches[0]!) : candidate;
+            if (matches.Count == 1)
+            {
+                return Path.Combine(parent, matches[0]!);
+            }
+
+            // A volume that normalizes Unicode can expose the same directory
+            // through NFC and NFD spellings. Only do this when the requested
+            // spelling already exists; a normalization-sensitive volume leaves
+            // genuinely distinct directories alone.
+            var normalizedSegment = segment.Normalize(NormalizationForm.FormC);
+            var unicodeMatches = entries
+                .Where(name => string.Equals(
+                    name!.Normalize(NormalizationForm.FormC),
+                    normalizedSegment,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            return unicodeMatches.Count == 1
+                ? Path.Combine(parent, unicodeMatches[0]!)
+                : candidate;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

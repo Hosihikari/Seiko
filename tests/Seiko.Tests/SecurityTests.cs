@@ -244,6 +244,40 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void CacheClean_DeduplicatesUnicodeRootAliases()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var actual = Path.Combine(Path.GetTempPath(), "seiko-tests", "café-" + id);
+        var variant = Path.Combine(Path.GetTempPath(), "seiko-tests", "café-" + id);
+        var store = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(actual);
+        Directory.CreateDirectory(store);
+        try
+        {
+            if (!Directory.Exists(variant))
+            {
+                return;
+            }
+
+            Assert.Equal(RootRegistry.Resolve(actual), RootRegistry.Resolve(variant));
+
+            RootRegistry.Register(store, actual);
+            RootRegistry.Register(store, variant);
+
+            var error = Record.Exception(
+                () => new SeikoClient().CacheClean(actual, store));
+
+            Assert.True(error is null
+                || !error.Message.Contains("in use by another process", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(actual, recursive: true);
+            Directory.Delete(store, recursive: true);
+        }
+    }
+
+    [Fact]
     public void CacheClean_FailsWhenARegisteredRootIsBusy()
     {
         using var first = new Fixture();
