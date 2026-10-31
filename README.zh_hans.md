@@ -45,10 +45,10 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk rollback [--to <n>] [--proxy <url>]`：从内容寻址存储恢复上一代部署；目标代缺失的构件会重新下载。
 - `sk search <term>`：在配置的索引里搜索 sei 名。
 - `sk info <name>`：显示版本、依赖与构件数。
-- 源可以是本地路径或 http(s) 索引；官方索引是 `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`。私有源用按主机名派生的 bearer token：设置 `SEIKO_TOKEN_<HOST>`（主机名转大写，非字母数字字符变 `_`），例如 `SEIKO_TOKEN_PACKAGES_EXAMPLE_COM`。token 只通过 HTTPS 发给索引主机或该源 `tokenHosts` 中列出的主机；项目配置不能指定任意环境变量。
+- 源可以是本地路径或 http(s) 索引；官方索引是 `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`。私有源用按主机名派生的 bearer token：设置 `SEIKO_TOKEN_<HOST>`，ASCII 字母与数字转大写，其余字符的每个 UTF-8 字节写成 `_XX`，例如 `packages.example.com` 对应 `SEIKO_TOKEN_PACKAGES_2EEXAMPLE_2ECOM`。token 只通过 HTTPS 发给索引主机或该源 `tokenHosts` 中列出的主机；项目配置不能指定任意环境变量。
 - `sk index verify [path] [--check-artifacts] [--strict]`：校验索引目录的 schema、名称、版本、构件 URL 与 SHA-256；`--check-artifacts` 还会下载构件并校验字节与根级 `sei.json`，`--strict` 把警告也视为失败。
 - 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。
-- `sk source add|remove|list`：管理源（`--token-env` 与可重复的 `--token-host`）；`sk config get|set rid`：读写平台覆盖。
+- `sk source add|remove|list`：管理源（可重复的 `--token-host`）；`sk config get|set rid`：读写平台覆盖。
 - `sk cache status|verify|clean`：查看存储、校验构件，或清理所有已注册安装根当前锁与保留的回滚代都未引用的构件。同步与回滚会重新下载摘要元数据或载荷缺失、损坏的构件。
 - `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`。
 - `--json`：输出 `{schemaVersion, command, data}` 信封；错误也使用同一信封并带错误码。

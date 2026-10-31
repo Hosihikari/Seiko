@@ -583,11 +583,25 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
     internal static string TokenEnvironmentName(string host)
     {
-        var normalized = new string(host
-            .ToUpperInvariant()
-            .Select(character => char.IsAsciiLetterOrDigit(character) ? character : '_')
-            .ToArray());
-        return "SEIKO_TOKEN_" + normalized;
+        // Preserve ASCII letters and digits; encode every other UTF-8 byte as
+        // _XX. Unlike folding punctuation to '_', this cannot make two hosts
+        // such as packages.example.com and packages-example.com collide.
+        var builder = new System.Text.StringBuilder("SEIKO_TOKEN_");
+        foreach (var rune in host.EnumerateRunes())
+        {
+            if (rune.Value < 128 && char.IsAsciiLetterOrDigit((char)rune.Value))
+            {
+                builder.Append(char.ToUpperInvariant((char)rune.Value));
+                continue;
+            }
+
+            foreach (var value in System.Text.Encoding.UTF8.GetBytes(rune.ToString()))
+            {
+                builder.Append('_').Append(value.ToString("X2"));
+            }
+        }
+
+        return builder.ToString();
     }
 
     private IndexRoot FetchIndex(Uri uri)

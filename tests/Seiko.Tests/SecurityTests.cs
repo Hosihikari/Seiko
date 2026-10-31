@@ -121,11 +121,14 @@ public sealed class SecurityTests
     }
 
     [Fact]
-    public void HttpSource_TokenEnvironmentNameNormalizesHost()
+    public void HttpSource_TokenEnvironmentNameDoesNotCollide()
     {
         Assert.Equal(
-            "SEIKO_TOKEN_PACKAGES_EXAMPLE_COM",
+            "SEIKO_TOKEN_PACKAGES_2EEXAMPLE_2ECOM",
             HttpSource.TokenEnvironmentName("Packages.Example.com"));
+        Assert.NotEqual(
+            HttpSource.TokenEnvironmentName("packages.example.com"),
+            HttpSource.TokenEnvironmentName("packages-example.com"));
     }
 
     [Theory]
@@ -300,7 +303,7 @@ public sealed class SecurityTests
                 new SeikoLock { Target = new PlatformInfo { Rid = "win-x64" } }));
 
             Assert.Equal("deploy", error.Code);
-            Assert.Contains("case-only", error.Message);
+            Assert.Contains("path conflict", error.Message);
         }
         finally
         {
