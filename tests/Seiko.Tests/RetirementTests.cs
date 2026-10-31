@@ -223,6 +223,41 @@ public sealed class RetirementTests
     }
 
     [Fact]
+    public void Search_DoesNotFallThroughWhenTheFirstSourceIsCriticalOnly()
+    {
+        using var first = new Fixture();
+        first.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "first" } }],
+            Advisory = new AdvisoryInfo { Severity = "critical" },
+        });
+        first.WriteConfig("win-x64");
+
+        using var second = new Fixture();
+        second.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "second" } }],
+        });
+        second.WriteConfig("win-x64");
+        var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
+        var secondIndex = Path.Combine(second.SourceDirectory, "index.json").Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(first.Root, "seiko.conf"),
+            $$"""
+            sources = [
+              { id = "first", index = "{{firstIndex}}" },
+              { id = "second", index = "{{secondIndex}}" }
+            ]
+            rid = "win-x64"
+            sei = []
+            """);
+
+        Assert.Empty(new SeikoClient().Search(first.Root, "hello"));
+    }
+
+    [Fact]
     public void Search_HidesUnlistedPackageButInfoShowsIt()
     {
         using var fixture = new Fixture();

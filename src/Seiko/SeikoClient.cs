@@ -990,19 +990,25 @@ public sealed class SeikoClient
                 }
 
                 var sei = source.GetSei(name);
-                if (sei is not null && sei.Unlisted)
+                if (sei is null)
                 {
-                    seen.Add(name);
                     continue;
                 }
 
-                var latest = sei is null ? null : LatestVersion(sei);
+                // The first source that has the sei file owns the name, even
+                // when every version is filtered out by retirement rules.
+                seen.Add(name);
+                if (sei.Unlisted)
+                {
+                    continue;
+                }
+
+                var latest = LatestVersion(sei);
                 if (latest is null)
                 {
                     continue;
                 }
 
-                seen.Add(name);
                 results.Add(new SeiSummary(name, latest.Version, source.Id));
             }
         }
