@@ -39,13 +39,6 @@ public static class ConfigLoader
                 throw new SeikoException($"{path}: each source needs id and index", "config");
             }
 
-            if (!string.IsNullOrWhiteSpace(child["tokenEnv"]))
-            {
-                throw new SeikoException(
-                    $"{path}: seiko.conf does not name token variables; set SEIKO_TOKEN_<HOST> for the source host",
-                    "config");
-            }
-
             var tokenHosts = child.GetSection("tokenHosts")
                 .GetChildren()
                 .Select(section => section.Value)

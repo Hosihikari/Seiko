@@ -105,22 +105,6 @@ public sealed class SecurityTests
     }
 
     [Fact]
-    public void Config_RejectsTokenEnv()
-    {
-        using var fixture = new Fixture();
-        fixture.WriteConfig("win-x64");
-        var configPath = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(
-            configPath,
-            File.ReadAllText(configPath).Replace("index = ", "tokenEnv = \"ANY_SECRET\", index = "));
-
-        var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
-
-        Assert.Equal("config", error.Code);
-        Assert.Contains("SEIKO_TOKEN_", error.Message);
-    }
-
-    [Fact]
     public void HttpSource_TokenEnvironmentNameDoesNotCollide()
     {
         Assert.Equal(
