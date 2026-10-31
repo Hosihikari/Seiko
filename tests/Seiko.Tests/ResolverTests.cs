@@ -129,6 +129,40 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_SelectorMatchesABundleThatDependsOnThePackage()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("bundle", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("hosting", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.AddSei("hosting", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Selectors = new Dictionary<string, string> { ["carrier"] = "bundle" },
+                    Files = { ["hosting.txt"] = "selected" },
+                },
+                new ArtifactFixture
+                {
+                    Selectors = new Dictionary<string, string> { ["carrier"] = "other" },
+                    Files = { ["hosting.txt"] = "other" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("bundle", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("selected", File.ReadAllText(Path.Combine(fixture.Root, "hosting.txt")));
+    }
+
+    [Fact]
     public void Resolve_LatestInstallableReconsidersVersionsAfterGraphChanges()
     {
         using var fixture = new Fixture();
