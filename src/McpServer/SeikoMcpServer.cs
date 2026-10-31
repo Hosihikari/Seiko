@@ -597,9 +597,14 @@ public sealed class SeikoMcpServer
 
     private static string? OptionalString(JsonObject arguments, string name)
     {
-        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        if (!arguments.TryGetPropertyValue(name, out var node))
         {
             return null;
+        }
+
+        if (node is null)
+        {
+            throw new SeikoException($"{name} must be a string");
         }
 
         if (node is JsonValue value && value.TryGetValue<string>(out var text))
@@ -612,9 +617,14 @@ public sealed class SeikoMcpServer
 
     private static bool Bool(JsonObject arguments, string name)
     {
-        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        if (!arguments.TryGetPropertyValue(name, out var node))
         {
             return false;
+        }
+
+        if (node is null)
+        {
+            throw new SeikoException($"{name} must be a boolean");
         }
 
         if (node is JsonValue value && value.TryGetValue<bool>(out var result))
@@ -627,9 +637,14 @@ public sealed class SeikoMcpServer
 
     private static int? Int(JsonObject arguments, string name)
     {
-        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        if (!arguments.TryGetPropertyValue(name, out var node))
         {
             return null;
+        }
+
+        if (node is null)
+        {
+            throw new SeikoException($"{name} must be an integer");
         }
 
         if (node is JsonValue value && value.TryGetValue<int>(out var result))
@@ -642,7 +657,7 @@ public sealed class SeikoMcpServer
 
     private static IReadOnlyList<string>? StringArray(JsonObject arguments, string name)
     {
-        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        if (!arguments.TryGetPropertyValue(name, out var node))
         {
             return null;
         }

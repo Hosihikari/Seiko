@@ -104,6 +104,20 @@ public sealed class McpTests
                 new JsonObject { ["root"] = 123 });
             Assert.True(readOnly["isError"]!.GetValue<bool>());
             Assert.Contains("root must be a string", ToolText(readOnly));
+
+            var frozenNull = CallTool(
+                server,
+                "sync",
+                new JsonObject { ["root"] = root, ["frozen"] = (JsonNode?)null });
+            Assert.True(frozenNull["isError"]!.GetValue<bool>());
+            Assert.Contains("frozen must be a boolean", ToolText(frozenNull));
+
+            var rootNull = CallTool(
+                server,
+                "list",
+                new JsonObject { ["root"] = (JsonNode?)null });
+            Assert.True(rootNull["isError"]!.GetValue<bool>());
+            Assert.Contains("root must be a string", ToolText(rootNull));
         }
         finally
         {
