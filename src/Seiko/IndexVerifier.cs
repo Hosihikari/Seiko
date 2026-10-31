@@ -609,6 +609,7 @@ public static class IndexVerifier
             }
 
             var declaredTotal = 0L;
+            var seenNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in archive.Entries)
             {
                 declaredTotal += entry.Length;
@@ -618,6 +619,32 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-budget",
                         $"sei '{reference.Sei}' {reference.Version}: artifact expands beyond the extraction limits",
+                        reference.Path);
+                    return;
+                }
+
+                var name = ArchiveLimits.NormalizeName(entry.FullName);
+                if (name.Length == 0)
+                {
+                    continue;
+                }
+
+                if (name.Split('/').Any(segment => segment == "..")
+                    || name.StartsWith('/')
+                    || (name.Length >= 2 && name[1] == ':'))
+                {
+                    context.Error(
+                        "artifact-path",
+                        $"sei '{reference.Sei}' {reference.Version}: unsafe archive path '{name}'",
+                        reference.Path);
+                    return;
+                }
+
+                if (!seenNames.Add(name))
+                {
+                    context.Error(
+                        "artifact-duplicate",
+                        $"sei '{reference.Sei}' {reference.Version}: duplicate archive path '{name}'",
                         reference.Path);
                     return;
                 }
