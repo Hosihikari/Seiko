@@ -45,6 +45,39 @@ public sealed class DownloadTests
     }
 
     [Fact]
+    public async Task HttpSource_ErrorRedactsArtifactQuery()
+    {
+        using var fixture = new Fixture();
+        await File.WriteAllTextAsync(
+            Path.Combine(fixture.SourceDirectory, "index.json"),
+            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        using var session = new DownloadSession(4, CancellationToken.None);
+        using var source = new HttpSource(
+            new SourceConfig { Id = "test", Index = server.BaseUrl + "index.json" },
+            proxy: null,
+            session);
+        var downloadDirectory = Path.Combine(fixture.Root, "download");
+        Directory.CreateDirectory(downloadDirectory);
+
+        var error = await Assert.ThrowsAsync<SeikoException>(
+            () => source.DownloadAsync(
+                "hello",
+                new ArtifactLocation
+                {
+                    Url = "artifacts/missing.bin?sig=REVIEW_SENTINEL",
+                    Sha256 = new string('a', 64),
+                    Size = 1,
+                },
+                downloadDirectory,
+                session,
+                CancellationToken.None));
+
+        Assert.DoesNotContain("REVIEW_SENTINEL", error.Message);
+        Assert.Contains("artifacts/missing.bin", error.Message);
+    }
+
+    [Fact]
     public async Task HttpSource_RetriesTruncatedBody()
     {
         using var fixture = new Fixture();

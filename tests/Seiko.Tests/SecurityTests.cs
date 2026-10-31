@@ -136,6 +136,14 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void Urls_RedactDropsCredentialsAndQuery()
+    {
+        var redacted = Urls.Redact(new Uri("https://user:pass@example.com/path?token=secret#fragment"));
+
+        Assert.Equal("https://example.com/path", redacted);
+    }
+
+    [Fact]
     public void Sync_FailsWhenTheRootRegistryIsLocked()
     {
         using var fixture = new Fixture();

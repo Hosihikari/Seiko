@@ -538,8 +538,9 @@ public static class IndexVerifier
             .GetResult();
         if (!response.IsSuccessStatusCode)
         {
+            var safe = Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? Urls.Redact(parsed) : url;
             throw new HttpRequestException(
-                $"HTTP {(int)response.StatusCode} for {url}");
+                $"HTTP {(int)response.StatusCode} for {safe}");
         }
 
         using var input = response.Content.ReadAsStream(cancellationToken);

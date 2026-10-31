@@ -91,7 +91,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 throw new SeikoException(
-                    $"source '{Id}': HTTP {(int)response.StatusCode} for {uri}",
+                    $"source '{Id}': HTTP {(int)response.StatusCode} for {SafeUri(uri)}",
                     "source");
             }
 
@@ -205,7 +205,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                throw new SeikoException($"artifact not found: {uri}", "download");
+                throw new SeikoException($"artifact not found: {SafeUri(new Uri(uri))}", "download");
             }
 
             if (!response.IsSuccessStatusCode)
@@ -291,7 +291,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
                         }
 
                         throw new SeikoException(
-                            $"server did not honor Range for {uri} (HTTP {(int)response.StatusCode})",
+                            $"server did not honor Range for {SafeUri(new Uri(uri))} (HTTP {(int)response.StatusCode})",
                             "download");
                     }
 
@@ -304,7 +304,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
                 if (expectedLength >= 0 && new FileInfo(segmentPath).Length != expectedLength)
                 {
-                    throw new SeikoException($"short segment for {uri}", "download");
+                    throw new SeikoException($"short segment for {SafeUri(new Uri(uri))}", "download");
                 }
 
                 return;
@@ -601,7 +601,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 throw new SeikoException(
-                    $"source '{Id}': HTTP {(int)response.StatusCode} for {uri}",
+                    $"source '{Id}': HTTP {(int)response.StatusCode} for {SafeUri(uri)}",
                     "source");
             }
 
@@ -629,7 +629,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         return token;
     }
 
-    private static string SafeUri(Uri uri) => uri.GetLeftPart(UriPartial.Path);
+    private static string SafeUri(Uri uri) => Urls.Redact(uri);
 
     private sealed record RemoteInfo(long Size, bool AcceptRanges, string? ETag, string? LastModified);
 }
