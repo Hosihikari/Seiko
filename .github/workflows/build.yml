@@ -1,0 +1,325 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build; defaults to the dispatched ref
+        required: false
+        type: string
+      version:
+        description: Version used in release asset names
+        required: false
+        default: 0.0.0-dev
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-2025
+            mode: native
+            installer: native
+            blocking: true
+          - rid: win-arm64
+            os: windows-11-arm
+            mode: native
+            installer: native
+            blocking: true
+          - rid: win-x86
+            os: windows-2025
+            mode: native
+            installer: none
+            blocking: false
+          - rid: linux-x64
+            os: ubuntu-22.04
+            mode: native
+            installer: native
+            blocking: true
+          - rid: linux-arm64
+            os: ubuntu-22.04-arm
+            mode: native
+            installer: native
+            blocking: true
+          - rid: linux-arm
+            os: ubuntu-22.04
+            mode: cross-arm-glibc
+            installer: none
+            blocking: false
+          - rid: linux-musl-x64
+            os: ubuntu-22.04
+            mode: alpine
+            image: mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot-amd64
+            installer: container
+            blocking: true
+          - rid: linux-musl-arm64
+            os: ubuntu-22.04-arm
+            mode: alpine
+            image: mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot-arm64v8
+            installer: container
+            blocking: true
+          - rid: linux-musl-arm
+            os: ubuntu-22.04
+            mode: alpine-arm32
+            image: mcr.microsoft.com/dotnet/sdk:10.0-alpine-arm32v7
+            platform: linux/arm/v7
+            installer: none
+            blocking: false
+          - rid: osx-x64
+            os: macos-15
+            mode: macos-x64
+            installer: rosetta
+            blocking: true
+          - rid: osx-arm64
+            os: macos-15
+            mode: native
+            installer: native
+            blocking: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ !matrix.blocking }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Set up QEMU
+        if: matrix.mode == 'alpine-arm32'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        if: matrix.mode != 'alpine' && matrix.mode != 'alpine-arm32'
+        with:
+          dotnet-version: "10.0.x"
+      - name: Install NativeAOT prerequisites
+        if: runner.os == 'Linux' && matrix.mode != 'alpine' && matrix.mode != 'alpine-arm32'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Install armhf cross toolchain
+        if: matrix.mode == 'cross-arm-glibc'
+        run: |
+          set -euo pipefail
+          sudo dpkg --add-architecture armhf
+          sudo tee /etc/apt/sources.list.d/armhf.list >/dev/null <<'EOF'
+          deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted universe multiverse
+          deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted universe multiverse
+          deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
+          EOF
+          sudo sed -i -e 's/^deb http/deb [arch=amd64] http/' -e 's/^deb mirror/deb [arch=amd64] mirror/' /etc/apt/sources.list
+          sudo apt-get update
+          sudo apt-get install -y clang llvm binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf zlib1g-dev:armhf qemu-user-static
+      - name: Ensure vswhere on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          if (Test-Path $installer) {
+            $installer | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+      - name: Install Rosetta
+        if: matrix.mode == 'macos-x64'
+        run: sudo softwareupdate --install-rosetta --agree-to-license || true
+      - name: Publish
+        if: matrix.mode != 'alpine' && matrix.mode != 'alpine-arm32'
+        run: >
+          dotnet publish src/CommandLine/Seiko.CommandLine.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          -p:PublishAot=true
+          -p:StripSymbols=true
+          -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
+      - name: Publish MCP server
+        if: matrix.mode != 'alpine' && matrix.mode != 'alpine-arm32'
+        run: >
+          dotnet publish src/McpServer/Seiko.McpServer.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          -p:PublishAot=true
+          -p:StripSymbols=true
+          -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
+      - name: Publish in Alpine
+        if: matrix.mode == 'alpine' || matrix.mode == 'alpine-arm32'
+        shell: bash
+        env:
+          RID: ${{ matrix.rid }}
+          IMAGE: ${{ matrix.image }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          platform_arg=()
+          if [ -n "${PLATFORM:-}" ]; then
+            platform_arg=(--platform "$PLATFORM")
+          fi
+          docker run --rm "${platform_arg[@]}" -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -s "$RID" <<'SH'
+          set -eu
+          rid="$1"
+          apk add --no-cache clang build-base zlib-dev
+          dotnet publish src/CommandLine/Seiko.CommandLine.csproj -c Release -r "$rid" -p:PublishAot=true -p:StripSymbols=true -o "/src/artifacts/publish-$rid"
+          dotnet publish src/McpServer/Seiko.McpServer.csproj -c Release -r "$rid" -p:PublishAot=true -p:StripSymbols=true -o "/src/artifacts/publish-$rid"
+          SH
+          sudo chown -R "$(id -u):$(id -g)" artifacts
+      - name: Smoke test
+        if: matrix.mode != 'alpine' && matrix.mode != 'alpine-arm32'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            temp_dir=$(cygpath -u "$RUNNER_TEMP")
+            ext=".exe"
+          else
+            temp_dir="$RUNNER_TEMP"
+            ext=""
+          fi
+          prefix=""
+          case "${{ matrix.mode }}" in
+            macos-x64) prefix="arch -x86_64" ;;
+            cross-arm-glibc) prefix="qemu-arm-static -L /usr/arm-linux-gnueabihf" ;;
+          esac
+          bash .github/scripts/smoke.sh \
+            "$temp_dir/publish-${{ matrix.rid }}/sk$ext" \
+            "$temp_dir/publish-${{ matrix.rid }}/seiko-mcp$ext" \
+            "$prefix"
+      - name: Smoke test in Alpine
+        if: matrix.mode == 'alpine' || matrix.mode == 'alpine-arm32'
+        shell: bash
+        env:
+          RID: ${{ matrix.rid }}
+          IMAGE: ${{ matrix.image }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          platform_arg=()
+          if [ -n "${PLATFORM:-}" ]; then
+            platform_arg=(--platform "$PLATFORM")
+          fi
+          docker run --rm "${platform_arg[@]}" -v "$GITHUB_WORKSPACE:/src" -w /src "$IMAGE" sh -c '
+          apk add --no-cache bash >/dev/null &&
+          bash /src/.github/scripts/smoke.sh \
+            "/src/artifacts/publish-'"$RID"'/sk" \
+            "/src/artifacts/publish-'"$RID"'/seiko-mcp"'
+      - name: Package and installer smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          tag="v$version"
+          rid="${{ matrix.rid }}"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            temp_dir=$(cygpath -u "$RUNNER_TEMP")
+            PYTHON=python
+            ext="zip"
+            bin="sk.exe"
+            mcp="seiko-mcp.exe"
+          else
+            temp_dir="$RUNNER_TEMP"
+            PYTHON=python3
+            ext="tar.gz"
+            bin="sk"
+            mcp="seiko-mcp"
+          fi
+          if [ "${{ matrix.mode }}" = "alpine" ] || [ "${{ matrix.mode }}" = "alpine-arm32" ]; then
+            publish_dir="$GITHUB_WORKSPACE/artifacts/publish-$rid"
+          else
+            publish_dir="$temp_dir/publish-$rid"
+          fi
+          stage="$temp_dir/stage-$rid"
+          mkdir -p "$stage" "artifacts/release"
+          cp "$publish_dir/$bin" "$stage/$bin"
+          cp "$publish_dir/$mcp" "$stage/$mcp"
+          cp LICENSE.md "$stage/"
+          asset="sk-$version-$rid.$ext"
+          if [ "$ext" = "zip" ]; then
+            "$PYTHON" - "$stage" "artifacts/release/$asset" <<'PY'
+          import pathlib, sys, zipfile
+          src, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.rglob("*")):
+                  if p.is_file():
+                      z.write(p, p.relative_to(src).as_posix())
+          PY
+          else
+            tar -czf "artifacts/release/$asset" -C "$stage" .
+          fi
+
+          symbols="$temp_dir/symbols-$rid"
+          mkdir -p "$symbols"
+          find "$publish_dir" -maxdepth 1 -type f \( -name '*.pdb' -o -name '*.dbg' \) -exec cp {} "$symbols/" \;
+          find "$publish_dir" -maxdepth 1 -type d -name '*.dSYM' -exec cp -R {} "$symbols/" \;
+          if [ -n "$(ls -A "$symbols")" ]; then
+            symbols_asset="sk-$version-$rid-symbols.$ext"
+            if [ "$ext" = "zip" ]; then
+              "$PYTHON" - "$symbols" "artifacts/release/$symbols_asset" <<'PY'
+          import pathlib, sys, zipfile
+          src, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+              for p in sorted(src.rglob("*")):
+                  if p.is_file():
+                      z.write(p, p.relative_to(src).as_posix())
+          PY
+            else
+              tar -czf "artifacts/release/$symbols_asset" -C "$symbols" .
+            fi
+          fi
+
+          "$PYTHON" - "artifacts/release/$asset" > artifacts/release/SHA256SUMS <<'PY'
+          import hashlib, pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          print(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}")
+          PY
+
+          if [ "${{ matrix.installer }}" != "none" ]; then
+            "$PYTHON" -m http.server 8765 --directory artifacts/release >/dev/null 2>&1 &
+            server_pid=$!
+            trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+            for _ in $(seq 1 20); do
+              if curl -fsS http://127.0.0.1:8765/SHA256SUMS >/dev/null 2>&1; then break; fi
+              sleep 0.5
+            done
+
+            if [ "${{ matrix.installer }}" = "container" ]; then
+              platform_arg=()
+              if [ -n "${{ matrix.platform }}" ]; then
+                platform_arg=(--platform "${{ matrix.platform }}")
+              fi
+              docker run --rm "${platform_arg[@]}" --network host -v "$GITHUB_WORKSPACE:/src" -w /src "${{ matrix.image }}" sh -c '
+                apk add --no-cache curl tar >/dev/null &&
+                sh /src/install.sh --version "'"$tag"'" --dir /tmp/install --base-url http://127.0.0.1:8765 &&
+                /tmp/install/sk --version &&
+                /tmp/install/seiko-mcp --version'
+            elif [ "$RUNNER_OS" = "Windows" ]; then
+              install_dir_win=$(cygpath -w "$temp_dir/install-$rid")
+              pwsh -NoProfile -File ./install.ps1 -Version "$tag" -Dir "$install_dir_win" -BaseUrl http://127.0.0.1:8765
+              "$temp_dir/install-$rid/sk.exe" --version
+              "$temp_dir/install-$rid/seiko-mcp.exe" --version
+            else
+              prefix=""
+              if [ "${{ matrix.installer }}" = "rosetta" ]; then
+                prefix="arch -x86_64"
+              fi
+              $prefix bash ./install.sh --version "$tag" --dir "$temp_dir/install-$rid" --base-url http://127.0.0.1:8765
+              $prefix "$temp_dir/install-$rid/sk" --version
+              $prefix "$temp_dir/install-$rid/seiko-mcp" --version
+            fi
+          fi
+
+          mv artifacts/release/SHA256SUMS "$temp_dir/SHA256SUMS-$rid"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/release/*
+          retention-days: 7
+          if-no-files-found: error
