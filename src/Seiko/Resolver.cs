@@ -21,6 +21,7 @@ public sealed class ResolvedSei
 public sealed class Resolver
 {
     private const long MaxTotalAssignments = 1_000_000;
+    private const int MaxSearchDepth = 512;
 
     private readonly IReadOnlyList<ISeiSource> _sources;
     private readonly SeikoLock? _lock;
@@ -139,6 +140,11 @@ public sealed class Resolver
 
     private bool Search(int index)
     {
+        if (index > MaxSearchDepth)
+        {
+            throw Fail($"dependency resolution exceeded the depth budget of {MaxSearchDepth}");
+        }
+
         if (index >= _pending.Count)
         {
             if (!ValidateFinalSolution())
