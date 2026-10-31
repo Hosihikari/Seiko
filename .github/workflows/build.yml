@@ -185,7 +185,7 @@ jobs:
           args=()
           for a in "$@"; do
             case "$a" in
-              --target=*|-fuse-ld=*) ;;
+              --target=*|-fuse-ld=*|-pie|-Wl,-pie) ;;
               *) args+=("$a") ;;
             esac
           done
