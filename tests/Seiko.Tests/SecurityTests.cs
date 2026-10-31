@@ -222,6 +222,28 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void RootRegistry_ResolveNormalizesCaseOnCaseInsensitiveVolumes()
+    {
+        var name = "CaseRoot-" + Guid.NewGuid().ToString("N");
+        var actual = Path.Combine(Path.GetTempPath(), "seiko-tests", name);
+        Directory.CreateDirectory(actual);
+        try
+        {
+            var variant = Path.Combine(Path.GetTempPath(), "seiko-tests", name.ToLowerInvariant());
+            if (!Directory.Exists(variant))
+            {
+                return;
+            }
+
+            Assert.Equal(RootRegistry.Resolve(actual), RootRegistry.Resolve(variant));
+        }
+        finally
+        {
+            Directory.Delete(actual, recursive: true);
+        }
+    }
+
+    [Fact]
     public void CacheClean_FailsWhenARegisteredRootIsBusy()
     {
         using var first = new Fixture();

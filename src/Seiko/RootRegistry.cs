@@ -100,6 +100,7 @@ internal static class RootRegistry
                     StringSplitOptions.RemoveEmptyEntries))
             {
                 current = Path.Combine(current, segment);
+                current = MatchEntryCase(current, segment);
                 FileSystemInfo info = Directory.Exists(current)
                     ? new DirectoryInfo(current)
                     : new FileInfo(current);
@@ -117,6 +118,45 @@ internal static class RootRegistry
             or PlatformNotSupportedException)
         {
             return full;
+        }
+    }
+
+    // On case-insensitive volumes a path spelled with different case still
+    // exists; adopt the directory entry's actual spelling so two aliases of one
+    // directory compare equal. On case-sensitive volumes a differently-cased
+    // path does not exist and is left alone, keeping distinct roots distinct.
+    private static string MatchEntryCase(string candidate, string segment)
+    {
+        if (!Directory.Exists(candidate) && !File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        var parent = Path.GetDirectoryName(candidate);
+        if (string.IsNullOrEmpty(parent))
+        {
+            return candidate;
+        }
+
+        try
+        {
+            var entries = Directory.EnumerateFileSystemEntries(parent)
+                .Select(Path.GetFileName)
+                .Where(name => name is not null)
+                .ToList();
+            if (entries.Any(name => string.Equals(name, segment, StringComparison.Ordinal)))
+            {
+                return candidate;
+            }
+
+            var matches = entries
+                .Where(name => string.Equals(name, segment, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            return matches.Count == 1 ? Path.Combine(parent, matches[0]!) : candidate;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return candidate;
         }
     }
 
