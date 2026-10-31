@@ -40,18 +40,6 @@ function Fail([string]$Message) {
     exit 1
 }
 
-function Test-VersionBefore([string]$Left, [string]$Right) {
-    $leftParts = ($Left -split '[-+]')[0].Split('.')
-    $rightParts = ($Right -split '[-+]')[0].Split('.')
-    for ($i = 0; $i -lt 3; $i++) {
-        $l = if ($i -lt $leftParts.Count) { [int]$leftParts[$i] } else { 0 }
-        $r = if ($i -lt $rightParts.Count) { [int]$rightParts[$i] } else { 0 }
-        if ($l -lt $r) { return $true }
-        if ($l -gt $r) { return $false }
-    }
-    return $false
-}
-
 if ($env:OS -ne "Windows_NT") {
     Fail "this script is for Windows; use install.sh on Linux or macOS"
 }
@@ -143,26 +131,21 @@ try {
         Fail "archive does not contain sk.exe"
     }
     $mcpBinary = Join-Path $extract "seiko-mcp.exe"
-    $hasMcp = Test-Path $mcpBinary
-    if (-not $hasMcp -and -not (Test-VersionBefore $versionNumber "0.2.1")) {
+    if (-not (Test-Path $mcpBinary)) {
         Fail "archive does not contain seiko-mcp.exe"
     }
 
     New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-    $items = @(@{ Source = $binary; Target = $target; Name = "sk" })
-    if ($hasMcp) {
-        $items = @($items) + @(@{ Source = $mcpBinary; Target = $mcpTarget; Name = "seiko-mcp" })
-    }
+    $items = @(
+        @{ Source = $binary; Target = $target; Name = "sk" },
+        @{ Source = $mcpBinary; Target = $mcpTarget; Name = "seiko-mcp" }
+    )
 
     foreach ($item in $items) {
         $tmpTarget = Join-Path $Dir ("." + $item.Name + ".tmp." + $PID + ".exe")
         Copy-Item -Path $item.Source -Destination $tmpTarget -Force
         Move-Item -Path $tmpTarget -Destination $item.Target -Force
         Write-Output "installed $($item.Name) $versionNumber ($rid) to $($item.Target)"
-    }
-
-    if (-not $hasMcp) {
-        Write-Output "release $versionNumber predates seiko-mcp; installed sk only"
     }
 
     $pathEntries = [Environment]::GetEnvironmentVariable("Path", "User") -split ";"

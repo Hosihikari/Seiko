@@ -35,21 +35,6 @@ need() {
     command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
-version_before() {
-    # $1 < $2 by numeric major.minor.patch; prerelease suffixes compare as their release.
-    awk -v a="$1" -v b="$2" 'BEGIN {
-        split(a, x, /[.+-]/);
-        split(b, y, /[.+-]/);
-        for (i = 1; i <= 3; i++) {
-            ai = x[i] + 0;
-            bi = y[i] + 0;
-            if (ai < bi) exit 0;
-            if (ai > bi) exit 1;
-        }
-        exit 1;
-    }'
-}
-
 while [ $# -gt 0 ]; do
     case "$1" in
         --version)
@@ -194,15 +179,7 @@ esac
 
 tar -xzf "$archive" -C "$tmp_dir"
 [ -f "$tmp_dir/sk" ] || die "archive does not contain sk"
-has_mcp=1
-if [ ! -f "$tmp_dir/seiko-mcp" ]; then
-    has_mcp=0
-    if ! version_before "$VERSION" "0.2.1"; then
-        die "archive does not contain seiko-mcp"
-    fi
-
-    printf 'release %s predates seiko-mcp; installing sk only\n' "$VERSION"
-fi
+[ -f "$tmp_dir/seiko-mcp" ] || die "archive does not contain seiko-mcp"
 
 install_binary() {
     name="$1"
@@ -215,10 +192,8 @@ install_binary() {
 mkdir -p "$INSTALL_DIR"
 install_binary sk
 printf 'installed sk %s (%s) to %s\n' "$VERSION" "$RID" "$TARGET"
-if [ "$has_mcp" -eq 1 ]; then
-    install_binary seiko-mcp
-    printf 'installed seiko-mcp %s (%s) to %s\n' "$VERSION" "$RID" "$MCP_TARGET"
-fi
+install_binary seiko-mcp
+printf 'installed seiko-mcp %s (%s) to %s\n' "$VERSION" "$RID" "$MCP_TARGET"
 
 case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
