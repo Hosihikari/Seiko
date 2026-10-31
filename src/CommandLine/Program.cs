@@ -427,7 +427,7 @@ if (parseResult.Errors.Count > 0)
     {
         WriteJson(
             CliJsonContext.Default.ErrorEnvelope,
-            new ErrorEnvelope(1, FirstCommand(args), new ErrorData("usage", parseResult.Errors[0].Message)));
+            new ErrorEnvelope(1, FirstCommand(parseResult), new ErrorData("usage", parseResult.Errors[0].Message)));
     }
     else
     {
@@ -498,8 +498,19 @@ static int Fail(string command, bool json, string code, string message, int exit
 static void WriteJson<T>(JsonTypeInfo<T> typeInfo, T value)
     => Console.WriteLine(JsonSerializer.Serialize(value, typeInfo));
 
-static string FirstCommand(string[] arguments)
-    => arguments.FirstOrDefault(argument => !argument.StartsWith("-", StringComparison.Ordinal)) ?? "sk";
+static string FirstCommand(ParseResult parseResult)
+{
+    var command = parseResult.CommandResult?.Command;
+    var names = new List<string>();
+    while (command is not null && command is not RootCommand)
+    {
+        names.Add(command.Name);
+        command = command.Parents.OfType<Command>().FirstOrDefault();
+    }
+
+    names.Reverse();
+    return names.Count == 0 ? "sk" : string.Join("_", names);
+}
 
 static Option<string?> RootOption()
     => new("--root") { Description = "Install root (defaults to the nearest seiko.conf)." };
