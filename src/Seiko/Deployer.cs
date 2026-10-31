@@ -591,7 +591,7 @@ public static class Deployer
         => Path.GetRelativePath(root, path).Replace('\\', '/');
 
     private static string Native(string root, string relative)
-        => Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+        => RootedPath.Resolve(root, RelativePath.Parse(relative));
 
     private static void WriteAtomic(string path, string contents)
     {

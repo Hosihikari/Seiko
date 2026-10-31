@@ -317,38 +317,10 @@ internal sealed class DeploymentTransaction
     }
 
     private static string Normalize(string relative)
-    {
-        var normalized = relative.Replace('\\', '/');
-        if (string.IsNullOrWhiteSpace(normalized) || Path.IsPathRooted(normalized))
-        {
-            throw new SeikoException($"invalid deployment path: {relative}", "deploy");
-        }
-
-        if (normalized.Split('/').Any(segment => segment is "" or "." or ".."))
-        {
-            throw new SeikoException($"invalid deployment path: {relative}", "deploy");
-        }
-
-        return normalized;
-    }
+        => RelativePath.Parse(relative).Value;
 
     private static string Resolve(string root, string relative)
-    {
-        // Link rejection belongs to resolution: a lexical containment check
-        // alone would still follow a linked parent.
-        PathSafety.EnsureNoLinks(root, relative);
-        var full = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
-        var rootFull = Path.GetFullPath(root);
-        var prefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
-            ? rootFull
-            : rootFull + Path.DirectorySeparatorChar;
-        if (!full.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            throw new SeikoException($"deployment path escapes the install root: {relative}", "deploy");
-        }
-
-        return full;
-    }
+        => RootedPath.Resolve(root, RelativePath.Parse(relative));
 
     private static int? GetMode(string path)
         => OperatingSystem.IsWindows() ? null : (int)File.GetUnixFileMode(path);
