@@ -212,11 +212,9 @@ public sealed class Store
 
     private static string ResolveStoreFile(string directory, string relative)
     {
-        if (string.IsNullOrEmpty(relative)
-            || Path.IsPathRooted(relative)
-            || relative.Split('/').Any(segment => segment is "" or ".."))
+        if (!StoreDigests.IsSafeRelativePath(relative))
         {
-            throw CorruptedStore(directory, Path.Combine(directory, relative));
+            throw CorruptedStore(directory, relative);
         }
 
         var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;

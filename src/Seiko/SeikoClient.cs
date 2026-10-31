@@ -630,7 +630,7 @@ public sealed class SeikoClient
             findings.Add(new CacheFinding(
                 "warning",
                 "cache-meta",
-                "artifact has no digest record; run `sk sync` to rebuild it",
+                "artifact has no valid digest record; run `sk sync` to repair it",
                 directory));
             return;
         }

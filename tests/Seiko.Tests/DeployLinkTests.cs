@@ -101,6 +101,54 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void Sync_RepairsInvalidDigestPaths()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var digestPath = DigestPath(fixture);
+        var state = JsonNode.Parse(File.ReadAllText(digestPath))!.AsObject();
+        state["files"]!.AsArray().Add(new JsonObject
+        {
+            ["path"] = "bad\u0000path",
+            ["sha256"] = new string('a', 64),
+            ["size"] = 0,
+        });
+        File.WriteAllText(digestPath, state.ToJsonString());
+
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.DoesNotContain(ReadDigests(fixture).Files, file => file.Path.Contains('\0'));
+        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
+    public void CacheVerify_DoesNotReadDigestPathsOutsideTheArtifact()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var outside = Path.Combine(fixture.StoreDirectory, "outside.txt");
+        File.WriteAllText(outside, "outside");
+        var digestPath = DigestPath(fixture);
+        var state = JsonNode.Parse(File.ReadAllText(digestPath))!.AsObject();
+        state["files"]!.AsArray().Add(new JsonObject
+        {
+            ["path"] = "../outside.txt",
+            ["sha256"] = Hashing.Sha256File(outside),
+            ["size"] = new FileInfo(outside).Length,
+        });
+        File.WriteAllText(digestPath, state.ToJsonString());
+
+        var findings = client.CacheVerify(fixture.StoreDirectory);
+
+        Assert.Contains(findings, finding => finding.Code == "cache-meta");
+        Assert.DoesNotContain(findings, finding => finding.Code == "cache-corrupt");
+    }
+
+    [Fact]
     public void Sync_RepairsMalformedDigestEntries()
     {
         using var fixture = NewFixture();

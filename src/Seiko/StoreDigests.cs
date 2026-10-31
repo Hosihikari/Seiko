@@ -51,7 +51,7 @@ internal static class StoreDigests
             foreach (var file in state.Files)
             {
                 if (file is null
-                    || string.IsNullOrWhiteSpace(file.Path)
+                    || !IsSafeRelativePath(file.Path)
                     || !Hashing.IsSha256(file.Sha256)
                     || file.Size < 0
                     || !paths.Add(file.Path))
@@ -66,6 +66,35 @@ internal static class StoreDigests
         {
             return null;
         }
+    }
+
+    public static bool IsSafeRelativePath(string? path)
+    {
+        if (string.IsNullOrEmpty(path)
+            || path.Contains('\0')
+            || path.Contains('\\')
+            || Path.IsPathRooted(path))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows()
+            && path.IndexOfAny(Path.GetInvalidFileNameChars()
+                .Where(character => character is not ('/' or '\\'))
+                .ToArray()) >= 0)
+        {
+            return false;
+        }
+
+        foreach (var segment in path.Split('/'))
+        {
+            if (segment is "" or "." or "..")
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static void Write(string storeRoot, StoreDigestsState state)
