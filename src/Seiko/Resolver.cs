@@ -31,11 +31,9 @@ public sealed class Resolver
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, HashSet<string>> _excluded = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private long _totalAssignments;
     private bool _hintsGrew;
-    private bool _excludedGrew;
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -73,7 +71,6 @@ public sealed class Resolver
             _assigned.Clear();
             _lastConflict = null;
             _hintsGrew = false;
-            _excludedGrew = false;
 
             foreach (var spec in specs)
             {
@@ -92,33 +89,15 @@ public sealed class Resolver
                 }
 
                 var missing = SelectArtifacts();
-                if (missing is null)
+                if (missing is not null)
                 {
-                    return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+                    throw Fail(missing.Value.Message);
                 }
 
-                var (missingName, missingVersion, message) = missing.Value;
-                if (!_latestInstallable)
-                {
-                    throw Fail(message);
-                }
-
-                if (!_excluded.TryGetValue(missingName, out var versions))
-                {
-                    versions = new HashSet<string>(StringComparer.Ordinal);
-                    _excluded[missingName] = versions;
-                }
-
-                if (!versions.Add(missingVersion))
-                {
-                    throw Fail(message);
-                }
-
-                _excludedGrew = true;
-                continue;
+                return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
             }
 
-            if (!_hintsGrew && !_excludedGrew)
+            if (!_hintsGrew)
             {
                 throw _lastConflict ?? Fail("no version satisfies the declared ranges");
             }
@@ -129,7 +108,27 @@ public sealed class Resolver
     {
         if (index >= _pending.Count)
         {
-            return ValidateFinalSolution();
+            if (!ValidateFinalSolution())
+            {
+                return false;
+            }
+
+            if (!_latestInstallable)
+            {
+                return true;
+            }
+
+            // Artifact availability depends on the final graph. A failure here
+            // is a property of this assignment combination, not of the version
+            // globally, so backtrack instead of excluding the version.
+            var missing = SelectArtifacts();
+            if (missing is null)
+            {
+                return true;
+            }
+
+            _lastConflict = Fail(missing.Value.Message);
+            return false;
         }
 
         var requirement = _pending[index];
@@ -225,12 +224,6 @@ public sealed class Resolver
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
-            }
-
-            if (_excluded.TryGetValue(name, out var excluded)
-                && excluded.Contains(version.ToNormalizedString()))
-            {
-                continue;
             }
 
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))

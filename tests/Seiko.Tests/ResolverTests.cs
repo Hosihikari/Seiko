@@ -129,6 +129,41 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_LatestInstallableReconsidersVersionsAfterGraphChanges()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                    Files = { ["a.txt"] = "a" },
+                },
+            ],
+        });
+        fixture.AddSei(
+            "b",
+            Version("b", "2.0.0"),
+            Version("b", "1.0.0", new DepFixture("marker", "*")));
+        fixture.AddSei("marker", Version("marker", "1.0.0"));
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "*"),
+            new SpecFixture("b", "*"));
+        var client = new SeikoClient();
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, latestInstallable: true);
+
+        var lockFile = client.ReadLock(fixture.Root)!;
+        Assert.Equal("2.0.0", lockFile.Sei.Single(sei => sei.Name == "a").Version);
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "b").Version);
+        Assert.Contains(lockFile.Sei, sei => sei.Name == "marker");
+    }
+
+    [Fact]
     public void Resolve_LatestInstallableRequiresCarrierInTheGraph()
     {
         using var withoutCarrier = new Fixture();
