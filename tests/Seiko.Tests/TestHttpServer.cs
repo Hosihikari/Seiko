@@ -25,6 +25,10 @@ internal sealed class TestHttpServer : IDisposable
 
     public string BaseUrl { get; }
 
+    public int TruncateBodyResponses { get; set; }
+
+    public string TruncateBodyPath { get; set; } = "";
+
     public IReadOnlyList<string?> Authorizations
     {
         get
@@ -110,6 +114,15 @@ internal sealed class TestHttpServer : IDisposable
             if (method == "HEAD")
             {
                 await WriteResponseAsync(stream, "200 OK", [], extra, bytes.Length);
+                return;
+            }
+
+            if (TruncateBodyResponses > 0
+                && relative.Contains(TruncateBodyPath, StringComparison.Ordinal)
+                && !headers.ContainsKey("Range"))
+            {
+                TruncateBodyResponses--;
+                await WriteResponseAsync(stream, "200 OK", bytes[..(bytes.Length / 2)], extra, bytes.Length);
                 return;
             }
 

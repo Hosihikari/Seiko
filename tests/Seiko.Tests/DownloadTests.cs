@@ -45,6 +45,48 @@ public sealed class DownloadTests
     }
 
     [Fact]
+    public async Task HttpSource_RetriesTruncatedBody()
+    {
+        using var fixture = new Fixture();
+        var data = new byte[5000];
+        Random.Shared.NextBytes(data);
+        var artifactDirectory = Path.Combine(fixture.SourceDirectory, "artifacts");
+        Directory.CreateDirectory(artifactDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
+        await File.WriteAllTextAsync(
+            Path.Combine(fixture.SourceDirectory, "index.json"),
+            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+
+        using var server = new TestHttpServer(fixture.SourceDirectory)
+        {
+            TruncateBodyResponses = 1,
+            TruncateBodyPath = "artifacts",
+        };
+        using var session = new DownloadSession(4, CancellationToken.None, chunkThreshold: 1_000_000);
+        using var source = new HttpSource(
+            new SourceConfig { Id = "test", Index = server.BaseUrl + "index.json" },
+            proxy: null,
+            session);
+        var downloadDirectory = Path.Combine(fixture.Root, "download");
+        Directory.CreateDirectory(downloadDirectory);
+
+        await source.DownloadAsync(
+            "hello",
+            new ArtifactLocation
+            {
+                Url = "artifacts/blob.bin",
+                Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
+                Size = data.Length,
+            },
+            downloadDirectory,
+            session,
+            CancellationToken.None);
+
+        Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(downloadDirectory, "artifact")));
+        Assert.Equal(0, server.TruncateBodyResponses);
+    }
+
+    [Fact]
     public async Task HttpSource_ResumesPartialDownload()
     {
         using var fixture = new Fixture();

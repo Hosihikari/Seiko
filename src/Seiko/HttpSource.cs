@@ -346,7 +346,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         Action<int> onRead,
         CancellationToken cancellationToken)
     {
-        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using var body = await OpenBodyAsync(response, cancellationToken).ConfigureAwait(false);
         await using var output = new FileStream(
             segmentPath,
             FileMode.Append,
@@ -357,7 +357,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         var buffer = new byte[81920];
         while (true)
         {
-            var read = await ReadWithTimeoutAsync(body, buffer, cancellationToken).ConfigureAwait(false);
+            var read = await ReadBodyAsync(body, buffer, cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 break;
@@ -365,6 +365,38 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             onRead(read);
+        }
+    }
+
+    // Body reads happen after SendWithRetryAsync returns, so their network
+    // failures need to surface as SeikoExceptions for the segment retry loop.
+    // Disk write failures are left alone: retrying them would not help.
+    private static async Task<Stream> OpenBodyAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException ex)
+        {
+            throw new SeikoException($"download body failed: {ex.Message}", "download", ex);
+        }
+    }
+
+    private static async Task<int> ReadBodyAsync(
+        Stream body,
+        Memory<byte> buffer,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadWithTimeoutAsync(body, buffer, cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException ex)
+        {
+            throw new SeikoException($"download body failed: {ex.Message}", "download", ex);
         }
     }
 
