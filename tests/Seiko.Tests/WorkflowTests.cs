@@ -29,6 +29,32 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Sync_CancelledBeforeDeployLeavesRootUntouched()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.WriteConfig("win-x64");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        Assert.Throws<OperationCanceledException>(
+            () => client.Sync(
+                fixture.Root,
+                fixture.StoreDirectory,
+                cancellationToken: cancelled.Token));
+
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.Single(client.ReadLock(fixture.Root)!.Sei);
+    }
+
+    [Fact]
     public void Outdated_ReportsLatestInRangeAndOverall()
     {
         using var fixture = new Fixture();

@@ -46,6 +46,7 @@ public sealed class SeikoClient
         IReadOnlySet<string>? updateNames = null)
     {
         root = Path.GetFullPath(root);
+        cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         RootRegistry.Register(storePath, root);
         using var rootLock = ProcessLock.Acquire(
@@ -108,6 +109,7 @@ public sealed class SeikoClient
 
         var store = new Store(storePath);
         var stored = DownloadAll(store, resolved, session, downloadCts);
+        cancellationToken.ThrowIfCancellationRequested();
         progress?.Report(new SyncProgress(
             SyncPhase.Deploying,
             null,
