@@ -26,6 +26,19 @@ internal static class ArchiveLimits
         }
     }
 
+    public static string NormalizeName(string entryName)
+    {
+        var raw = entryName.Replace('\\', '/');
+        if (raw.EndsWith("/", StringComparison.Ordinal))
+        {
+            return "";
+        }
+
+        return string.Join(
+            '/',
+            raw.Split('/').Where(segment => segment is not ("" or ".")));
+    }
+
     public static void EnsureTotal(long total)
     {
         if (total > MaxTotalBytes)

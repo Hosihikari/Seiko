@@ -594,7 +594,7 @@ public static class IndexVerifier
             }
 
             var manifests = archive.Entries
-                .Where(entry => entry.FullName.Replace('\\', '/') == "sei.json")
+                .Where(entry => ArchiveLimits.NormalizeName(entry.FullName) == "sei.json")
                 .ToList();
             if (manifests.Count == 0)
             {

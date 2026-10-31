@@ -255,14 +255,15 @@ public sealed class Store
         ArchiveLimits.EnsureEntryCount(archive.Entries.Count);
         var digests = new List<StoreFileDigest>();
         var seenManifest = false;
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
         var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;
         var declaredTotal = 0L;
         var writtenTotal = 0L;
 
         foreach (var entry in archive.Entries)
         {
-            var name = entry.FullName.Replace('\\', '/');
-            if (name.EndsWith("/", StringComparison.Ordinal))
+            var name = ArchiveLimits.NormalizeName(entry.FullName);
+            if (name.Length == 0)
             {
                 continue;
             }
@@ -270,6 +271,11 @@ public sealed class Store
             if (name.Split('/').Any(segment => segment == ".."))
             {
                 throw new SeikoException($"zip-slip entry rejected: {name}", "io");
+            }
+
+            if (!seenNames.Add(name))
+            {
+                throw new SeikoException($"duplicate zip entry: {name}", "io");
             }
 
             if (name == "sei.json")
