@@ -79,6 +79,13 @@ public static class Deployer
             }
         }
 
+        var temporaryPaths = mutations
+            .Where(mutation => mutation.File is not null)
+            .ToDictionary(
+                mutation => mutation.RelativePath,
+                mutation => mutation.RelativePath + ".seiko-tmp-" + Guid.NewGuid().ToString("N"),
+                StringComparer.Ordinal);
+
         var modes = new Dictionary<string, UnixFileMode>(StringComparer.Ordinal);
         foreach (var (relative, file) in desired)
         {
@@ -127,6 +134,11 @@ public static class Deployer
                 transaction.WillChange(mutation.RelativePath);
             }
 
+            foreach (var temporary in temporaryPaths.Values)
+            {
+                transaction.WillCreateTemporary(temporary);
+            }
+
             transaction.WillChange(Relative(root, statePath));
             foreach (var installed in installedPaths)
             {
@@ -173,7 +185,7 @@ public static class Deployer
                 }
 
                 EnsureStoreUnchanged(mutation.File);
-                var temp = destination + ".seiko-tmp-" + Guid.NewGuid().ToString("N");
+                var temp = Native(root, temporaryPaths[mutation.RelativePath]);
                 try
                 {
                     FileLink.Create(mutation.File.SourcePath, temp);

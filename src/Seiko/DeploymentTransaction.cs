@@ -74,6 +74,16 @@ internal sealed class DeploymentTransaction
         _journal.Entries.Add(entry);
     }
 
+    public void WillCreateTemporary(string relative)
+    {
+        var normalized = Normalize(relative);
+        _journal.TemporaryPaths ??= [];
+        if (!_journal.TemporaryPaths.Contains(normalized, StringComparer.Ordinal))
+        {
+            _journal.TemporaryPaths.Add(normalized);
+        }
+    }
+
     public void SetNewGeneration(string relative)
     {
         var normalized = Normalize(relative);
@@ -157,6 +167,16 @@ internal sealed class DeploymentTransaction
     {
         var rootFull = Path.GetFullPath(root);
         var backupFull = Path.GetFullPath(backupDirectory);
+        foreach (var temporary in journal.TemporaryPaths ?? [])
+        {
+            var normalized = Normalize(temporary);
+            var path = Resolve(rootFull, normalized);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
         for (var i = journal.Entries.Count - 1; i >= 0; i--)
         {
             var entry = journal.Entries[i];

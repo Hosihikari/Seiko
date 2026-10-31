@@ -232,6 +232,62 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recover_RemovesJournaledTemporaryFiles()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var tool = Path.Combine(root, "tool");
+        File.WriteAllText(tool, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WillChange("tool/x");
+        transaction.WillCreateTemporary("tool/x.seiko-tmp-crash");
+        transaction.WriteJournal();
+
+        File.Delete(tool);
+        Directory.CreateDirectory(tool);
+        File.WriteAllText(Path.Combine(tool, "x.seiko-tmp-crash"), "partial");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
+    public void Recover_DoesNotDeleteUnjournaledTemporaryLookalikes()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var tool = Path.Combine(root, "tool");
+        File.WriteAllText(tool, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WillChange("tool/x");
+        transaction.WillCreateTemporary("tool/x.seiko-tmp-crash");
+        transaction.WriteJournal();
+
+        File.Delete(tool);
+        Directory.CreateDirectory(tool);
+        File.WriteAllText(Path.Combine(tool, "x.seiko-tmp-crash"), "partial");
+        File.WriteAllText(Path.Combine(tool, "other.seiko-tmp-crash"), "keep");
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Contains("non-empty directory", error.Message);
+        Assert.True(File.Exists(Path.Combine(tool, "other.seiko-tmp-crash")));
+        Assert.False(File.Exists(Path.Combine(tool, "x.seiko-tmp-crash")));
+    }
+
+    [Fact]
     public void Recover_KeepsNonEmptyDirectoryInsteadOfRestoringFile()
     {
         using var fixture = new Fixture();
