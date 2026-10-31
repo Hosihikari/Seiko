@@ -566,6 +566,30 @@ public static class IndexVerifier
 
         using (archive)
         {
+            if (archive.Entries.Count > ArchiveLimits.MaxEntries)
+            {
+                context.Error(
+                    "artifact-budget",
+                    $"sei '{reference.Sei}' {reference.Version}: artifact has {archive.Entries.Count} entries; the limit is {ArchiveLimits.MaxEntries}",
+                    reference.Path);
+                return;
+            }
+
+            var declaredTotal = 0L;
+            foreach (var entry in archive.Entries)
+            {
+                declaredTotal += entry.Length;
+                if (entry.Length > ArchiveLimits.MaxEntryBytes
+                    || declaredTotal > ArchiveLimits.MaxTotalBytes)
+                {
+                    context.Error(
+                        "artifact-budget",
+                        $"sei '{reference.Sei}' {reference.Version}: artifact expands beyond the extraction limits",
+                        reference.Path);
+                    return;
+                }
+            }
+
             var manifests = archive.Entries
                 .Where(entry => entry.FullName.Replace('\\', '/') == "sei.json")
                 .ToList();
@@ -657,6 +681,27 @@ public static class IndexVerifier
                     "manifest-mismatch",
                     $"{prefix}: sei.json layout does not match the index artifact",
                     reference.Path);
+            }
+
+            if (manifest.Modes is not null)
+            {
+                foreach (var (file, text) in manifest.Modes)
+                {
+                    if (text is null || !FileModes.TryParse(text, out var value))
+                    {
+                        context.Error(
+                            "manifest-mode",
+                            $"{prefix}: invalid mode '{text}' for {file}",
+                            reference.Path);
+                    }
+                    else if (FileModes.HasSpecialBits(value))
+                    {
+                        context.Error(
+                            "manifest-mode",
+                            $"{prefix}: mode '{text}' for {file} sets setuid/setgid/sticky",
+                            reference.Path);
+                    }
+                }
             }
         }
     }

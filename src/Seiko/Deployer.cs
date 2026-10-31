@@ -307,20 +307,30 @@ public static class Deployer
         out UnixFileMode mode)
     {
         mode = default;
-        if (OperatingSystem.IsWindows() || modes is null || !modes.TryGetValue(relative, out var text))
+        if (modes is null || !modes.TryGetValue(relative, out var text))
         {
             return false;
         }
 
-        try
+        if (!FileModes.TryParse(text, out var value))
         {
-            mode = (UnixFileMode)Convert.ToInt32(text, 8);
-            return true;
+            throw new SeikoException($"invalid mode '{text}' for {relative}", "deploy");
         }
-        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException)
+
+        if (FileModes.HasSpecialBits(value))
         {
-            throw new SeikoException($"invalid mode '{text}' for {relative}", "deploy", ex);
+            throw new SeikoException(
+                $"mode '{text}' for {relative} sets setuid/setgid/sticky; only 0000-0777 is allowed",
+                "deploy");
         }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        mode = (UnixFileMode)value;
+        return true;
     }
 
     private static bool ModeDiffers(string path, UnixFileMode mode)

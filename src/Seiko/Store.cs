@@ -239,9 +239,12 @@ public sealed class Store
     {
         Directory.CreateDirectory(directory);
         using var archive = ZipFile.OpenRead(artifactPath);
+        ArchiveLimits.EnsureEntryCount(archive.Entries.Count);
         var digests = new List<StoreFileDigest>();
         var seenManifest = false;
         var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;
+        var declaredTotal = 0L;
+        var writtenTotal = 0L;
 
         foreach (var entry in archive.Entries)
         {
@@ -272,6 +275,10 @@ public sealed class Store
                 throw new SeikoException($"zip-slip entry rejected: {name}", "io");
             }
 
+            ArchiveLimits.EnsureEntrySize(entry.Length);
+            declaredTotal += entry.Length;
+            ArchiveLimits.EnsureTotal(declaredTotal);
+
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             using var input = entry.Open();
             using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
@@ -284,6 +291,9 @@ public sealed class Store
                 output.Write(buffer, 0, read);
                 hash.AppendData(buffer, 0, read);
                 size += read;
+                ArchiveLimits.EnsureEntrySize(size);
+                writtenTotal += read;
+                ArchiveLimits.EnsureTotal(writtenTotal);
             }
 
             digests.Add(new StoreFileDigest

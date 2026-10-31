@@ -111,6 +111,31 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void Sync_RejectsPrivilegedModes()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "04755" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Contains("setuid", error.Message);
+    }
+
+    [Fact]
     public void Sync_RejectsMissingStorePayload()
     {
         using var fixture = NewFixture();

@@ -136,6 +136,21 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void ArchiveLimits_EnforceHardCaps()
+    {
+        ArchiveLimits.EnsureEntryCount(ArchiveLimits.MaxEntries);
+        ArchiveLimits.EnsureEntrySize(ArchiveLimits.MaxEntryBytes);
+        ArchiveLimits.EnsureTotal(ArchiveLimits.MaxTotalBytes);
+
+        Assert.Throws<SeikoException>(
+            () => ArchiveLimits.EnsureEntryCount(ArchiveLimits.MaxEntries + 1));
+        Assert.Throws<SeikoException>(
+            () => ArchiveLimits.EnsureEntrySize(ArchiveLimits.MaxEntryBytes + 1));
+        Assert.Throws<SeikoException>(
+            () => ArchiveLimits.EnsureTotal(ArchiveLimits.MaxTotalBytes + 1));
+    }
+
+    [Fact]
     public void Urls_RedactDropsCredentialsAndQuery()
     {
         var redacted = Urls.Redact(new Uri("https://user:pass@example.com/path?token=secret#fragment"));

@@ -31,6 +31,29 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsPrivilegedModes()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "04755" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "manifest-mode");
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsDownloadsHttpArtifacts()
     {
         using var fixture = NewFixture();
