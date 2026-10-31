@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to publish (for example v0.1.0)
+        description: Existing tag to publish (v0.2.3 or newer)
         required: true
         type: string
 
@@ -43,6 +43,10 @@ jobs:
             exit 1
           fi
           git rev-parse "refs/tags/$tag" >/dev/null
+          if ! git cat-file -e "refs/tags/$tag:.github/scripts/smoke.sh" 2>/dev/null; then
+            echo "::error::cannot rebuild tag $tag: it predates the current build workflow (v0.2.3 or newer is required)"
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
