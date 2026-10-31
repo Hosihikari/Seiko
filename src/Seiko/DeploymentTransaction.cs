@@ -173,6 +173,21 @@ internal sealed class DeploymentTransaction
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                if (Directory.Exists(destination))
+                {
+                    try
+                    {
+                        Directory.Delete(destination, recursive: false);
+                    }
+                    catch (IOException ex)
+                    {
+                        throw new SeikoException(
+                            $"rollback cannot restore file {relative}: a non-empty directory is in the way",
+                            "deploy",
+                            ex);
+                    }
+                }
+
                 File.Copy(backup, destination, overwrite: true);
                 SetMode(destination, entry.UnixMode);
             }

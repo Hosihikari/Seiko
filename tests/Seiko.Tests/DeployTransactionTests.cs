@@ -120,6 +120,78 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Sync_RollsBackFileToDirectoryConversion()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/data"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        try
+        {
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    throw new IOException("injected deployment failure");
+                }
+            };
+            Assert.Throws<IOException>(
+                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        var tool = Path.Combine(fixture.Root, "tool");
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, ".seiko", "transaction.json")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, ".seiko", "transaction")));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal("new", File.ReadAllText(Path.Combine(tool, "data")));
+    }
+
+    [Fact]
+    public void Recover_RestoresFileAcrossDirectoryConversion()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var tool = Path.Combine(root, "tool");
+        File.WriteAllText(tool, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WillChange("tool/data");
+        transaction.WriteJournal();
+
+        File.Delete(tool);
+        Directory.CreateDirectory(tool);
+        File.WriteAllText(Path.Combine(tool, "data"), "new");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+        Assert.False(Directory.Exists(Path.Combine(stateDirectory, "transaction")));
+    }
+
+    [Fact]
     public void Sync_CleansUpCreatedDirectoriesOnFailure()
     {
         using var fixture = new Fixture();
