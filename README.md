@@ -56,6 +56,7 @@ Current slice:
 - `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). `--allowed-root` and `--allowed-store` optionally restrict mutation paths.
 - Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so a corrupt cached artifact is downloaded again and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
 - Unix modes are limited to `0000–0777`: setuid, setgid, and sticky bits are rejected by deployment and `sk index verify`. Extraction is capped at 100,000 entries, 1 GiB per entry, and 4 GiB total.
+- Payload paths must be unique ignoring case. A deployment that would write both `A.txt` and `a.txt` is rejected, so roots stay consistent across case-sensitive and case-insensitive volumes.
 
 ## MCP server
 

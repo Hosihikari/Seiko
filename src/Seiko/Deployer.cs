@@ -207,6 +207,7 @@ public static class Deployer
     private static Dictionary<string, DesiredFile> BuildDesired(IReadOnlyList<DeployedSei> sei)
     {
         var desired = new Dictionary<string, DesiredFile>(StringComparer.Ordinal);
+        var caseInsensitive = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in sei)
         {
             foreach (var file in Directory.EnumerateFiles(item.Directory, "*", SearchOption.AllDirectories))
@@ -223,6 +224,16 @@ public static class Deployer
                         $"sei '{item.Name}' declares a reserved path: {relative}",
                         "deploy");
                 }
+
+                if (caseInsensitive.TryGetValue(relative, out var other)
+                    && !string.Equals(other, relative, StringComparison.Ordinal))
+                {
+                    throw new SeikoException(
+                        $"case-only path conflict: {other} and {relative}",
+                        "deploy");
+                }
+
+                caseInsensitive[relative] = relative;
 
                 var hash = HashStoredFile(item, file, relative);
                 if (desired.TryGetValue(relative, out var existing))
