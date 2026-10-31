@@ -50,7 +50,6 @@ internal sealed class DeploymentTransaction
             return;
         }
 
-        PathSafety.EnsureNoLinks(_root, normalized);
         var fullPath = Resolve(_root, normalized);
         if (Directory.Exists(fullPath) && !allowDirectory)
         {
@@ -170,7 +169,6 @@ internal sealed class DeploymentTransaction
         foreach (var temporary in journal.TemporaryPaths ?? [])
         {
             var normalized = Normalize(temporary);
-            PathSafety.EnsureNoLinks(rootFull, normalized);
             var path = Resolve(rootFull, normalized);
             if (File.Exists(path))
             {
@@ -182,11 +180,9 @@ internal sealed class DeploymentTransaction
         {
             var entry = journal.Entries[i];
             var relative = Normalize(entry.Path);
-            PathSafety.EnsureNoLinks(rootFull, relative);
             var destination = Resolve(rootFull, relative);
             if (entry.Existed)
             {
-                PathSafety.EnsureNoLinks(backupFull, relative);
                 var backup = Resolve(backupFull, relative);
                 if (!File.Exists(backup))
                 {
@@ -217,7 +213,6 @@ internal sealed class DeploymentTransaction
         if (journal.NewGenerationPath is { } generation)
         {
             var normalized = Normalize(generation);
-            PathSafety.EnsureNoLinks(rootFull, normalized);
             var path = Resolve(rootFull, normalized);
             if (Directory.Exists(path))
             {
@@ -334,6 +329,9 @@ internal sealed class DeploymentTransaction
 
     private static string Resolve(string root, string relative)
     {
+        // Link rejection belongs to resolution: a lexical containment check
+        // alone would still follow a linked parent.
+        PathSafety.EnsureNoLinks(root, relative);
         var full = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
         var rootFull = Path.GetFullPath(root);
         var prefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
