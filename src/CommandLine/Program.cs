@@ -117,6 +117,10 @@ var removeStore = StoreOption();
 var removePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
 var removeJobs = JobsOption();
 var removeProxy = ProxyOption();
+var removeAllowCritical = new Option<bool>("--allow-critical")
+{
+    Description = "Allow resolving versions with a critical advisory.",
+};
 var removeName = new Argument<string>("name") { Description = "Direct sei name." };
 remove.Add(removeName);
 remove.Add(removeRoot);
@@ -124,6 +128,7 @@ remove.Add(removeStore);
 remove.Add(removePre);
 remove.Add(removeJobs);
 remove.Add(removeProxy);
+remove.Add(removeAllowCritical);
 remove.SetAction(parseResult => Run(
     "remove",
     IsJson(parseResult),
@@ -134,6 +139,7 @@ remove.SetAction(parseResult => Run(
         parseResult.GetValue(removePre),
         parseResult.GetValue(removeJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(removeProxy),
+        parseResult.GetValue(removeAllowCritical),
         IsJson(parseResult))));
 
 var update = new Command("update", "Update direct declarations and sync.");
@@ -657,6 +663,7 @@ static int Remove(
     bool pre,
     int jobs,
     string? proxy,
+    bool allowCritical,
     bool json)
     => RunMutation(
         "remove",
@@ -669,7 +676,8 @@ static int Remove(
             jobs,
             proxy,
             progress,
-            log));
+            log,
+            allowCritical: allowCritical));
 
 static int Update(
     string? rootOption,
