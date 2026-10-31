@@ -96,6 +96,95 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Rollback_RestoresFileAfterDirectoryUpgrade()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var result = client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1);
+
+        Assert.Equal(1, result.Generation);
+        var tool = Path.Combine(fixture.Root, "tool");
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+    }
+
+    [Fact]
+    public void Rollback_RejectsUnmanagedFilesInConvertedDirectory()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var keep = Path.Combine(fixture.Root, "tool", "keep.txt");
+        File.WriteAllText(keep, "keep");
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Contains("unmanaged", error.Message);
+        Assert.Equal("keep", File.ReadAllText(keep));
+    }
+
+    [Fact]
+    public void Sync_DowngradesDirectoryToFile()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var tool = Path.Combine(fixture.Root, "tool");
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+    }
+
+    [Fact]
     public void Sync_UpgradesManagedFileToDirectory()
     {
         using var fixture = new Fixture();

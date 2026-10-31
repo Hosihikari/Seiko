@@ -50,7 +50,7 @@ public static class Deployer
         }
 
         var managed = new HashSet<string>(state.Files.Keys, StringComparer.Ordinal);
-        ValidateDesiredTree(root, desired, managed);
+        var replaceable = ValidateDesiredTree(root, desired, managed);
 
         var mutations = new List<Mutation>();
         foreach (var oldFile in state.Files.Keys)
@@ -131,7 +131,10 @@ public static class Deployer
             transaction = DeploymentTransaction.Begin(root, stateDirectory);
             foreach (var mutation in mutations)
             {
-                transaction.WillChange(mutation.RelativePath);
+                transaction.WillChange(
+                    mutation.RelativePath,
+                    allowDirectory: mutation.File is not null
+                        && replaceable.Contains(mutation.RelativePath));
             }
 
             foreach (var temporary in temporaryPaths.Values)
@@ -182,6 +185,17 @@ public static class Deployer
                 if (!string.IsNullOrEmpty(parent))
                 {
                     EnsureDirectory(parent, createdDirectories);
+                }
+
+                if (Directory.Exists(destination))
+                {
+                    DeploymentTransaction.RemoveEmptyDirectories(destination);
+                    if (Directory.Exists(destination))
+                    {
+                        throw new SeikoException(
+                            $"deployment path is a directory: {mutation.RelativePath}",
+                            "deploy");
+                    }
                 }
 
                 EnsureStoreUnchanged(mutation.File);
@@ -295,7 +309,7 @@ public static class Deployer
         return desired;
     }
 
-    private static void ValidateDesiredTree(
+    private static HashSet<string> ValidateDesiredTree(
         string root,
         IReadOnlyDictionary<string, DesiredFile> desired,
         IReadOnlySet<string> managed)
@@ -306,11 +320,14 @@ public static class Deployer
             normalized[relative.Normalize(System.Text.NormalizationForm.FormC)] = relative;
         }
 
+        var replaceable = new HashSet<string>(StringComparer.Ordinal);
         foreach (var relative in desired.Keys)
         {
-            if (Directory.Exists(Native(root, relative)))
+            var destination = Native(root, relative);
+            if (Directory.Exists(destination))
             {
-                throw new SeikoException($"deployment path is a directory: {relative}", "deploy");
+                EnsureReplaceableDirectory(root, relative, destination, managed, desired);
+                replaceable.Add(relative);
             }
 
             var parts = relative.Split('/');
@@ -332,6 +349,47 @@ public static class Deployer
                 {
                     throw new SeikoException(
                         $"path conflict: {prefix} is a file but {relative} needs a directory",
+                        "deploy");
+                }
+            }
+        }
+
+        return replaceable;
+    }
+
+    private static void EnsureReplaceableDirectory(
+        string root,
+        string relative,
+        string destination,
+        IReadOnlySet<string> managed,
+        IReadOnlyDictionary<string, DesiredFile> desired)
+    {
+        var pending = new Stack<string>();
+        pending.Push(destination);
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new SeikoException(
+                        $"path conflict: {relative} contains a link at {Path.GetRelativePath(root, entry)}",
+                        "deploy");
+                }
+
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    pending.Push(entry);
+                    continue;
+                }
+
+                var child = Path.GetRelativePath(root, entry).Replace('\\', '/');
+                if (!managed.Contains(child) || desired.ContainsKey(child))
+                {
+                    throw new SeikoException(
+                        $"path conflict: {relative} is a directory containing unmanaged file {child}",
                         "deploy");
                 }
             }

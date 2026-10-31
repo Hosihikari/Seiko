@@ -42,7 +42,7 @@ internal sealed class DeploymentTransaction
         return new DeploymentTransaction(root, stateDirectory);
     }
 
-    public void WillChange(string relative)
+    public void WillChange(string relative, bool allowDirectory = false)
     {
         var normalized = Normalize(relative);
         if (_entries.ContainsKey(normalized))
@@ -52,7 +52,7 @@ internal sealed class DeploymentTransaction
 
         PathSafety.EnsureNoLinks(_root, normalized);
         var fullPath = Resolve(_root, normalized);
-        if (Directory.Exists(fullPath))
+        if (Directory.Exists(fullPath) && !allowDirectory)
         {
             throw new SeikoException($"deployment path is a directory: {normalized}", "deploy");
         }
@@ -225,7 +225,7 @@ internal sealed class DeploymentTransaction
         }
     }
 
-    private static void RemoveEmptyDirectories(string path)
+    internal static void RemoveEmptyDirectories(string path)
     {
         var order = new List<string>();
         var pending = new Stack<string>();
