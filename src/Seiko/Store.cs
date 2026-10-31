@@ -29,6 +29,8 @@ public sealed class Store
             return null;
         }
 
+        var digests = LoadDigests(sha256, directory);
+        VerifyPayloadFiles(directory, digests);
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
         if (manifest.SchemaVersion != 1)
@@ -36,7 +38,7 @@ public sealed class Store
             throw new SeikoException($"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}", "io");
         }
 
-        return new StoredSei(directory, manifest, LoadDigests(sha256, directory));
+        return new StoredSei(directory, manifest, digests);
     }
 
     public StoredSei Ensure(ResolvedSei sei, DownloadSession session, CancellationToken cancellationToken)
@@ -158,14 +160,60 @@ public sealed class Store
 
     private StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)
     {
+        var digests = LoadDigests(Hashing.NormalizeSha256(sei.Artifact.Source.Sha256), directory);
+        VerifyPayloadFiles(directory, digests);
         var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json for {sei.Name} {sei.Version}", "io");
         Validate(sei, manifest);
-        return new StoredSei(
-            directory,
-            manifest,
-            LoadDigests(sei.Artifact.Source.Sha256.ToLowerInvariant(), directory));
+        return new StoredSei(directory, manifest, digests);
     }
+
+    private static void VerifyPayloadFiles(
+        string directory,
+        IReadOnlyDictionary<string, StoreFileDigest> digests)
+    {
+        foreach (var (relative, digest) in digests)
+        {
+            if (relative == "sei.json")
+            {
+                // The manifest is verified before it is consumed; see LoadStored.
+                continue;
+            }
+
+            var path = ResolveStoreFile(directory, relative);
+            var info = new FileInfo(path);
+            if (!info.Exists
+                || info.Length != digest.Size
+                || !string.Equals(Hashing.Sha256File(path), digest.Sha256, StringComparison.Ordinal))
+            {
+                throw CorruptedStore(directory, path);
+            }
+        }
+    }
+
+    private static string ResolveStoreFile(string directory, string relative)
+    {
+        if (string.IsNullOrEmpty(relative)
+            || Path.IsPathRooted(relative)
+            || relative.Split('/').Any(segment => segment is "" or ".."))
+        {
+            throw CorruptedStore(directory, Path.Combine(directory, relative));
+        }
+
+        var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;
+        var path = Path.GetFullPath(Path.Combine(directory, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (!path.StartsWith(root, StringComparison.Ordinal))
+        {
+            throw CorruptedStore(directory, path);
+        }
+
+        return path;
+    }
+
+    private static SeikoException CorruptedStore(string directory, string path)
+        => new(
+            $"store artifact is corrupted ({path}); delete {directory} and run `sk sync` to download it again",
+            "checksum");
 
     private IReadOnlyDictionary<string, StoreFileDigest> LoadDigests(string artifact, string directory)
     {

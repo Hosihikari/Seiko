@@ -74,6 +74,22 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void Sync_RejectsMissingStorePayload()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        File.Delete(Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("checksum", error.Code);
+        Assert.Contains("corrupted", error.Message);
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void Sync_RejectsUnlistedStoreFile()
     {
         using var fixture = NewFixture();
