@@ -49,6 +49,8 @@ public static class Deployer
             PathSafety.EnsureNoLinks(root, relative);
         }
 
+        ValidateDesiredTree(root, desired);
+
         var mutations = new List<Mutation>();
         foreach (var oldFile in state.Files.Keys)
         {
@@ -115,6 +117,7 @@ public static class Deployer
             .ToList();
 
         DeploymentTransaction? transaction = null;
+        var createdDirectories = new List<string>();
         try
         {
             transaction = DeploymentTransaction.Begin(root, stateDirectory);
@@ -165,13 +168,24 @@ public static class Deployer
                 var parent = Path.GetDirectoryName(destination);
                 if (!string.IsNullOrEmpty(parent))
                 {
-                    Directory.CreateDirectory(parent);
+                    EnsureDirectory(parent, createdDirectories);
                 }
 
                 EnsureStoreUnchanged(mutation.File);
                 var temp = destination + ".seiko-tmp-" + Guid.NewGuid().ToString("N");
-                FileLink.Create(mutation.File.SourcePath, temp);
-                File.Move(temp, destination, overwrite: true);
+                try
+                {
+                    FileLink.Create(mutation.File.SourcePath, temp);
+                    File.Move(temp, destination, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temp))
+                    {
+                        File.Delete(temp);
+                    }
+                }
+
                 AppliedForTests.Value?.Invoke(++applied);
             }
 
@@ -192,9 +206,13 @@ public static class Deployer
         }
         catch (Exception ex)
         {
-            if (transaction is not null)
+            try
             {
-                transaction.RollbackAfterFailure(ex);
+                transaction?.RollbackAfterFailure(ex);
+            }
+            finally
+            {
+                CleanupCreatedDirectories(createdDirectories);
             }
 
             throw;
@@ -262,6 +280,88 @@ public static class Deployer
         }
 
         return desired;
+    }
+
+    private static void ValidateDesiredTree(
+        string root,
+        IReadOnlyDictionary<string, DesiredFile> desired)
+    {
+        var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var relative in desired.Keys)
+        {
+            normalized[relative.Normalize(System.Text.NormalizationForm.FormC)] = relative;
+        }
+
+        foreach (var relative in desired.Keys)
+        {
+            if (Directory.Exists(Native(root, relative)))
+            {
+                throw new SeikoException($"deployment path is a directory: {relative}", "deploy");
+            }
+
+            var parts = relative.Split('/');
+            var prefix = "";
+            for (var i = 0; i < parts.Length - 1; i++)
+            {
+                prefix = prefix.Length == 0 ? parts[i] : $"{prefix}/{parts[i]}";
+                if (normalized.TryGetValue(
+                        prefix.Normalize(System.Text.NormalizationForm.FormC),
+                        out var file))
+                {
+                    throw new SeikoException(
+                        $"path conflict: {file} is both a file and a directory of {relative}",
+                        "deploy");
+                }
+
+                if (File.Exists(Native(root, prefix)))
+                {
+                    throw new SeikoException(
+                        $"path conflict: {prefix} is a file but {relative} needs a directory",
+                        "deploy");
+                }
+            }
+        }
+    }
+
+    private static void EnsureDirectory(string path, List<string> created)
+    {
+        if (Directory.Exists(path))
+        {
+            return;
+        }
+
+        var missing = new Stack<string>();
+        var current = path;
+        while (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
+        {
+            missing.Push(current);
+            current = Path.GetDirectoryName(current);
+        }
+
+        Directory.CreateDirectory(path);
+        created.AddRange(missing);
+    }
+
+    private static void CleanupCreatedDirectories(List<string> created)
+    {
+        for (var i = created.Count - 1; i >= 0; i--)
+        {
+            var directory = created[i];
+            try
+            {
+                if (Directory.Exists(directory)
+                    && !Directory.EnumerateFileSystemEntries(directory).Any())
+                {
+                    Directory.Delete(directory);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static void WriteGeneration(string stateDirectory, LocalState state, SeikoLock lockFile)

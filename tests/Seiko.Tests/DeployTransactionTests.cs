@@ -67,6 +67,70 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Sync_RejectsFileAndDirectoryPrefixConflictBeforeWriting()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["bin/tool"] = "tool" } }],
+        });
+        fixture.AddSei("b", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["bin"] = "flat" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("a"), new SpecFixture("b"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Contains("path conflict", error.Message);
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, "bin")));
+
+        fixture.WriteConfig("win-x64", new SpecFixture("b"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("flat", File.ReadAllText(Path.Combine(fixture.Root, "bin")));
+    }
+
+    [Fact]
+    public void Sync_CleansUpCreatedDirectoriesOnFailure()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["sub/hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        try
+        {
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    throw new IOException("injected deployment failure");
+                }
+            };
+            Assert.Throws<IOException>(
+                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, "sub")));
+        Assert.Empty(Directory.EnumerateFiles(
+            fixture.Root,
+            "*.seiko-tmp-*",
+            SearchOption.AllDirectories));
+    }
+
+    [Fact]
     public void Recover_RollsBackAnUncommittedJournal()
     {
         using var fixture = new Fixture();
