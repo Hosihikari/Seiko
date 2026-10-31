@@ -156,6 +156,49 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void CacheClean_HandlesSymlinkedRootAlias()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var link = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, fixture.Root);
+            }
+            catch (Exception ex) when (ex is IOException
+                or UnauthorizedAccessException
+                or PlatformNotSupportedException)
+            {
+                return;
+            }
+
+            client.Sync(link, fixture.StoreDirectory);
+
+            var result = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+
+            Assert.Equal(0, result.Removed);
+            Assert.Equal(1, client.CacheStatus(fixture.StoreDirectory).Artifacts);
+        }
+        finally
+        {
+            if (Directory.Exists(link) && new DirectoryInfo(link).LinkTarget is not null)
+            {
+                Directory.Delete(link);
+            }
+        }
+    }
+
+    [Fact]
     public void CacheClean_FailsWhenARegisteredRootIsBusy()
     {
         using var first = new Fixture();

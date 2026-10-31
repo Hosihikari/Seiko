@@ -49,22 +49,76 @@ internal static class RootRegistry
         using (registryLock)
         {
             var state = ReadState(storeRoot) ?? new RootRegistryState();
-            var normalized = Path.GetFullPath(root);
+            var normalized = Resolve(root);
             var comparer = OperatingSystem.IsWindows()
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
-            if (state.Roots.Any(existing => comparer.Equals(existing, normalized)))
+            var roots = state.Roots.Select(Resolve).Distinct(comparer).ToList();
+            if (!roots.Contains(normalized, comparer))
             {
-                return;
+                roots.Add(normalized);
             }
 
-            state.Roots.Add(normalized);
-            WriteState(storeRoot, state);
+            if (!roots.SequenceEqual(state.Roots, comparer))
+            {
+                state.Roots = roots;
+                WriteState(storeRoot, state);
+            }
         }
     }
 
     public static IReadOnlyList<string> Read(string storeRoot)
-        => ReadState(storeRoot)?.Roots ?? [];
+    {
+        var state = ReadState(storeRoot);
+        if (state is null)
+        {
+            return [];
+        }
+
+        var comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        return state.Roots.Select(Resolve).Distinct(comparer).ToList();
+    }
+
+    // Resolve every symlink or junction component so two paths to the same
+    // directory register once and cache clean does not lock the same root twice.
+    public static string Resolve(string path)
+    {
+        var full = Path.GetFullPath(path);
+        try
+        {
+            var root = Path.GetPathRoot(full);
+            if (string.IsNullOrEmpty(root))
+            {
+                return full;
+            }
+
+            var current = root;
+            foreach (var segment in full[root.Length..]
+                .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                    StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, segment);
+                FileSystemInfo info = Directory.Exists(current)
+                    ? new DirectoryInfo(current)
+                    : new FileInfo(current);
+                var target = info.ResolveLinkTarget(returnFinalTarget: true);
+                if (target is not null)
+                {
+                    current = Path.GetFullPath(target.FullName);
+                }
+            }
+
+            return current;
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or PlatformNotSupportedException)
+        {
+            return full;
+        }
+    }
 
     private static RootRegistryState? ReadState(string storeRoot)
     {

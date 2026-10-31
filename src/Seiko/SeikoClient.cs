@@ -664,7 +664,7 @@ public sealed class SeikoClient
 
     public CacheCleanResult CacheClean(string root, string? storeRoot = null)
     {
-        root = Path.GetFullPath(root);
+        root = RootRegistry.Resolve(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         var comparer = OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase
