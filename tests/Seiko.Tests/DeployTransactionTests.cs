@@ -165,6 +165,102 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Sync_RollsBackNestedFileToDirectoryConversion()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/sub/data"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        try
+        {
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    throw new IOException("injected deployment failure");
+                }
+            };
+            Assert.Throws<IOException>(
+                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        var tool = Path.Combine(fixture.Root, "tool");
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, ".seiko", "transaction.json")));
+    }
+
+    [Fact]
+    public void Recover_RestoresFileAcrossNestedDirectoryConversion()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var tool = Path.Combine(root, "tool");
+        File.WriteAllText(tool, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WillChange("tool/sub/data");
+        transaction.WriteJournal();
+
+        File.Delete(tool);
+        Directory.CreateDirectory(Path.Combine(tool, "sub"));
+        File.WriteAllText(Path.Combine(tool, "sub", "data"), "new");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.False(Directory.Exists(tool));
+        Assert.Equal("old", File.ReadAllText(tool));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
+    public void Recover_KeepsNonEmptyDirectoryInsteadOfRestoringFile()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var tool = Path.Combine(root, "tool");
+        File.WriteAllText(tool, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WillChange("tool/sub/data");
+        transaction.WriteJournal();
+
+        File.Delete(tool);
+        Directory.CreateDirectory(Path.Combine(tool, "sub"));
+        File.WriteAllText(Path.Combine(tool, "sub", "data"), "new");
+        File.WriteAllText(Path.Combine(tool, "keep.txt"), "keep");
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Contains("non-empty directory", error.Message);
+        Assert.True(Directory.Exists(tool));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(tool, "keep.txt")));
+        Assert.True(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
     public void Recover_RestoresFileAcrossDirectoryConversion()
     {
         using var fixture = new Fixture();

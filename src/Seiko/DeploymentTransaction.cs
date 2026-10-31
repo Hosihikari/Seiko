@@ -175,16 +175,12 @@ internal sealed class DeploymentTransaction
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                 if (Directory.Exists(destination))
                 {
-                    try
-                    {
-                        Directory.Delete(destination, recursive: false);
-                    }
-                    catch (IOException ex)
+                    RemoveEmptyDirectories(destination);
+                    if (Directory.Exists(destination))
                     {
                         throw new SeikoException(
                             $"rollback cannot restore file {relative}: a non-empty directory is in the way",
-                            "deploy",
-                            ex);
+                            "deploy");
                     }
                 }
 
@@ -207,6 +203,33 @@ internal sealed class DeploymentTransaction
                 Directory.Delete(path, recursive: true);
             }
         }
+    }
+
+    private static bool RemoveEmptyDirectories(string path)
+    {
+        var info = new DirectoryInfo(path);
+        if (!info.Exists)
+        {
+            return true;
+        }
+
+        if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            return false;
+        }
+
+        foreach (var child in Directory.EnumerateDirectories(path))
+        {
+            RemoveEmptyDirectories(child);
+        }
+
+        if (Directory.EnumerateFileSystemEntries(path).Any())
+        {
+            return false;
+        }
+
+        Directory.Delete(path);
+        return true;
     }
 
     private static void Cleanup(string journalPath, string backupDirectory)
