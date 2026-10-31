@@ -9,6 +9,10 @@ on:
       version:
         required: true
         type: string
+      rid:
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       ref:
@@ -20,6 +24,10 @@ on:
         required: false
         default: 0.0.0-dev
         type: string
+      rid:
+        description: Build only this RID
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,6 +35,7 @@ permissions:
 jobs:
   publish:
     name: Publish (${{ matrix.rid }})
+    if: ${{ inputs.rid == '' || inputs.rid == matrix.rid }}
     strategy:
       fail-fast: false
       matrix:
