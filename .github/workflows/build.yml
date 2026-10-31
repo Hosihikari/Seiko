@@ -121,7 +121,7 @@ jobs:
           EOF
           sudo sed -i -e 's/^deb http/deb [arch=amd64] http/' -e 's/^deb mirror/deb [arch=amd64] mirror/' /etc/apt/sources.list
           sudo apt-get update
-          sudo apt-get install -y clang llvm binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf zlib1g-dev:armhf qemu-user-static
+          sudo apt-get install -y clang llvm lld binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf zlib1g-dev:armhf qemu-user-static
       - name: Ensure vswhere on PATH
         if: runner.os == 'Windows'
         shell: pwsh
@@ -141,6 +141,7 @@ jobs:
           -r ${{ matrix.rid }}
           -p:PublishAot=true
           -p:StripSymbols=true
+          ${{ matrix.mode == 'cross-arm-glibc' && '-p:LinkerFlavor=lld' || '' }}
           -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
       - name: Publish MCP server
         if: matrix.mode != 'alpine' && matrix.mode != 'alpine-arm32'
@@ -150,6 +151,7 @@ jobs:
           -r ${{ matrix.rid }}
           -p:PublishAot=true
           -p:StripSymbols=true
+          ${{ matrix.mode == 'cross-arm-glibc' && '-p:LinkerFlavor=lld' || '' }}
           -o "${{ runner.temp }}/publish-${{ matrix.rid }}"
       - name: Publish in Alpine
         if: matrix.mode == 'alpine' || matrix.mode == 'alpine-arm32'
