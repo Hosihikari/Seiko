@@ -99,6 +99,17 @@ public sealed class McpTests
         Assert.NotNull(result["capabilities"]!.AsObject()["tools"]);
     }
 
+    [Fact]
+    public void Initialize_ReportsItsOwnVersionWhenTheClientRequestsAnother()
+    {
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: false);
+        var response = server.Handle(
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01"}}""")!;
+        var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();
+
+        Assert.Equal("2025-06-18", result["protocolVersion"]!.GetValue<string>());
+    }
+
     private static List<string> ToolNames(string response)
     {
         var tools = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject()["tools"]!.AsArray();

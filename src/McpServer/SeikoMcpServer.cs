@@ -81,10 +81,11 @@ public sealed class SeikoMcpServer
 
     private static JsonObject Initialize(JsonObject? parameters)
     {
-        var requested = parameters?["protocolVersion"]?.GetValue<string>();
+        // One supported version: report it whether or not the client asked for
+        // something else, as MCP version negotiation requires.
         return new JsonObject
         {
-            ["protocolVersion"] = string.IsNullOrWhiteSpace(requested) ? ProtocolVersion : requested,
+            ["protocolVersion"] = ProtocolVersion,
             ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
             ["serverInfo"] = new JsonObject { ["name"] = "seiko-mcp", ["version"] = Version },
         };
