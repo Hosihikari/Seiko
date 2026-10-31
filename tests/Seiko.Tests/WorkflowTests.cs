@@ -29,6 +29,27 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Add_DoesNotEditConfigWhenTheRootLockIsHeld()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+        using var held = ProcessLock.Acquire(
+            Path.Combine(fixture.Root, ".seiko", "install.lock"),
+            "test install root");
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory));
+
+        Assert.Equal("lock", error.Code);
+        Assert.Empty(ConfigLoader.Load(fixture.Root).Sei);
+    }
+
+    [Fact]
     public void Sync_CancelledBeforeDeployLeavesRootUntouched()
     {
         using var fixture = new Fixture();

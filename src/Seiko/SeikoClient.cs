@@ -52,6 +52,31 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        return SyncLocked(
+            root,
+            storePath,
+            allowPrerelease,
+            mode,
+            jobs,
+            proxy,
+            progress,
+            log,
+            cancellationToken,
+            updateNames);
+    }
+
+    private SyncResult SyncLocked(
+        string root,
+        string storePath,
+        bool allowPrerelease,
+        SyncMode mode,
+        int jobs,
+        string? proxy,
+        IProgress<SyncProgress>? progress,
+        Action<string>? log,
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? updateNames)
+    {
         Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root);
         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -210,6 +235,12 @@ public sealed class SeikoClient
             throw new SeikoException("add requires a sei name and optional @range", "usage");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         var config = ConfigLoader.Load(root);
         if (config.Components.Any(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)))
         {
@@ -227,16 +258,17 @@ public sealed class SeikoClient
         }
 
         ConfigWriter.WriteSpecs(root, "sei", config.Sei);
-        return Sync(
+        return SyncLocked(
             root,
-            storeRoot,
+            storePath,
             allowPrerelease,
             SyncMode.Normal,
             jobs,
             proxy,
             progress,
             log,
-            cancellationToken);
+            cancellationToken,
+            updateNames: null);
     }
 
     public SyncResult Remove(
@@ -256,6 +288,12 @@ public sealed class SeikoClient
             throw new SeikoException("remove requires a sei name", "usage");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         var config = ConfigLoader.Load(root);
         var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
         var removedComponent = config.Components.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
@@ -274,16 +312,17 @@ public sealed class SeikoClient
             ConfigWriter.WriteSpecs(root, "components", config.Components);
         }
 
-        return Sync(
+        return SyncLocked(
             root,
-            storeRoot,
+            storePath,
             allowPrerelease,
             SyncMode.Normal,
             jobs,
             proxy,
             progress,
             log,
-            cancellationToken);
+            cancellationToken,
+            updateNames: null);
     }
 
     public SyncResult Update(
@@ -299,6 +338,12 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default)
     {
         root = Path.GetFullPath(root);
+        cancellationToken.ThrowIfCancellationRequested();
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        RootRegistry.Register(storePath, root);
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         var config = ConfigLoader.Load(root);
         var targets = new List<SeiSpec>();
         if (string.IsNullOrWhiteSpace(name))
@@ -345,9 +390,9 @@ public sealed class SeikoClient
         var updateNames = targets
             .Select(spec => spec.Name)
             .ToHashSet(StringComparer.Ordinal);
-        return Sync(
+        return SyncLocked(
             root,
-            storeRoot,
+            storePath,
             allowPrerelease,
             SyncMode.Normal,
             jobs,
@@ -413,6 +458,9 @@ public sealed class SeikoClient
             throw new SeikoException("source add requires id and index", "usage");
         }
 
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         var config = ConfigLoader.Load(root, requireSources: false);
         if (config.Sources.Any(source => string.Equals(source.Id, id, StringComparison.Ordinal)))
         {
@@ -438,6 +486,9 @@ public sealed class SeikoClient
     public IReadOnlyList<SourceConfig> SourceRemove(string root, string id)
     {
         root = Path.GetFullPath(root);
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         var config = ConfigLoader.Load(root, requireSources: false);
         var removed = config.Sources.RemoveAll(source => string.Equals(source.Id, id, StringComparison.Ordinal));
         if (removed == 0)
@@ -473,6 +524,9 @@ public sealed class SeikoClient
             throw new SeikoException($"unsupported config key: {key}", "config");
         }
 
+        using var rootLock = ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
         ConfigWriter.WriteRid(root, value);
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
