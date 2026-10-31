@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -97,6 +98,24 @@ public sealed class DeployLinkTests
         Assert.True(File.Exists(storeFile));
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
         Assert.Contains(ReadDigests(fixture).Files, file => file.Path == "hello.txt");
+    }
+
+    [Fact]
+    public void Sync_RepairsMalformedDigestEntries()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var digestPath = DigestPath(fixture);
+        var state = JsonNode.Parse(File.ReadAllText(digestPath))!.AsObject();
+        state["files"] = new JsonArray((JsonNode?)null);
+        File.WriteAllText(digestPath, state.ToJsonString());
+
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Contains(ReadDigests(fixture).Files, file => file.Path == "hello.txt");
+        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]

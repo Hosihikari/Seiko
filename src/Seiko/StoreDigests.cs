@@ -40,10 +40,27 @@ internal static class StoreDigests
             var state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
                 SeikoJsonContext.Default.StoreDigestsState);
-            return state is { SchemaVersion: 1 }
-                && string.Equals(state.Artifact, artifact, StringComparison.Ordinal)
-                    ? state
-                    : null;
+            if (state is not { SchemaVersion: 1 }
+                || !string.Equals(state.Artifact, artifact, StringComparison.Ordinal)
+                || state.Files is null)
+            {
+                return null;
+            }
+
+            var paths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var file in state.Files)
+            {
+                if (file is null
+                    || string.IsNullOrWhiteSpace(file.Path)
+                    || !Hashing.IsSha256(file.Sha256)
+                    || file.Size < 0
+                    || !paths.Add(file.Path))
+                {
+                    return null;
+                }
+            }
+
+            return state;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
