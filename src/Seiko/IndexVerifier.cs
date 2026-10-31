@@ -444,8 +444,11 @@ public static class IndexVerifier
             foreach (var reference in context.Artifacts)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                log?.Invoke(
-                    $"checking {reference.Sei} {reference.Version}: {reference.Artifact.Source.Url}");
+                var url = reference.Artifact.Source.Url;
+                var safe = Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                    ? Urls.Redact(parsed)
+                    : url;
+                log?.Invoke($"checking {reference.Sei} {reference.Version}: {safe}");
                 CheckArtifact(context, reference, client, temp, cancellationToken);
                 checkedCount++;
             }

@@ -89,6 +89,12 @@ internal sealed class TestHttpServer : IDisposable
             var parts = requestLine?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var method = parts?.ElementAtOrDefault(0) ?? "GET";
             var path = parts?.ElementAtOrDefault(1) ?? "/";
+            var queryIndex = path.IndexOf('?');
+            if (queryIndex >= 0)
+            {
+                path = path[..queryIndex];
+            }
+
             if (path == "/")
             {
                 path = "/index.json";

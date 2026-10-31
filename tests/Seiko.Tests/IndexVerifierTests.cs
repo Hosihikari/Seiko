@@ -70,6 +70,23 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_LogRedactsSignedArtifactUrls()
+    {
+        using var fixture = NewFixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        var sei = ReadSei(fixture, "hello");
+        var source = sei.Versions[0].Artifacts[0].Source;
+        source.Url = server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url) + "?sig=REREVIEW_SENTINEL";
+        WriteSei(fixture, "hello", sei);
+        var logs = new List<string>();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true, log: logs.Add);
+
+        Assert.Empty(result.Findings);
+        Assert.DoesNotContain(logs, line => line.Contains("REREVIEW_SENTINEL", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Verify_ReportsMissingAndUnlistedSei()
     {
         using var fixture = NewFixture();
