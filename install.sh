@@ -22,7 +22,7 @@ Options:
   --base-url <url>   Use a custom release asset base URL (advanced).
   -h, --help         Show this help.
 
-Linux must use glibc; Alpine/musl is not supported in this release.
+Linux (glibc or musl) and macOS are supported.
 EOF
 }
 
@@ -80,20 +80,22 @@ uname_m=$(uname -m)
 
 case "$uname_s" in
     Linux)
-        if [ -e /lib/ld-musl-x86_64.so.1 ] || [ -e /lib/ld-musl-aarch64.so.1 ] \
-            || ldd --version 2>&1 | grep -qi musl; then
-            die "musl/Alpine is not supported by this release; use a glibc distribution"
-        fi
         case "$uname_m" in
-            x86_64|amd64) RID=linux-x64 ;;
-            aarch64|arm64) RID=linux-arm64 ;;
+            x86_64|amd64) arch=x64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            armv7l|armv7|armv6l|armv8l|arm) arch=arm ;;
             *) die "unsupported Linux architecture: $uname_m" ;;
         esac
+        if ls /lib/ld-musl-*.so.1 >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; then
+            RID="linux-musl-$arch"
+        else
+            RID="linux-$arch"
+        fi
         ;;
     Darwin)
         case "$uname_m" in
             arm64) RID=osx-arm64 ;;
-            x86_64) die "osx-x64 is not published; use an Apple Silicon Mac" ;;
+            x86_64) RID=osx-x64 ;;
             *) die "unsupported macOS architecture: $uname_m" ;;
         esac
         ;;

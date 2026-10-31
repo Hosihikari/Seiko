@@ -50,11 +50,17 @@ $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_ARCHITEW6
     "ARM64"
 } elseif ($env:PROCESSOR_ARCHITECTURE -eq "AMD64" -or $env:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
     "AMD64"
+} elseif ($env:PROCESSOR_ARCHITECTURE -eq "x86") {
+    if ([Environment]::Is64BitOperatingSystem) { "AMD64" } else { "x86" }
 } else {
     Fail "unsupported Windows architecture: $env:PROCESSOR_ARCHITECTURE"
 }
 
-$rid = if ($arch -eq "ARM64") { "win-arm64" } else { "win-x64" }
+$rid = switch ($arch) {
+    "ARM64" { "win-arm64" }
+    "AMD64" { "win-x64" }
+    "x86" { "win-x86" }
+}
 
 if (-not $Dir) {
     $Dir = Join-Path $env:LOCALAPPDATA "Seiko\bin"

@@ -22,7 +22,7 @@ irm https://github.com/Hosihikari/Seiko/releases/latest/download/install.ps1 | i
 
 The installer selects the latest stable release, verifies it against `SHA256SUMS`, and installs `sk` and `seiko-mcp` to `~/.local/bin` on Unix or `%LOCALAPPDATA%\Seiko\bin` on Windows. It does not modify `PATH` unless `--modify-path` (or `-ModifyPath`) is passed. Use `--version vX.Y.Z` to pin a release, `--dir <path>` for another directory, and `--dry-run` to inspect the plan.
 
-Linux binaries require glibc (Ubuntu 22.04 or newer); musl/Alpine is not supported in this release. The binaries are not code-signed, so a browser download may trigger Gatekeeper or SmartScreen warnings; the installer uses the release assets directly.
+Linux binaries are published for glibc and musl; the glibc builds require Ubuntu 22.04 or newer. The binaries are not code-signed, so a browser download may trigger Gatekeeper or SmartScreen warnings; the installer uses the release assets directly.
 
 Verify a downloaded archive:
 
