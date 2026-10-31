@@ -49,7 +49,8 @@ public static class Deployer
             PathSafety.EnsureNoLinks(root, relative);
         }
 
-        ValidateDesiredTree(root, desired);
+        var managed = new HashSet<string>(state.Files.Keys, StringComparer.Ordinal);
+        ValidateDesiredTree(root, desired, managed);
 
         var mutations = new List<Mutation>();
         foreach (var oldFile in state.Files.Keys)
@@ -284,7 +285,8 @@ public static class Deployer
 
     private static void ValidateDesiredTree(
         string root,
-        IReadOnlyDictionary<string, DesiredFile> desired)
+        IReadOnlyDictionary<string, DesiredFile> desired,
+        IReadOnlySet<string> managed)
     {
         var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var relative in desired.Keys)
@@ -313,7 +315,8 @@ public static class Deployer
                         "deploy");
                 }
 
-                if (File.Exists(Native(root, prefix)))
+                if (File.Exists(Native(root, prefix))
+                    && !(managed.Contains(prefix) && !desired.ContainsKey(prefix)))
                 {
                     throw new SeikoException(
                         $"path conflict: {prefix} is a file but {relative} needs a directory",

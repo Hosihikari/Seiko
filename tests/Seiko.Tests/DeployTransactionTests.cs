@@ -96,6 +96,30 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Sync_UpgradesManagedFileToDirectory()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/data"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.True(Directory.Exists(Path.Combine(fixture.Root, "tool")));
+        Assert.Equal("new", File.ReadAllText(Path.Combine(fixture.Root, "tool", "data")));
+    }
+
+    [Fact]
     public void Sync_CleansUpCreatedDirectoriesOnFailure()
     {
         using var fixture = new Fixture();
