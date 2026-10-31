@@ -29,6 +29,46 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void UpdateLatestUsesTheSameFirstSourceAsResolution()
+    {
+        using var first = new Fixture();
+        first.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        using var second = new Fixture();
+        second.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+        });
+        first.WriteConfig("win-x64", new SpecFixture("hello", "*"));
+        second.WriteConfig("win-x64", new SpecFixture("hello", "*"));
+        var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
+        var secondIndex = Path.Combine(second.SourceDirectory, "index.json").Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(first.Root, "seiko.conf"),
+            $$"""
+            sources = [
+              { id = "first", index = "{{firstIndex}}" },
+              { id = "second", index = "{{secondIndex}}" }
+            ]
+            rid = "win-x64"
+            sei = [
+              { name = "hello", version = "*" }
+            ]
+            """);
+        var client = new SeikoClient();
+        client.Sync(first.Root, first.StoreDirectory);
+
+        client.Update(first.Root, latest: true, storeRoot: first.StoreDirectory);
+
+        Assert.Equal("[1.0.0]", Assert.Single(ConfigLoader.Load(first.Root).Sei).Version);
+        Assert.Equal("1.0.0", Assert.Single(client.ReadLock(first.Root)!.Sei).Version);
+    }
+
+    [Fact]
     public void Add_DoesNotEditConfigWhenTheRootLockIsHeld()
     {
         using var fixture = new Fixture();

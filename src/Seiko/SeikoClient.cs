@@ -408,7 +408,6 @@ public sealed class SeikoClient
         string name,
         bool allowPrerelease)
     {
-        NuGetVersion? best = null;
         foreach (var source in sources)
         {
             var index = source.GetSei(name);
@@ -417,6 +416,7 @@ public sealed class SeikoClient
                 continue;
             }
 
+            NuGetVersion? best = null;
             foreach (var entry in index.Versions)
             {
                 if (entry.Yanked || !NuGetVersion.TryParse(entry.Version, out var version))
@@ -434,9 +434,13 @@ public sealed class SeikoClient
                     best = version;
                 }
             }
+
+            // The resolver takes every version of a name from the first source
+            // that has it, so latest must be chosen from that source too.
+            return best?.ToNormalizedString();
         }
 
-        return best?.ToNormalizedString();
+        return null;
     }
 
     public IReadOnlyList<SourceConfig> ListSources(string root)
