@@ -114,6 +114,13 @@ internal sealed class Fixture : IDisposable
         WriteSei(name);
     }
 
+    public void MarkVersionYanked(string name, string version)
+    {
+        var entry = _indexes[name].Versions.Single(item => item.Version == version);
+        entry.Yanked = true;
+        WriteSei(name);
+    }
+
     public void MarkPackage(string name, bool unlisted, string? deprecated = null)
     {
         var index = _indexes[name];

@@ -29,7 +29,6 @@ public sealed class Resolver
     private readonly IReadOnlySet<string>? _updateNames;
     private readonly bool _latestInstallable;
     private readonly bool _allowCritical;
-    private readonly SortedDictionary<string, SortedSet<string>> _skippedYanked = new(StringComparer.Ordinal);
     private readonly SortedDictionary<string, SortedSet<string>> _skippedCritical = new(StringComparer.Ordinal);
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
@@ -67,11 +66,6 @@ public sealed class Resolver
     private List<string> SkippedWarnings()
     {
         var warnings = new List<string>();
-        foreach (var (name, versions) in _skippedYanked)
-        {
-            warnings.Add($"skipped yanked version(s) of {name}: {string.Join(", ", versions)}");
-        }
-
         foreach (var (name, versions) in _skippedCritical)
         {
             warnings.Add(
@@ -278,7 +272,6 @@ public sealed class Resolver
 
             if (entry.Yanked && !(lockedVersion is not null && version.Equals(lockedVersion)))
             {
-                AddSkipped(_skippedYanked, name, entry.Version);
                 if (Retirement.IsCritical(entry))
                 {
                     AddSkipped(_skippedCritical, name, AdvisoryLabel(entry, entry.Version));

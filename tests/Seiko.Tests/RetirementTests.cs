@@ -61,7 +61,7 @@ public sealed class RetirementTests
     }
 
     [Fact]
-    public void Sync_ReportsSkippedYankedVersion()
+    public void Sync_SkipsYankedVersionSilently()
     {
         using var fixture = new Fixture();
         fixture.AddSei(
@@ -82,8 +82,28 @@ public sealed class RetirementTests
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("2.0.0", Assert.Single(result.Lock.Sei).Version);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void Frozen_ReplaysYankedVersionAndWarns()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.MarkVersionYanked("hello", "1.0.0");
+
+        var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+
+        Assert.Equal("1.0.0", Assert.Single(result.Lock.Sei).Version);
         Assert.Contains(result.Warnings, warning =>
-            warning.Contains("skipped yanked version(s) of hello: 1.0.0", StringComparison.Ordinal));
+            warning.Contains("hello 1.0.0 is yanked", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -164,7 +184,7 @@ public sealed class RetirementTests
     }
 
     [Fact]
-    public void Sync_ReportsEmptyYankedSelectionAsResolutionFailure()
+    public void Sync_EmptyYankedSelectionFailsWithoutYankedWarning()
     {
         using var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
@@ -179,6 +199,6 @@ public sealed class RetirementTests
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
         Assert.Equal("resolve", error.Code);
-        Assert.Contains("skipped yanked version(s) of hello: 1.0.0", error.Message);
+        Assert.DoesNotContain("yanked", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
