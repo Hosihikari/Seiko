@@ -629,6 +629,16 @@ public static class IndexVerifier
                     continue;
                 }
 
+                if (name.Length > ArchiveLimits.MaxEntryNameLength
+                    || name.Count(character => character == '/') + 1 > ArchiveLimits.MaxEntryNameDepth)
+                {
+                    context.Error(
+                        "artifact-path",
+                        $"sei '{reference.Sei}' {reference.Version}: archive path is too long or too deep",
+                        reference.Path);
+                    return;
+                }
+
                 if (name.Split('/').Any(segment => segment == "..")
                     || name.StartsWith('/')
                     || (name.Length >= 2 && name[1] == ':'))
@@ -650,18 +660,16 @@ public static class IndexVerifier
                 }
             }
 
+            var nameLookup = seenNames.GetAlternateLookup<ReadOnlySpan<char>>();
             foreach (var name in seenNames)
             {
-                var parts = name.Split('/');
-                var ancestor = "";
-                for (var i = 0; i < parts.Length - 1; i++)
+                for (var i = 0; i < name.Length; i++)
                 {
-                    ancestor = ancestor.Length == 0 ? parts[i] : $"{ancestor}/{parts[i]}";
-                    if (seenNames.Contains(ancestor))
+                    if (name[i] == '/' && nameLookup.Contains(name.AsSpan(0, i)))
                     {
                         context.Error(
                             "artifact-path",
-                            $"sei '{reference.Sei}' {reference.Version}: archive path '{ancestor}' is both a file and a directory of '{name}'",
+                            $"sei '{reference.Sei}' {reference.Version}: archive path '{name[..i]}' is both a file and a directory of '{name}'",
                             reference.Path);
                         return;
                     }

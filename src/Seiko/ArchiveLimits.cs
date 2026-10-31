@@ -5,6 +5,8 @@ internal static class ArchiveLimits
     public const int MaxEntries = 100_000;
     public const long MaxEntryBytes = 1L << 30;
     public const long MaxTotalBytes = 4L << 30;
+    public const int MaxEntryNameLength = 4096;
+    public const int MaxEntryNameDepth = 512;
 
     public static void EnsureEntryCount(int count)
     {

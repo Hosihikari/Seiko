@@ -95,6 +95,53 @@ public sealed class IndexVerifierTests
         Assert.Contains(result.Findings, finding => finding.Code == "artifact-duplicate");
     }
 
+    [Fact]
+    public void Verify_RejectsOverlongArchivePaths()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [new string('a', ArchiveLimits.MaxEntryNameLength + 1)] = "x" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
+    public void Verify_RejectsTooDeepArchivePaths()
+    {
+        using var fixture = new Fixture();
+        var directory = string.Join(
+            '/',
+            Enumerable.Repeat("a", ArchiveLimits.MaxEntryNameDepth));
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [directory + "/x"] = "x" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
