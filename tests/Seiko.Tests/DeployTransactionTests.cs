@@ -156,6 +156,37 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Rollback_RejectsUnmanagedEmptyDirectoriesInConvertedDirectory()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var nested = Path.Combine(fixture.Root, "tool", "user-empty", "nested");
+        Directory.CreateDirectory(nested);
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.True(Directory.Exists(nested));
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "tool", "x")));
+    }
+
+    [Fact]
     public void Sync_DowngradesDirectoryToFile()
     {
         using var fixture = new Fixture();

@@ -364,6 +364,29 @@ public static class Deployer
         IReadOnlySet<string> managed,
         IReadOnlyDictionary<string, DesiredFile> desired)
     {
+        var allowedDirectories = new HashSet<string>(StringComparer.Ordinal) { relative };
+        var prefix = relative + "/";
+        foreach (var managedPath in managed)
+        {
+            if (!managedPath.StartsWith(prefix, StringComparison.Ordinal)
+                || desired.ContainsKey(managedPath))
+            {
+                continue;
+            }
+
+            var slash = managedPath.LastIndexOf('/');
+            while (slash > relative.Length)
+            {
+                var directory = managedPath[..slash];
+                if (!allowedDirectories.Add(directory))
+                {
+                    break;
+                }
+
+                slash = directory.LastIndexOf('/');
+            }
+        }
+
         var pending = new Stack<string>();
         pending.Push(destination);
         while (pending.Count > 0)
@@ -379,13 +402,20 @@ public static class Deployer
                         "deploy");
                 }
 
+                var child = Path.GetRelativePath(root, entry).Replace('\\', '/');
                 if ((attributes & FileAttributes.Directory) != 0)
                 {
+                    if (!allowedDirectories.Contains(child))
+                    {
+                        throw new SeikoException(
+                            $"path conflict: {relative} is a directory containing unmanaged directory {child}",
+                            "deploy");
+                    }
+
                     pending.Push(entry);
                     continue;
                 }
 
-                var child = Path.GetRelativePath(root, entry).Replace('\\', '/');
                 if (!managed.Contains(child) || desired.ContainsKey(child))
                 {
                     throw new SeikoException(
