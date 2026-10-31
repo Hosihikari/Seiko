@@ -77,6 +77,41 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void ToolArguments_RejectWrongValueTypes()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(root, allowMutations: true);
+
+            var frozen = CallTool(
+                server,
+                "sync",
+                new JsonObject { ["root"] = root, ["frozen"] = "true" });
+            Assert.True(frozen["isError"]!.GetValue<bool>());
+            Assert.Contains("frozen must be a boolean", ToolText(frozen));
+
+            var jobs = CallTool(
+                server,
+                "add",
+                new JsonObject { ["root"] = root, ["spec"] = "hello", ["jobs"] = "4" });
+            Assert.True(jobs["isError"]!.GetValue<bool>());
+            Assert.Contains("jobs must be an integer", ToolText(jobs));
+
+            var readOnly = CallTool(
+                server,
+                "list",
+                new JsonObject { ["root"] = 123 });
+            Assert.True(readOnly["isError"]!.GetValue<bool>());
+            Assert.Contains("root must be a string", ToolText(readOnly));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void MutationTool_RequiresExplicitRoot()
     {
         var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);

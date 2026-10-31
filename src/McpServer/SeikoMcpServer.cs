@@ -596,24 +596,78 @@ public sealed class SeikoMcpServer
         => OptionalString(arguments, name) ?? throw new SeikoException($"{name} is required");
 
     private static string? OptionalString(JsonObject arguments, string name)
-        => arguments[name] is JsonValue value && value.TryGetValue<string>(out var text) && !string.IsNullOrWhiteSpace(text)
-            ? text
-            : null;
+    {
+        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value && value.TryGetValue<string>(out var text))
+        {
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+
+        throw new SeikoException($"{name} must be a string");
+    }
 
     private static bool Bool(JsonObject arguments, string name)
-        => arguments[name] is JsonValue value && value.TryGetValue<bool>(out var result) && result;
+    {
+        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        {
+            return false;
+        }
+
+        if (node is JsonValue value && value.TryGetValue<bool>(out var result))
+        {
+            return result;
+        }
+
+        throw new SeikoException($"{name} must be a boolean");
+    }
 
     private static int? Int(JsonObject arguments, string name)
-        => arguments[name] is JsonValue value && value.TryGetValue<int>(out var result) ? result : null;
+    {
+        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value && value.TryGetValue<int>(out var result))
+        {
+            return result;
+        }
+
+        throw new SeikoException($"{name} must be an integer");
+    }
 
     private static IReadOnlyList<string>? StringArray(JsonObject arguments, string name)
-        => arguments[name] is JsonArray array
-            ? array
-                .Select(item => item is JsonValue value && value.TryGetValue<string>(out var text) ? text : null)
-                .Where(text => !string.IsNullOrWhiteSpace(text))
-                .Select(text => text!.Trim())
-                .ToList()
-            : null;
+    {
+        if (!arguments.TryGetPropertyValue(name, out var node) || node is null)
+        {
+            return null;
+        }
+
+        if (node is not JsonArray array)
+        {
+            throw new SeikoException($"{name} must be an array of strings");
+        }
+
+        var result = new List<string>();
+        foreach (var item in array)
+        {
+            if (item is not JsonValue value || !value.TryGetValue<string>(out var text))
+            {
+                throw new SeikoException($"{name} must be an array of strings");
+            }
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                result.Add(text.Trim());
+            }
+        }
+
+        return result;
+    }
 
     private static JsonObject? SelectorsNode(Dictionary<string, string>? selectors)
     {
