@@ -86,6 +86,36 @@ public sealed class SyncModeTests
     }
 
     [Fact]
+    public void Sync_FrozenRejectsAnIncompleteLockGraph()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("dep", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
+        });
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("dep", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        var lockFile = LockFile.Read(lockPath)!;
+        lockFile.Sei.RemoveAll(entry => entry.Name == "dep");
+        LockFile.Write(lockPath, lockFile);
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+
+        Assert.Equal("lock", error.Code);
+        Assert.Contains("missing from the lock", error.Message);
+    }
+
+    [Fact]
     public void Sync_FrozenMatchesNonCanonicalIndexVersions()
     {
         using var fixture = new Fixture();

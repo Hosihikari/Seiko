@@ -9,6 +9,7 @@ public static class LockReplay
         SeikoLock lockFile,
         IReadOnlyList<SeiSpec> specs)
     {
+        ValidateGraph(lockFile);
         var declared = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
@@ -92,6 +93,71 @@ public static class LockReplay
         }
 
         return result;
+    }
+
+    private static void ValidateGraph(SeikoLock lockFile)
+    {
+        var byName = new Dictionary<string, LockedSei>(StringComparer.Ordinal);
+        foreach (var locked in lockFile.Sei)
+        {
+            if (!byName.TryAdd(locked.Name, locked))
+            {
+                throw Fail($"--frozen: duplicate lock entry for {locked.Name}");
+            }
+        }
+
+        foreach (var locked in lockFile.Sei)
+        {
+            foreach (var dependency in locked.Dependencies)
+            {
+                if (string.Equals(dependency.Name, locked.Name, StringComparison.Ordinal))
+                {
+                    throw Fail($"--frozen: {locked.Name} depends on itself");
+                }
+
+                if (!byName.TryGetValue(dependency.Name, out var dependencyLocked))
+                {
+                    throw Fail(
+                        $"--frozen: {locked.Name} requires {dependency.Name}, which is missing from the lock");
+                }
+
+                var range = ParseRange(dependency.Version, dependency.Name);
+                if (!NuGetVersion.TryParse(dependencyLocked.Version, out var dependencyVersion)
+                    || !range.Satisfies(dependencyVersion))
+                {
+                    throw Fail(
+                        $"--frozen: {locked.Name} requires {dependency.Name} {dependency.Version}, but the lock has {dependencyLocked.Version}");
+                }
+            }
+        }
+
+        var reachable = new HashSet<string>(StringComparer.Ordinal);
+        void Visit(string name)
+        {
+            if (!reachable.Add(name))
+            {
+                return;
+            }
+
+            foreach (var dependency in byName[name].Dependencies)
+            {
+                Visit(dependency.Name);
+            }
+        }
+
+        foreach (var direct in lockFile.Sei.Where(entry => entry.Direct))
+        {
+            Visit(direct.Name);
+        }
+
+        foreach (var locked in lockFile.Sei)
+        {
+            if (!reachable.Contains(locked.Name))
+            {
+                throw Fail(
+                    $"--frozen: {locked.Name} is not reachable from the direct declarations");
+            }
+        }
     }
 
     public static string? Compare(SeikoLock existing, SeikoLock resolved)
