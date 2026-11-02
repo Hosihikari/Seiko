@@ -308,12 +308,18 @@ public sealed class SeikoClient
         var addNames = additions.Select(addition => addition.Name).ToHashSet(StringComparer.Ordinal);
         var removedNames = removals.ToHashSet(StringComparer.Ordinal);
 
+        var defaultRangeTargets = new List<SeiSpec>();
         foreach (var addition in additions)
         {
             var existing = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, addition.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                config.Sei.Add(new SeiSpec { Name = addition.Name, Version = addition.Version });
+                var spec = new SeiSpec { Name = addition.Name, Version = addition.Version };
+                config.Sei.Add(spec);
+                if (addition.Version is null)
+                {
+                    defaultRangeTargets.Add(spec);
+                }
             }
             else if (addition.Version is not null)
             {
@@ -335,7 +341,7 @@ public sealed class SeikoClient
         }
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
-        if (existingLock is not null && removedNames.Count > 0)
+        if (defaultRangeTargets.Count > 0 || (existingLock is not null && removedNames.Count > 0))
         {
             using var session = new DownloadSession(jobs, cancellationToken);
             var sources = LoadSources(config, root, proxy, session);
@@ -349,7 +355,18 @@ public sealed class SeikoClient
                 updateNames: null,
                 latestInstallable,
                 allowCritical).Resolve(config.Sei);
-            EnsureRemoveKeepsSelections(existingLock, resolved, removedNames, addNames);
+
+            foreach (var target in defaultRangeTargets)
+            {
+                var selected = resolved.FirstOrDefault(sei => string.Equals(sei.Name, target.Name, StringComparison.Ordinal))
+                    ?? throw new SeikoException($"no resolved version for {target.Name}", "resolve");
+                target.Version = DefaultAddRange(selected.ParsedVersion);
+            }
+
+            if (existingLock is not null && removedNames.Count > 0)
+            {
+                EnsureRemoveKeepsSelections(existingLock, resolved, removedNames, addNames);
+            }
         }
 
         ConfigWriter.WriteSpecs(root, "sei", config.Sei);
@@ -366,6 +383,14 @@ public sealed class SeikoClient
             updateNames: null,
             latestInstallable,
             allowCritical);
+    }
+
+    private static string DefaultAddRange(NuGetVersion version)
+    {
+        var lower = version.ToNormalizedString();
+        return version.Major == 0
+            ? $"[{lower},0.{version.Minor + 1}.0)"
+            : $"[{lower},{version.Major + 1}.0.0)";
     }
 
     private static SeiSpec ParseAddSpecification(string specification)
