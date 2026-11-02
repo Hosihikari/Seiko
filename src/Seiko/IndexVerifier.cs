@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using NuGet.Versioning;
 
@@ -665,6 +666,7 @@ public static class IndexVerifier
 
             var declaredTotal = 0L;
             var seenNames = new HashSet<string>(StringComparer.Ordinal);
+            var collisionNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in archive.Entries)
             {
                 declaredTotal += entry.Length;
@@ -712,18 +714,35 @@ public static class IndexVerifier
                         reference.Path);
                     return;
                 }
+
+                var collisionKey = name.Normalize(NormalizationForm.FormC);
+                if (collisionNames.TryGetValue(collisionKey, out var other))
+                {
+                    context.Error(
+                        "artifact-path",
+                        $"sei '{reference.Sei}' {reference.Version}: archive paths '{other}' and '{name}' differ only by case or Unicode normalization",
+                        reference.Path);
+                    return;
+                }
+
+                collisionNames[collisionKey] = name;
             }
 
-            var nameLookup = seenNames.GetAlternateLookup<ReadOnlySpan<char>>();
             foreach (var name in seenNames)
             {
                 for (var i = 0; i < name.Length; i++)
                 {
-                    if (name[i] == '/' && nameLookup.Contains(name.AsSpan(0, i)))
+                    if (name[i] != '/')
+                    {
+                        continue;
+                    }
+
+                    var ancestor = name[..i].Normalize(NormalizationForm.FormC);
+                    if (collisionNames.TryGetValue(ancestor, out var file))
                     {
                         context.Error(
                             "artifact-path",
-                            $"sei '{reference.Sei}' {reference.Version}: archive path '{name[..i]}' is both a file and a directory of '{name}'",
+                            $"sei '{reference.Sei}' {reference.Version}: archive path '{file}' is both a file and a directory of '{name}'",
                             reference.Path);
                         return;
                     }

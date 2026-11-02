@@ -96,6 +96,84 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsCaseEquivalentArchivePaths()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["A.txt"] = "a",
+                        ["a.txt"] = "b",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
+    public void Verify_RejectsNormalizationEquivalentArchivePaths()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["é.txt"] = "a",
+                        ["é.txt"] = "b",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
+    public void Verify_RejectsCaseEquivalentFileAndDirectoryPrefixes()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["Tool"] = "a",
+                        ["tool/data"] = "b",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
     public void Verify_RejectsOverlongArchivePaths()
     {
         using var fixture = new Fixture();
