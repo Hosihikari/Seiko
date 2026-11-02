@@ -846,6 +846,8 @@ static int CacheStatusCommand(string? store, bool json)
     Console.WriteLine($"artifacts: {status.Artifacts}");
     Console.WriteLine($"bytes: {status.Bytes}");
     Console.WriteLine($"partials: {status.PartialItems}");
+    Console.WriteLine($"staging: {status.StagingItems}");
+    Console.WriteLine($"staging bytes: {status.StagingBytes}");
     return 0;
 }
 

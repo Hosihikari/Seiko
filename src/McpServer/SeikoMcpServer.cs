@@ -357,6 +357,8 @@ public sealed class SeikoMcpServer
             ["artifacts"] = status.Artifacts,
             ["bytes"] = status.Bytes,
             ["partialItems"] = status.PartialItems,
+            ["stagingItems"] = status.StagingItems,
+            ["stagingBytes"] = status.StagingBytes,
         }.ToJsonString();
     }
 

@@ -385,6 +385,93 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Cache_ReportsAndRemovesInterruptedExtractions()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
+        var staging = Path.Combine(
+            fixture.StoreDirectory,
+            digest + ".tmp-" + new string('a', 32));
+        Directory.CreateDirectory(staging);
+        File.WriteAllText(Path.Combine(staging, "payload.bin"), "leftover");
+
+        var status = client.CacheStatus(fixture.StoreDirectory);
+        Assert.Equal(1, status.StagingItems);
+        Assert.Equal(8, status.StagingBytes);
+        Assert.Contains(
+            client.CacheVerify(fixture.StoreDirectory),
+            finding => finding.Code == "cache-staging");
+
+        var clean = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(1, clean.Removed);
+        Assert.False(Directory.Exists(staging));
+        Assert.Equal(0, client.CacheStatus(fixture.StoreDirectory).StagingItems);
+    }
+
+    [Fact]
+    public void CacheClean_SkipsAnActivelyExtractedStagingDirectory()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
+        var staging = Path.Combine(
+            fixture.StoreDirectory,
+            digest + ".tmp-" + new string('b', 32));
+        Directory.CreateDirectory(staging);
+        using var held = ProcessLock.Acquire(
+            Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
+            "test extraction");
+
+        var clean = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(0, clean.Removed);
+        Assert.True(Directory.Exists(staging));
+    }
+
+    [Fact]
+    public void Doctor_ReportsAndRemovesInterruptedExtractions()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
+        var staging = Path.Combine(
+            fixture.StoreDirectory,
+            digest + ".tmp-" + new string('c', 32));
+        Directory.CreateDirectory(staging);
+
+        var reported = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+        Assert.Contains(reported.Findings, finding => finding.Code == "staging");
+
+        var cleaned = new Doctor().Run(fixture.Root, fixture.StoreDirectory, clean: true);
+
+        Assert.False(Directory.Exists(staging));
+        Assert.Equal(1, cleaned.CleanCount);
+    }
+
+    [Fact]
     public void CacheClean_ProtectsAllRegisteredRoots()
     {
         using var first = new Fixture();

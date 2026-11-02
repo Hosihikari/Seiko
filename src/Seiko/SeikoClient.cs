@@ -27,7 +27,12 @@ public sealed record OutdatedSei(
     string Latest,
     string? LatestInstallable);
 
-public sealed record CacheStatusInfo(int Artifacts, long Bytes, int PartialItems);
+public sealed record CacheStatusInfo(
+    int Artifacts,
+    long Bytes,
+    int PartialItems,
+    int StagingItems,
+    long StagingBytes);
 
 public sealed record CacheFinding(string Severity, string Code, string Message, string? Path);
 
@@ -582,7 +587,7 @@ public sealed class SeikoClient
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         if (!Directory.Exists(storePath))
         {
-            return new CacheStatusInfo(0, 0, 0);
+            return new CacheStatusInfo(0, 0, 0, 0, 0);
         }
 
         var artifacts = 0;
@@ -593,11 +598,13 @@ public sealed class SeikoClient
             bytes += DirectorySize(directory);
         }
 
+        var staging = StoreStaging.Enumerate(storePath).ToList();
+        var stagingBytes = staging.Sum(DirectorySize);
         var partialRoot = Path.Combine(storePath, ".partial");
         var partials = Directory.Exists(partialRoot)
             ? Directory.EnumerateFileSystemEntries(partialRoot).Count()
             : 0;
-        return new CacheStatusInfo(artifacts, bytes, partials);
+        return new CacheStatusInfo(artifacts, bytes, partials, staging.Count, stagingBytes);
     }
 
     public IReadOnlyList<CacheFinding> CacheVerify(string? storeRoot = null)
@@ -635,6 +642,26 @@ public sealed class SeikoClient
             }
 
             VerifyArtifactFiles(storePath, artifact, directory, findings);
+        }
+
+        foreach (var staging in StoreStaging.Enumerate(storePath))
+        {
+            if (!StoreStaging.IsStagingName(Path.GetFileName(staging), out var artifact))
+            {
+                continue;
+            }
+
+            using var artifactLock = StoreStaging.TryLock(storePath, artifact);
+            if (artifactLock is null)
+            {
+                continue;
+            }
+
+            findings.Add(new CacheFinding(
+                "warning",
+                "cache-staging",
+                "incomplete extraction; run `sk cache clean`",
+                staging));
         }
 
         return findings;
@@ -796,6 +823,27 @@ public sealed class SeikoClient
                 catch (UnauthorizedAccessException ex)
                 {
                     throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+                }
+            }
+
+            foreach (var staging in StoreStaging.Enumerate(storePath))
+            {
+                var size = DirectorySize(staging);
+                try
+                {
+                    if (StoreStaging.TryDelete(storePath, staging))
+                    {
+                        bytes += size;
+                        removed++;
+                    }
+                }
+                catch (IOException ex)
+                {
+                    throw new SeikoException($"could not remove {staging}: {ex.Message}", "io", ex);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    throw new SeikoException($"could not remove {staging}: {ex.Message}", "io", ex);
                 }
             }
 

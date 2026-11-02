@@ -33,8 +33,8 @@ public sealed class Doctor
         CheckDeployment(root, lockFile, findings);
         CheckTransaction(root, findings);
         var cleanCount = clean
-            ? CleanPartials(storePath, findings)
-            : ReportPartials(storePath, findings);
+            ? CleanLeftovers(storePath, findings)
+            : ReportLeftovers(storePath, findings);
         return new DoctorResult(findings, cleanCount);
     }
 
@@ -265,24 +265,79 @@ public sealed class Doctor
         }
     }
 
-    private static int ReportPartials(string storePath, List<DoctorFinding> findings)
+    private static int ReportLeftovers(string storePath, List<DoctorFinding> findings)
     {
         var partialRoot = Path.Combine(storePath, ".partial");
-        if (!Directory.Exists(partialRoot))
+        if (Directory.Exists(partialRoot))
         {
-            return 0;
+            var count = Directory.EnumerateFileSystemEntries(partialRoot).Count();
+            if (count > 0)
+            {
+                findings.Add(Warning(
+                    "partial",
+                    $"{count} partial download item(s); run `sk doctor --clean`",
+                    partialRoot));
+            }
         }
 
-        var count = Directory.EnumerateFileSystemEntries(partialRoot).Count();
-        if (count > 0)
+        var staging = CountStaleStaging(storePath);
+        if (staging > 0)
         {
             findings.Add(Warning(
-                "partial",
-                $"{count} partial download item(s); run `sk doctor --clean`",
-                partialRoot));
+                "staging",
+                $"{staging} interrupted extraction(s); run `sk doctor --clean`",
+                storePath));
         }
 
         return 0;
+    }
+
+    private static int CleanLeftovers(string storePath, List<DoctorFinding> findings)
+    {
+        var count = CleanPartials(storePath, findings);
+        foreach (var staging in StoreStaging.Enumerate(storePath))
+        {
+            try
+            {
+                if (StoreStaging.TryDelete(storePath, staging))
+                {
+                    count++;
+                }
+                else if (Directory.Exists(staging))
+                {
+                    findings.Add(Warning(
+                        "staging-in-use",
+                        "interrupted extraction is in use by another process; skipped",
+                        staging));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                findings.Add(Error("io", ex.Message, staging));
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountStaleStaging(string storePath)
+    {
+        var count = 0;
+        foreach (var staging in StoreStaging.Enumerate(storePath))
+        {
+            if (!StoreStaging.IsStagingName(Path.GetFileName(staging), out var artifact))
+            {
+                continue;
+            }
+
+            using var artifactLock = StoreStaging.TryLock(storePath, artifact);
+            if (artifactLock is not null)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static int CleanPartials(string storePath, List<DoctorFinding> findings)
