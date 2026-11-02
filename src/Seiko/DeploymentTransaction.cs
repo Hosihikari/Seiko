@@ -78,7 +78,7 @@ internal sealed class DeploymentTransaction
             entry.UnixMode = GetMode(fullPath);
             var backup = Resolve(_backupDirectory, normalized);
             Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-            File.Copy(fullPath, backup, overwrite: true);
+            ReadableFile.Copy(fullPath, backup, overwrite: true);
         }
         else
         {
@@ -98,6 +98,25 @@ internal sealed class DeploymentTransaction
             _journal.TemporaryPaths.Add(normalized);
             WriteCreatedMarker(_ownershipDirectory, "temporary", normalized, null);
         }
+    }
+
+    public void Detach(string relative)
+    {
+        var normalized = Normalize(relative);
+        var destination = Resolve(_root, normalized);
+        if (!File.Exists(destination))
+        {
+            return;
+        }
+
+        var relativeTemporary = RestoreTemporaryName(_root, normalized);
+        WriteCreatedMarker(_ownershipDirectory, "temporary", relativeTemporary, null);
+        _journal.TemporaryPaths ??= [];
+        _journal.TemporaryPaths.Add(relativeTemporary);
+        WriteJournalFile(_journalPath, _journal);
+        var temporary = Resolve(_root, relativeTemporary);
+        ReadableFile.Copy(destination, temporary, overwrite: false);
+        File.Move(temporary, destination, overwrite: true);
     }
 
     public void SetNewGeneration(string relative)
@@ -355,36 +374,7 @@ internal sealed class DeploymentTransaction
     }
 
     private static bool MatchesCreatedDigest(string path, string expected)
-    {
-        UnixFileMode? original = null;
-        if (!OperatingSystem.IsWindows())
-        {
-            original = File.GetUnixFileMode(path);
-            if ((original.Value & UnixFileMode.UserRead) == 0)
-            {
-                File.SetUnixFileMode(path, original.Value | UnixFileMode.UserRead);
-            }
-        }
-
-        try
-        {
-            return string.Equals(Hashing.Sha256File(path), expected, StringComparison.Ordinal);
-        }
-        finally
-        {
-            if (original is { } mode && !OperatingSystem.IsWindows())
-            {
-                try
-                {
-                    File.SetUnixFileMode(path, mode);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    // A failed mode restore must not hide the digest result.
-                }
-            }
-        }
-    }
+        => string.Equals(Hashing.Sha256File(path), expected, StringComparison.Ordinal);
 
     private static bool IsNewGeneration(string backupDirectory, string relative)
     {
@@ -594,13 +584,7 @@ internal sealed class DeploymentTransaction
 
     private static void CreateRestoreTemporary(string temporary, string backup)
     {
-        using var output = new FileStream(
-            temporary,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None);
-        using var input = File.OpenRead(backup);
-        input.CopyTo(output);
+        ReadableFile.Copy(backup, temporary, overwrite: false);
     }
 
     internal static void RemoveEmptyDirectories(string path)

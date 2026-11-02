@@ -203,7 +203,10 @@ public static class Deployer
                 var temp = Native(root, temporaryPaths[mutation.RelativePath]);
                 try
                 {
-                    FileLink.Create(mutation.File.SourcePath, temp);
+                    FileLink.Create(
+                        mutation.File.SourcePath,
+                        temp,
+                        allowHardlink: !modes.ContainsKey(mutation.RelativePath));
                     File.Move(temp, destination, overwrite: true);
                 }
                 finally
@@ -219,6 +222,14 @@ public static class Deployer
 
             foreach (var relative in modes.Keys.OrderBy(key => key, StringComparer.Ordinal))
             {
+                if (modeChanges.Contains(relative))
+                {
+                    // A mode-only change must not chmod a hardlink shared with
+                    // the store; replace the deployed entry with an independent
+                    // copy first.
+                    transaction.Detach(relative);
+                }
+
                 ApplyMode(Native(root, relative), relative, modes[relative]);
             }
 

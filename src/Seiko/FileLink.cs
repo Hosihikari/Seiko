@@ -17,14 +17,17 @@ internal static class FileLink
 {
     private const nuint FicLone = 0x40049409;
 
-    public static LinkKind Create(string source, string destination)
+    public static LinkKind Create(
+        string source,
+        string destination,
+        bool allowHardlink = true)
     {
         if (TryReflink(source, destination))
         {
             return LinkKind.Reflink;
         }
 
-        if (TryHardLink(source, destination))
+        if (allowHardlink && TryHardLink(source, destination))
         {
             return LinkKind.Hardlink;
         }

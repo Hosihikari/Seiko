@@ -29,6 +29,167 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void Sync_RepeatsWithAnUnreadableMode()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
+    public void Sync_KeepsStoreModesIndependentFromDeployedModes()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var storeFile = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
+        Assert.NotEqual(UnixFileMode.None, File.GetUnixFileMode(storeFile));
+    }
+
+    [Fact]
+    public void Sync_RestoresAnUnreadableModeAfterFailure()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "old" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "new" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        try
+        {
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    throw new IOException("injected deployment failure");
+                }
+            };
+            Assert.Throws<IOException>(
+                () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        var deployed = Path.Combine(fixture.Root, "hello.txt");
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(deployed));
+        File.SetUnixFileMode(deployed, UnixFileMode.UserRead);
+        Assert.Equal("old", File.ReadAllText(deployed));
+    }
+
+    [Fact]
+    public void Sync_DetachesModeOnlyHardlinksFromTheStore()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var oldStore = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
+        var oldMode = File.GetUnixFileMode(oldStore);
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(oldMode, File.GetUnixFileMode(oldStore));
+        var newStore = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
+        Assert.NotEqual(UnixFileMode.None, File.GetUnixFileMode(newStore));
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void Sync_WritesStoreDigests()
     {
         using var fixture = NewFixture();
