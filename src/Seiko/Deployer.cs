@@ -83,7 +83,7 @@ public static class Deployer
             .Where(mutation => mutation.File is not null)
             .ToDictionary(
                 mutation => mutation.RelativePath,
-                mutation => mutation.RelativePath + ".seiko-tmp-" + Guid.NewGuid().ToString("N"),
+                mutation => DeploymentTemporaryName(mutation.RelativePath),
                 StringComparer.Ordinal);
 
         var modes = new Dictionary<string, UnixFileMode>(StringComparer.Ordinal);
@@ -259,6 +259,15 @@ public static class Deployer
 
         PruneGenerations(stateDirectory, newState.Generation);
         return new DeployResult { FileCount = desired.Count };
+    }
+
+    // A fixed-length leaf avoids exceeding a filesystem component limit when
+    // the destination basename is already long.
+    private static string DeploymentTemporaryName(string relative)
+    {
+        var slash = relative.LastIndexOf('/');
+        var directory = slash < 0 ? "" : relative[..(slash + 1)];
+        return directory + ".seiko-tmp-" + Guid.NewGuid().ToString("N");
     }
 
     private static Dictionary<string, DesiredFile> BuildDesired(IReadOnlyList<DeployedSei> sei)

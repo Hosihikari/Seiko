@@ -494,22 +494,16 @@ internal sealed class DeploymentTransaction
     }
 
     private static bool IsDeploymentTemporary(string relative, HashSet<string> entries)
-    {
-        const string marker = ".seiko-tmp-";
-        var index = relative.LastIndexOf(marker, StringComparison.Ordinal);
-        if (index <= 0
-            || relative.Length != index + marker.Length + 32
-            || !Hashing.IsLowerHex(relative.AsSpan(index + marker.Length)))
-        {
-            return false;
-        }
-
-        return entries.Contains(relative[..index]);
-    }
+        => HasTemporaryLeaf(relative, entries, ".seiko-tmp-");
 
     private static bool IsRestoreTemporary(string relative, HashSet<string> entries)
+        => HasTemporaryLeaf(relative, entries, ".seiko-restore-");
+
+    private static bool HasTemporaryLeaf(
+        string relative,
+        HashSet<string> entries,
+        string prefix)
     {
-        const string prefix = ".seiko-restore-";
         var slash = relative.LastIndexOf('/');
         var leaf = slash < 0 ? relative : relative[(slash + 1)..];
         if (!leaf.StartsWith(prefix, StringComparison.Ordinal)

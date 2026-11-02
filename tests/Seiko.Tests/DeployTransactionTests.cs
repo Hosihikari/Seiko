@@ -359,7 +359,7 @@ public sealed class DeployTransactionTests
         var stateDirectory = Path.Combine(root, ".seiko");
         Directory.CreateDirectory(stateDirectory);
         var tool = Path.Combine(root, "tool");
-        var temporary = "x.seiko-tmp-" + new string('a', 32);
+        var temporary = ".seiko-tmp-" + new string('a', 32);
         File.WriteAllText(tool, "old");
 
         var transaction = DeploymentTransaction.Begin(root, stateDirectory);
@@ -387,7 +387,7 @@ public sealed class DeployTransactionTests
         var stateDirectory = Path.Combine(root, ".seiko");
         Directory.CreateDirectory(stateDirectory);
         var tool = Path.Combine(root, "tool");
-        var temporary = "x.seiko-tmp-" + new string('a', 32);
+        var temporary = ".seiko-tmp-" + new string('a', 32);
         File.WriteAllText(tool, "old");
 
         var transaction = DeploymentTransaction.Begin(root, stateDirectory);
@@ -800,12 +800,12 @@ public sealed class DeployTransactionTests
         var root = fixture.Root;
         var stateDirectory = Path.Combine(root, ".seiko");
         Directory.CreateDirectory(stateDirectory);
-        var temporary = Path.Combine(root, "victim.txt.seiko-tmp-" + new string('a', 32));
+        var temporary = Path.Combine(root, ".seiko-tmp-" + new string('a', 32));
         File.WriteAllText(temporary, "keep");
         var journal = new DeploymentJournal
         {
             Entries = [new DeploymentJournalEntry { Path = "victim.txt", Existed = true }],
-            TemporaryPaths = ["victim.txt.seiko-tmp-" + new string('a', 32)],
+            TemporaryPaths = [".seiko-tmp-" + new string('a', 32)],
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
