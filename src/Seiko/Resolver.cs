@@ -39,7 +39,6 @@ public sealed class Resolver
     private SeikoException? _lastConflict;
     private long _totalAssignments;
     private bool _hintsGrew;
-    private List<SeiDependency> _artifactRequirements = [];
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -79,30 +78,7 @@ public sealed class Resolver
     }
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
-    {
-        var requirements = new List<SeiDependency>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        while (true)
-        {
-            _artifactRequirements = requirements;
-            var result = ResolveOnce(specs);
-            var needed = CollectArtifactDependencies();
-            if (RelationsEqual(needed, requirements))
-            {
-                return result;
-            }
-
-            var signature = string.Join(
-                "\n",
-                needed.Select(dependency => $"{dependency.Name}|{dependency.Version ?? ""}"));
-            if (!seen.Add(signature))
-            {
-                throw Fail("artifact dependency requirements did not converge");
-            }
-
-            requirements = needed;
-        }
-    }
+        => ResolveOnce(specs);
 
     private IReadOnlyList<ResolvedSei> ResolveOnce(IReadOnlyList<SeiSpec> specs)
     {
@@ -134,27 +110,11 @@ public sealed class Resolver
             // discovered while exploring dependencies require a restart.
             _hintsGrew = false;
 
-            foreach (var dependency in _artifactRequirements)
-            {
-                _pending.Add(CreateRequirement(
-                    dependency.Name,
-                    dependency.Version,
-                    "artifact dependency"));
-            }
-
             if (Search(0))
             {
                 foreach (var sei in _assigned.Values)
                 {
                     sei.Direct = directNames.Contains(sei.Name);
-                }
-
-                // In latest-installable mode Search already selected the
-                // artifacts for the accepted graph; only Direct flags changed.
-                var missing = _latestInstallable ? null : SelectArtifacts();
-                if (missing is not null)
-                {
-                    throw Fail(missing.Value.Message);
                 }
 
                 return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
@@ -185,27 +145,7 @@ public sealed class Resolver
 
         if (index >= _pending.Count)
         {
-            if (!ValidateFinalSolution())
-            {
-                return false;
-            }
-
-            if (!_latestInstallable)
-            {
-                return true;
-            }
-
-            // Artifact availability depends on the final graph. A failure here
-            // is a property of this assignment combination, not of the version
-            // globally, so backtrack instead of excluding the version.
-            var missing = SelectArtifacts();
-            if (missing is null)
-            {
-                return true;
-            }
-
-            _lastConflict = Fail(missing.Value.Message);
-            return false;
+            return ValidateFinalSolution();
         }
 
         var requirement = _pending[index];
@@ -249,7 +189,7 @@ public sealed class Resolver
                 throw Fail("dependency resolution exceeded the work budget");
             }
 
-            _assigned[requirement.Name] = new ResolvedSei
+            var resolved = new ResolvedSei
             {
                 Name = requirement.Name,
                 ParsedVersion = version,
@@ -257,32 +197,76 @@ public sealed class Resolver
                 Source = source,
                 PackageDeprecated = indexData.Deprecated,
             };
+            _assigned[requirement.Name] = resolved;
 
-            var added = 0;
-            foreach (var dependency in entry.Dependencies)
+            var pendingBeforeVersion = _pending.Count;
+            AddDependencies(entry.Dependencies, requirement.Name, requirement.Name);
+            var ridArtifacts = entry.Artifacts
+                .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
+                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (ridArtifacts.Count == 0)
             {
-                if (!SeiName.IsValid(dependency.Name))
+                _lastConflict = Fail(NoArtifactMessage(resolved));
+                _pending.RemoveRange(pendingBeforeVersion, _pending.Count - pendingBeforeVersion);
+                _assigned.Remove(requirement.Name);
+                if (_latestInstallable)
                 {
-                    throw Fail($"invalid sei name '{dependency.Name}'");
+                    continue;
                 }
 
-                if (string.Equals(dependency.Name, requirement.Name, StringComparison.Ordinal))
-                {
-                    throw Fail($"sei '{requirement.Name}' depends on itself");
-                }
-
-                _pending.Add(CreateRequirement(dependency.Name, dependency.Version, requirement.Name));
-                added++;
+                throw _lastConflict;
             }
 
-            if (Search(index + 1))
+            var artifactCandidates = ridArtifacts
+                .Where(artifact => CanStillMatch(artifact, resolved))
+                .ToList();
+            if (artifactCandidates.Count == 0)
+            {
+                _lastConflict = Fail(NoArtifactMessage(resolved));
+                _pending.RemoveRange(pendingBeforeVersion, _pending.Count - pendingBeforeVersion);
+                _assigned.Remove(requirement.Name);
+                continue;
+            }
+
+            var found = false;
+            foreach (var artifact in OrderArtifacts(requirement.Name, artifactCandidates))
+            {
+                if (++_totalAssignments > MaxTotalAssignments)
+                {
+                    throw Fail("dependency resolution exceeded the work budget");
+                }
+
+                resolved.Artifact = artifact;
+                var pendingBeforeArtifact = _pending.Count;
+                AddDependencies(
+                    artifact.Dependencies,
+                    requirement.Name,
+                    $"{requirement.Name} (artifact)");
+                if (Search(index + 1))
+                {
+                    found = true;
+                    break;
+                }
+
+                _pending.RemoveRange(
+                    pendingBeforeArtifact,
+                    _pending.Count - pendingBeforeArtifact);
+                if (_hintsGrew)
+                {
+                    break;
+                }
+            }
+
+            if (found)
             {
                 return true;
             }
 
-            _pending.RemoveRange(_pending.Count - added, added);
+            _pending.RemoveRange(
+                pendingBeforeVersion,
+                _pending.Count - pendingBeforeVersion);
             _assigned.Remove(requirement.Name);
-
             if (_hintsGrew)
             {
                 // A deeper branch found a prerelease range this run did not
@@ -293,6 +277,84 @@ public sealed class Resolver
         }
 
         return false;
+    }
+
+    private void AddDependencies(
+        List<SeiDependency>? dependencies,
+        string owner,
+        string description)
+    {
+        foreach (var dependency in dependencies ?? [])
+        {
+            if (!SeiName.IsValid(dependency.Name))
+            {
+                throw Fail($"invalid sei name '{dependency.Name}'");
+            }
+
+            if (string.Equals(dependency.Name, owner, StringComparison.Ordinal))
+            {
+                throw Fail($"sei '{owner}' depends on itself");
+            }
+
+            _pending.Add(CreateRequirement(dependency.Name, dependency.Version, description));
+        }
+    }
+
+    private bool CanStillMatch(ArtifactEntry artifact, ResolvedSei owner)
+    {
+        foreach (var prerequisite in artifact.Prerequisites ?? [])
+        {
+            if (_assigned.TryGetValue(prerequisite.Name, out var target)
+                && !ParseRange(prerequisite.Version, prerequisite.Name)
+                    .Satisfies(target.ParsedVersion))
+            {
+                return false;
+            }
+        }
+
+        foreach (var peer in artifact.OptionalPeers ?? [])
+        {
+            if (_assigned.TryGetValue(peer.Name, out var target)
+                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
+            {
+                return false;
+            }
+        }
+
+        foreach (var conflict in artifact.Conflicts ?? [])
+        {
+            if (_assigned.TryGetValue(conflict.Name, out var target)
+                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private List<ArtifactEntry> OrderArtifacts(
+        string name,
+        List<ArtifactEntry> artifacts)
+    {
+        var lockedSha = GetLockedArtifactSha(name);
+        return artifacts
+            .Select((artifact, index) => (Artifact: artifact, Index: index))
+            .OrderByDescending(candidate => candidate.Artifact.Prerequisites?.Count ?? 0)
+            .ThenByDescending(candidate => lockedSha is not null
+                && string.Equals(
+                    candidate.Artifact.Source.Sha256,
+                    lockedSha,
+                    StringComparison.OrdinalIgnoreCase))
+            .ThenBy(candidate => candidate.Index)
+            .Select(candidate => candidate.Artifact)
+            .ToList();
+    }
+
+    private string NoArtifactMessage(ResolvedSei resolved)
+    {
+        var graphNames = _assigned.Keys.OrderBy(name => name, StringComparer.Ordinal);
+        return $"no artifact of {resolved.Name} {resolved.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]";
     }
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
@@ -387,144 +449,6 @@ public sealed class Resolver
         return ordered;
     }
 
-    private List<SeiDependency> CollectArtifactDependencies()
-    {
-        return _assigned.Values
-            .SelectMany(sei => sei.Artifact.Dependencies ?? [])
-            .Where(dependency => !string.IsNullOrWhiteSpace(dependency.Name))
-            .GroupBy(
-                dependency => (dependency.Name, dependency.Version ?? ""),
-                StringTupleComparer.Instance)
-            .Select(group => new SeiDependency
-            {
-                Name = group.Key.Name,
-                Version = group.First().Version,
-            })
-            .OrderBy(dependency => dependency.Name, StringComparer.Ordinal)
-            .ThenBy(dependency => dependency.Version ?? "", StringComparer.Ordinal)
-            .ToList();
-    }
-
-    private static bool RelationsEqual(
-        IReadOnlyList<SeiDependency> left,
-        IReadOnlyList<SeiDependency> right)
-    {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < left.Count; i++)
-        {
-            if (!string.Equals(left[i].Name, right[i].Name, StringComparison.Ordinal)
-                || !string.Equals(left[i].Version ?? "", right[i].Version ?? "", StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private sealed class StringTupleComparer : IEqualityComparer<(string Name, string Version)>
-    {
-        public static readonly StringTupleComparer Instance = new();
-
-        public bool Equals((string Name, string Version) x, (string Name, string Version) y)
-            => string.Equals(x.Name, y.Name, StringComparison.Ordinal)
-                && string.Equals(x.Version, y.Version, StringComparison.Ordinal);
-
-        public int GetHashCode((string Name, string Version) obj)
-            => HashCode.Combine(
-                StringComparer.Ordinal.GetHashCode(obj.Name),
-                StringComparer.Ordinal.GetHashCode(obj.Version));
-    }
-
-    private (string Name, string Version, string Message)? SelectArtifacts()
-    {
-        var graphNames = _assigned.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList();
-        foreach (var sei in _assigned.Values)
-        {
-            var scored = new List<(ArtifactEntry Artifact, int Score)>();
-            foreach (var artifact in sei.Entry.Artifacts)
-            {
-                var score = ScoreArtifact(artifact, _rid, _assigned);
-                if (score >= 0)
-                {
-                    scored.Add((artifact, score));
-                }
-            }
-
-            if (scored.Count == 0)
-            {
-                return (
-                    sei.Name,
-                    sei.Version,
-                    $"no artifact of {sei.Name} {sei.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]");
-            }
-
-            var best = scored.Max(s => s.Score);
-            var top = scored.Where(s => s.Score == best).ToList();
-            if (top.Count > 1)
-            {
-                throw Fail(
-                    $"ambiguous artifact for {sei.Name} {sei.Version}: {top.Count} artifacts match at specificity {best}");
-            }
-
-            sei.Artifact = top[0].Artifact;
-        }
-
-        return null;
-    }
-
-    internal static int ScoreArtifact(
-        ArtifactEntry artifact,
-        string rid,
-        IReadOnlyDictionary<string, ResolvedSei> assigned)
-    {
-        if (artifact.Rid is not null
-            && !artifact.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase))
-        {
-            return -1;
-        }
-
-        var score = 0;
-        foreach (var prerequisite in artifact.Prerequisites ?? [])
-        {
-            if (!assigned.TryGetValue(prerequisite.Name, out var target))
-            {
-                return -1;
-            }
-
-            if (!ParseRange(prerequisite.Version, prerequisite.Name).Satisfies(target.ParsedVersion))
-            {
-                return -1;
-            }
-
-            score++;
-        }
-
-        foreach (var peer in artifact.OptionalPeers ?? [])
-        {
-            if (assigned.TryGetValue(peer.Name, out var target)
-                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
-            {
-                return -1;
-            }
-        }
-
-        foreach (var conflict in artifact.Conflicts ?? [])
-        {
-            if (assigned.TryGetValue(conflict.Name, out var target)
-                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
-            {
-                return -1;
-            }
-        }
-
-        return score;
-    }
-
     private bool TryFindSource(
         string name,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ISeiSource? found,
@@ -559,6 +483,18 @@ public sealed class Resolver
         }
 
         return NuGetVersion.TryParse(locked.Version, out var version) ? version : null;
+    }
+
+    private string? GetLockedArtifactSha(string name)
+    {
+        if (_updateNames?.Contains(name) == true)
+        {
+            return null;
+        }
+
+        return _lock?.Sei
+            .FirstOrDefault(sei => string.Equals(sei.Name, name, StringComparison.Ordinal))
+            ?.Artifact.Sha256;
     }
 
     private Requirement CreateRequirement(string name, string? version, string? from)
@@ -621,7 +557,134 @@ public sealed class Resolver
                 return false;
             }
 
-            if (!ValidateConflicts(name, resolved, resolved.Entry.Conflicts))
+            if (!ValidateConflicts(name, resolved, resolved.Entry.Conflicts, "conflict"))
+            {
+                return false;
+            }
+
+            if (!ValidateRelations(
+                name,
+                resolved,
+                resolved.Artifact.Prerequisites,
+                requirePresent: true,
+                "artifact prerequisite"))
+            {
+                return false;
+            }
+
+            if (!ValidateRelations(
+                name,
+                resolved,
+                resolved.Artifact.OptionalPeers,
+                requirePresent: false,
+                "artifact optional peer"))
+            {
+                return false;
+            }
+
+            if (!ValidateConflicts(
+                name,
+                resolved,
+                resolved.Artifact.Conflicts,
+                "artifact conflict"))
+            {
+                return false;
+            }
+        }
+
+        EnsureNoAmbiguousArtifacts();
+        return true;
+    }
+
+    private void EnsureNoAmbiguousArtifacts()
+    {
+        foreach (var resolved in _assigned.Values)
+        {
+            var top = -1;
+            var tied = new List<ArtifactEntry>();
+            foreach (var artifact in resolved.Entry.Artifacts)
+            {
+                if (!string.IsNullOrWhiteSpace(artifact.Rid)
+                    && !artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!ArtifactMatchesFinalGraph(artifact))
+                {
+                    continue;
+                }
+
+                var specificity = artifact.Prerequisites?.Count ?? 0;
+                if (specificity > top)
+                {
+                    top = specificity;
+                    tied.Clear();
+                    tied.Add(artifact);
+                }
+                else if (specificity == top)
+                {
+                    tied.Add(artifact);
+                }
+            }
+
+            if (tied.Count < 2
+                || (resolved.Artifact.Prerequisites?.Count ?? 0) < top)
+            {
+                continue;
+            }
+
+            var solvable = tied.Count(artifact =>
+                ReferenceEquals(artifact, resolved.Artifact)
+                || DependenciesSatisfiedByFinalGraph(artifact));
+            if (solvable > 1)
+            {
+                throw Fail(
+                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {solvable} artifacts match at specificity {top}");
+            }
+        }
+    }
+
+    private bool ArtifactMatchesFinalGraph(ArtifactEntry artifact)
+    {
+        foreach (var prerequisite in artifact.Prerequisites ?? [])
+        {
+            if (!_assigned.TryGetValue(prerequisite.Name, out var target)
+                || !ParseRange(prerequisite.Version, prerequisite.Name)
+                    .Satisfies(target.ParsedVersion))
+            {
+                return false;
+            }
+        }
+
+        foreach (var peer in artifact.OptionalPeers ?? [])
+        {
+            if (_assigned.TryGetValue(peer.Name, out var target)
+                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
+            {
+                return false;
+            }
+        }
+
+        foreach (var conflict in artifact.Conflicts ?? [])
+        {
+            if (_assigned.TryGetValue(conflict.Name, out var target)
+                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool DependenciesSatisfiedByFinalGraph(ArtifactEntry artifact)
+    {
+        foreach (var dependency in artifact.Dependencies ?? [])
+        {
+            if (!_assigned.TryGetValue(dependency.Name, out var target)
+                || !ParseRange(dependency.Version, dependency.Name)
+                    .Satisfies(target.ParsedVersion))
             {
                 return false;
             }
@@ -666,7 +729,8 @@ public sealed class Resolver
     private bool ValidateConflicts(
         string owner,
         ResolvedSei resolved,
-        List<SeiDependency>? conflicts)
+        List<SeiDependency>? conflicts,
+        string label)
     {
         foreach (var conflict in conflicts ?? [])
         {
@@ -678,7 +742,7 @@ public sealed class Resolver
             if (ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
             {
                 _lastConflict = Fail(
-                    $"conflict: {owner} {resolved.Version} cannot coexist with {conflict.Name} {target.Version}");
+                    $"{label}: {owner} {resolved.Version} cannot coexist with {conflict.Name} {target.Version}");
                 return false;
             }
         }

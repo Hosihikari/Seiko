@@ -414,6 +414,99 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_TriesAnotherArtifactWhenOneDependencyConflicts()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("marker", Version("marker", "1.0.0"));
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("marker", "*")],
+                    Dependencies = [new DepFixture("marker", "[2.0.0]")],
+                    Files = { ["a.txt"] = "wrong" },
+                },
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("marker", "*")],
+                    Files = { ["a.txt"] = "fallback" },
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "[1.0.0]"),
+            new SpecFixture("marker", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("fallback", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
+        var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
+        Assert.Equal("1.0.0", lockFile.Sei.Single(sei => sei.Name == "marker").Version);
+    }
+
+    [Fact]
+    public void Resolve_RejectsAmbiguousArtifacts()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "first" } },
+                new ArtifactFixture { Files = { ["a.txt"] = "second" } },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("ambiguous artifact", error.Message);
+    }
+
+    [Fact]
+    public void Resolve_BacktracksAVersionForAnArtifactDependencyConflict()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "one" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Dependencies = [new DepFixture("marker", "[2.0.0]")],
+                        Files = { ["a.txt"] = "two" },
+                    },
+                ],
+            });
+        fixture.AddSei("marker", Version("marker", "1.0.0"));
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "*"),
+            new SpecFixture("marker", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("one", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Equal("1.0.0", new SeikoClient().ReadLock(fixture.Root)!
+            .Sei.Single(sei => sei.Name == "a").Version);
+    }
+
+    [Fact]
     public void Resolve_AddsArtifactDependency()
     {
         using var fixture = new Fixture();

@@ -28,7 +28,22 @@ public sealed class ResolverDepthTests
             {
                 var name = $"p{i}";
                 names.Add(name);
-                var entry = new SeiVersionEntry { Version = "1.0.0" };
+                var entry = new SeiVersionEntry
+                {
+                    Version = "1.0.0",
+                    Artifacts =
+                    [
+                        new ArtifactEntry
+                        {
+                            Source = new ArtifactLocation
+                            {
+                                Url = $"artifacts/{name}.zip",
+                                Sha256 = new string('0', 64),
+                                Size = 1,
+                            },
+                        },
+                    ],
+                };
                 if (i + 1 < depth)
                 {
                     entry.Dependencies.Add(new SeiDependency
