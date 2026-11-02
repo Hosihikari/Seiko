@@ -499,6 +499,55 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recover_PreservesUnrelatedRestoreLookalikes()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var file = Path.Combine(root, "payload");
+        File.WriteAllText(file, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("payload");
+        transaction.WriteJournal();
+        File.WriteAllText(file, "new");
+        var lookalike = Path.Combine(root, "payload.seiko-restore");
+        File.WriteAllText(lookalike, "user-data");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.Equal("old", File.ReadAllText(file));
+        Assert.Equal("user-data", File.ReadAllText(lookalike));
+    }
+
+    [Fact]
+    public void Recover_RestoresManagedFilesWithRestoreSuffix()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var file = Path.Combine(root, "foo");
+        var suffix = Path.Combine(root, "foo.seiko-restore");
+        File.WriteAllText(file, "old-foo");
+        File.WriteAllText(suffix, "old-suffix");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("foo");
+        transaction.WillChange("foo.seiko-restore");
+        transaction.WriteJournal();
+        File.WriteAllText(file, "new-foo");
+        File.WriteAllText(suffix, "new-suffix");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.Equal("old-foo", File.ReadAllText(file));
+        Assert.Equal("old-suffix", File.ReadAllText(suffix));
+        Assert.Empty(Directory.EnumerateFiles(root, "*.seiko-restore-*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
     public void Recover_ReplacesAHardlinkWithoutTouchingTheSharedPayload()
     {
         using var fixture = new Fixture();

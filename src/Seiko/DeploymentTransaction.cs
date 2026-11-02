@@ -92,13 +92,13 @@ internal sealed class DeploymentTransaction
 
     public void WriteJournal()
     {
-        WriteJournalFile(_journal);
+        WriteJournalFile(_journalPath, _journal);
     }
 
     public void Commit()
     {
         _journal.Committed = true;
-        WriteJournalFile(_journal);
+        WriteJournalFile(_journalPath, _journal);
         Cleanup(_journalPath, _backupDirectory);
     }
 
@@ -106,7 +106,7 @@ internal sealed class DeploymentTransaction
     {
         try
         {
-            Restore(_root, _backupDirectory, _journal);
+            Restore(_root, _backupDirectory, _journal, _journalPath);
             Cleanup(_journalPath, _backupDirectory);
         }
         catch (Exception rollback)
@@ -161,13 +161,17 @@ internal sealed class DeploymentTransaction
 
         if (!journal.Committed)
         {
-            Restore(rootFull, backupFull, journal);
+            Restore(rootFull, backupFull, journal, journalPath);
         }
 
         Cleanup(journalPath, backupDirectory);
     }
 
-    private static void Restore(string root, string backupDirectory, DeploymentJournal journal)
+    private static void Restore(
+        string root,
+        string backupDirectory,
+        DeploymentJournal journal,
+        string journalPath)
     {
         var rootFull = Path.GetFullPath(root);
         var backupFull = Path.GetFullPath(backupDirectory);
@@ -208,14 +212,14 @@ internal sealed class DeploymentTransaction
 
                 // Do not copy over an existing path: a deployed file may be a
                 // hardlink to a shared store payload, and an in-place copy
-                // would truncate the store inode. Replace the directory entry.
-                var temporary = destination + ".seiko-restore";
-                if (File.Exists(temporary))
-                {
-                    File.Delete(temporary);
-                }
-
-                File.Copy(backup, temporary, overwrite: false);
+                // would truncate the store inode. Replace the directory entry
+                // through a fresh temporary file owned by this transaction.
+                var temporary = CreateRestoreTemporary(
+                    root,
+                    relative,
+                    backup,
+                    journal,
+                    journalPath);
                 File.Move(temporary, destination, overwrite: true);
                 SetMode(destination, entry.UnixMode);
             }
@@ -234,6 +238,70 @@ internal sealed class DeploymentTransaction
                 Directory.Delete(path, recursive: true);
             }
         }
+    }
+
+    private static string CreateRestoreTemporary(
+        string root,
+        string relative,
+        string backup,
+        DeploymentJournal journal,
+        string journalPath)
+    {
+        for (var attempt = 0; attempt < 16; attempt++)
+        {
+            var relativeTemporary = $"{relative}.seiko-restore-{Guid.NewGuid():N}";
+            var temporary = Resolve(root, relativeTemporary);
+            FileStream output;
+            try
+            {
+                output = new FileStream(
+                    temporary,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None);
+            }
+            catch (IOException) when (File.Exists(temporary))
+            {
+                continue;
+            }
+
+            try
+            {
+                journal.TemporaryPaths ??= [];
+                journal.TemporaryPaths.Add(relativeTemporary);
+                WriteJournalFile(journalPath, journal);
+                using (output)
+                using (var input = File.OpenRead(backup))
+                {
+                    input.CopyTo(output);
+                }
+
+                return temporary;
+            }
+            catch
+            {
+                output.Dispose();
+                try
+                {
+                    if (File.Exists(temporary))
+                    {
+                        File.Delete(temporary);
+                    }
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+
+                throw;
+            }
+        }
+
+        throw new SeikoException(
+            $"could not create a restore temporary for {relative}",
+            "deploy");
     }
 
     internal static void RemoveEmptyDirectories(string path)
@@ -308,13 +376,13 @@ internal sealed class DeploymentTransaction
         }
     }
 
-    private void WriteJournalFile(DeploymentJournal journal)
+    private static void WriteJournalFile(string journalPath, DeploymentJournal journal)
     {
-        var temp = _journalPath + ".tmp-" + Guid.NewGuid().ToString("N");
+        var temp = journalPath + ".tmp-" + Guid.NewGuid().ToString("N");
         File.WriteAllBytes(
             temp,
             JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
-        File.Move(temp, _journalPath, overwrite: true);
+        File.Move(temp, journalPath, overwrite: true);
     }
 
     private static void EnsureStateDirectory(string root, string stateDirectory)
