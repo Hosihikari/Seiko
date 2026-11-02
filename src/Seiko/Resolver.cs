@@ -459,7 +459,7 @@ public sealed class Resolver
             }
         }
 
-        return new Requirement(name, range, version, from);
+        return new Requirement(name, range, from);
     }
 
     private bool ValidateFinalSolution()
@@ -548,6 +548,5 @@ public sealed class Resolver
     private sealed record Requirement(
         string Name,
         VersionRange Range,
-        string? RangeText,
         string? From);
 }
