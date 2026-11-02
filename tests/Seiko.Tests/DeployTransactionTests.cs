@@ -706,8 +706,9 @@ public sealed class DeployTransactionTests
             () => DeploymentTransaction.Recover(root, stateDirectory));
 
         Assert.Contains("not a file created", error.Message);
-        Assert.Equal("changed", File.ReadAllText(created));
         Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(created));
+        File.SetUnixFileMode(created, UnixFileMode.UserRead);
+        Assert.Equal("changed", File.ReadAllText(created));
     }
 
     [Fact]
