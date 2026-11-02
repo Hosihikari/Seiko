@@ -223,6 +223,29 @@ public sealed class SyncModeTests
     }
 
     [Fact]
+    public void Sync_FrozenRejectsCrossPlatformLock()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.WriteConfig("linux-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+
+        Assert.Equal("lock", error.Code);
+        Assert.Contains("win-x64", error.Message);
+        Assert.Contains("linux-x64", error.Message);
+    }
+
+    [Fact]
     public void Sync_FrozenRejectsUnsatisfiedRange()
     {
         using var fixture = new Fixture();

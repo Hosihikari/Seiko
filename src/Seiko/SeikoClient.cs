@@ -132,6 +132,13 @@ public sealed class SeikoClient
                 throw new SeikoException("--frozen requires seiko.lock.json", "lock");
             }
 
+            if (!string.Equals(existingLock.Target.Rid, rid, StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"--frozen: lock targets rid '{existingLock.Target.Rid}', but the config selects '{rid}'; generate a lock for this platform first",
+                    "lock");
+            }
+
             resolved = LockReplay.Resolve(sources, existingLock, specs);
             lockFile = existingLock;
             warnings = Retirement.Warnings(resolved);
