@@ -352,9 +352,7 @@ public static class IndexVerifier
                     path);
             }
 
-            if (advisory.Url is not null
-                && (!Uri.TryCreate(advisory.Url, UriKind.Absolute, out var uri)
-                    || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)))
+            if (advisory.Url is not null && !Urls.TryGetHttp(advisory.Url, out _))
             {
                 context.Error(
                     "advisory-url",
@@ -927,12 +925,17 @@ public static class IndexVerifier
 
         if (IsRemote(url))
         {
-            return true;
+            return Urls.TryGetHttp(url, out _);
         }
 
         if (url.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
         {
             return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile;
+        }
+
+        if (url.Contains("://", StringComparison.Ordinal))
+        {
+            return false;
         }
 
         return url.Split('/', '\\').All(segment => segment != "..");

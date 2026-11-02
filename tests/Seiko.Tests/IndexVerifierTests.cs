@@ -172,6 +172,37 @@ public sealed class IndexVerifierTests
         Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
     }
 
+    [Theory]
+    [InlineData("https://")]
+    [InlineData("https:///artifact.zip")]
+    [InlineData("ftp://example.invalid/artifact.zip")]
+    public void Verify_RejectsRemoteArtifactUrlsWithoutAValidHost(string url)
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].Source.Url = url;
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-url");
+        Assert.Equal(0, result.CheckedArtifacts);
+        Assert.DoesNotContain(result.Findings, finding => finding.Code == "internal");
+    }
+
+    [Fact]
+    public void Verify_RejectsAdvisoryUrlsWithoutAHost()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Advisory = new AdvisoryInfo { Severity = "low", Url = "https://" };
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "advisory-url");
+    }
+
     [Fact]
     public void Verify_CheckArtifactsValidatesManifest()
     {
