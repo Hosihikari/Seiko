@@ -5,6 +5,52 @@ namespace Seiko.Tests;
 public sealed class LocalSourceTests
 {
     [Fact]
+    public async Task DownloadAsync_AllowsHttpPrefixedRelativePaths()
+    {
+        using var fixture = new Fixture();
+        var sourceRoot = fixture.SourceDirectory;
+        await File.WriteAllTextAsync(Path.Combine(sourceRoot, "http-library.zip"), "one");
+        Directory.CreateDirectory(Path.Combine(sourceRoot, "http"));
+        await File.WriteAllTextAsync(Path.Combine(sourceRoot, "http", "artifact.zip"), "two");
+        await File.WriteAllTextAsync(
+            Path.Combine(sourceRoot, "index.json"),
+            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+        var source = new LocalSource(
+            new SourceConfig
+            {
+                Id = "test",
+                Index = Path.Combine(sourceRoot, "index.json"),
+            },
+            sourceRoot);
+
+        foreach (var (url, expected) in new[]
+        {
+            ("http-library.zip", "one"),
+            ("http/artifact.zip", "two"),
+        })
+        {
+            using var session = new DownloadSession(1, CancellationToken.None);
+            var target = Path.Combine(fixture.Root, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(target);
+            await source.DownloadAsync(
+                "hello",
+                new ArtifactLocation
+                {
+                    Url = url,
+                    Sha256 = Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(expected)),
+                    Size = expected.Length,
+                },
+                target,
+                session,
+                CancellationToken.None);
+
+            Assert.Equal(
+                expected,
+                await File.ReadAllTextAsync(Path.Combine(target, "artifact")));
+        }
+    }
+
+    [Fact]
     public async Task DownloadAsync_RejectsSizeMismatchBeforeCreatingOutput()
     {
         using var fixture = new Fixture();

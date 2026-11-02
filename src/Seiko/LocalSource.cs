@@ -146,7 +146,8 @@ public sealed class LocalSource : ISeiSource
 
     public string ResolveArtifactPath(ArtifactLocation source)
     {
-        if (source.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        if (Uri.TryCreate(source.Url, UriKind.Absolute, out var remote)
+            && (remote.Scheme == Uri.UriSchemeHttp || remote.Scheme == Uri.UriSchemeHttps))
         {
             throw new SeikoException($"source '{Config.Id}': http artifacts are not supported in this slice: {source.Url}", "source");
         }
