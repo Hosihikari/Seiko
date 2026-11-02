@@ -312,6 +312,26 @@ public static class Deployer
                             "deploy");
                     }
 
+                    var existingMode = GetModeText(existing.Modes, relative);
+                    var incomingMode = GetModeText(item.Manifest.Modes, relative);
+                    if (existingMode is not null && incomingMode is not null
+                        && ParseModeValue(relative, existingMode) != ParseModeValue(relative, incomingMode))
+                    {
+                        throw new SeikoException(
+                            $"mode conflict: {relative} is {existingMode} for {string.Join(", ", existing.Owners)} and {incomingMode} for {item.Name}",
+                            "deploy");
+                    }
+
+                    if (existingMode is null && incomingMode is not null)
+                    {
+                        existing.Modes = new Dictionary<string, string>(
+                            existing.Modes ?? [],
+                            StringComparer.Ordinal)
+                        {
+                            [relative] = incomingMode,
+                        };
+                    }
+
                     existing.Owners.Add(item.Name);
                     continue;
                 }
@@ -537,17 +557,11 @@ public static class Deployer
         }
     }
 
-    private static bool TryParseMode(
-        string relative,
-        Dictionary<string, string>? modes,
-        out UnixFileMode mode)
-    {
-        mode = default;
-        if (modes is null || !modes.TryGetValue(relative, out var text))
-        {
-            return false;
-        }
+    private static string? GetModeText(Dictionary<string, string>? modes, string relative)
+        => modes is not null && modes.TryGetValue(relative, out var text) ? text : null;
 
+    private static int ParseModeValue(string relative, string text)
+    {
         if (!FileModes.TryParse(text, out var value))
         {
             throw new SeikoException($"invalid mode '{text}' for {relative}", "deploy");
@@ -560,6 +574,21 @@ public static class Deployer
                 "deploy");
         }
 
+        return value;
+    }
+
+    private static bool TryParseMode(
+        string relative,
+        Dictionary<string, string>? modes,
+        out UnixFileMode mode)
+    {
+        mode = default;
+        if (modes is null || !modes.TryGetValue(relative, out var text))
+        {
+            return false;
+        }
+
+        var value = ParseModeValue(relative, text);
         if (OperatingSystem.IsWindows())
         {
             return false;
@@ -663,6 +692,6 @@ public static class Deployer
         public required string StoreDirectory { get; init; }
         public required string Sha256 { get; init; }
         public required List<string> Owners { get; init; }
-        public Dictionary<string, string>? Modes { get; init; }
+        public Dictionary<string, string>? Modes { get; set; }
     }
 }
