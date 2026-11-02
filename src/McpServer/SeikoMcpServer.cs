@@ -440,11 +440,23 @@ public sealed class SeikoMcpServer
 
     private string Add(JsonObject arguments)
     {
-        var spec = RequiredString(arguments, "spec");
+        var specs = StringArray(arguments, "specs");
+        if (specs is null || specs.Count == 0)
+        {
+            var spec = OptionalString(arguments, "spec");
+            if (string.IsNullOrWhiteSpace(spec))
+            {
+                throw new SeikoException("add requires specs or spec", "usage");
+            }
+
+            specs = [spec];
+        }
+
         var root = Root(arguments, required: true);
-        var result = _client.Add(
+        var result = _client.AddMany(
             root,
-            spec,
+            specs,
+            StringArray(arguments, "remove"),
             StorePath(arguments),
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
@@ -899,7 +911,32 @@ public sealed class SeikoMcpServer
         };
 
     private static JsonObject AddSchema()
-        => SyncMutationSchema(requireSpec: true);
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["specs"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                },
+                ["remove"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                },
+                ["spec"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+                ["pre"] = new JsonObject { ["type"] = "boolean" },
+                ["jobs"] = new JsonObject { ["type"] = "integer" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+                ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
+                ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
+            },
+            ["required"] = new JsonArray(JsonValue.Create("root")),
+        };
 
     private static JsonObject RemoveSchema()
         => SyncMutationSchema(requireSpec: false);

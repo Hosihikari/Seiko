@@ -88,8 +88,18 @@ var addAllowCritical = new Option<bool>("--allow-critical")
 {
     Description = "Allow resolving versions with a critical advisory.",
 };
-var addSpec = new Argument<string>("spec") { Description = "Sei name with an optional @range." };
+var addSpec = new Argument<string[]>("spec")
+{
+    Description = "One or more sei names with optional @range.",
+    Arity = ArgumentArity.OneOrMore,
+};
+var addRemove = new Option<string[]>("--remove")
+{
+    Description = "Direct declarations to remove in the same operation.",
+    Arity = ArgumentArity.OneOrMore,
+};
 add.Add(addSpec);
+add.Add(addRemove);
 add.Add(addRoot);
 add.Add(addStore);
 add.Add(addPre);
@@ -103,6 +113,7 @@ add.SetAction(parseResult => Run(
     () => Add(
         parseResult.GetValue(addRoot),
         parseResult.GetValue(addSpec)!,
+        parseResult.GetValue(addRemove),
         parseResult.GetValue(addStore),
         parseResult.GetValue(addPre),
         parseResult.GetValue(addJobs) ?? DownloadSession.DefaultJobs,
@@ -633,7 +644,8 @@ static int Sync(
 
 static int Add(
     string? rootOption,
-    string specification,
+    IReadOnlyList<string> specifications,
+    IReadOnlyList<string>? remove,
     string? store,
     bool pre,
     int jobs,
@@ -644,9 +656,10 @@ static int Add(
     => RunMutation(
         "add",
         json,
-        (progress, log) => new SeikoClient().Add(
+        (progress, log) => new SeikoClient().AddMany(
             rootOption ?? FindRoot(),
-            specification,
+            specifications,
+            remove,
             store,
             pre,
             jobs,

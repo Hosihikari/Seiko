@@ -256,14 +256,46 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
         bool allowCritical = false)
+        => AddMany(
+            root,
+            [specification],
+            remove: null,
+            storeRoot,
+            allowPrerelease,
+            jobs,
+            proxy,
+            progress,
+            log,
+            cancellationToken,
+            latestInstallable,
+            allowCritical);
+
+    public SyncResult AddMany(
+        string root,
+        IReadOnlyList<string> specifications,
+        IReadOnlyList<string>? remove = null,
+        string? storeRoot = null,
+        bool allowPrerelease = false,
+        int jobs = DownloadSession.DefaultJobs,
+        string? proxy = null,
+        IProgress<SyncProgress>? progress = null,
+        Action<string>? log = null,
+        CancellationToken cancellationToken = default,
+        bool latestInstallable = false,
+        bool allowCritical = false)
     {
         root = Path.GetFullPath(root);
-        var at = specification.LastIndexOf('@');
-        var name = (at > 0 ? specification[..at] : specification).Trim();
-        var version = at > 0 ? specification[(at + 1)..].Trim() : null;
-        if (string.IsNullOrWhiteSpace(name) || (at == specification.Length - 1))
+        var additions = specifications
+            .Select(ParseAddSpecification)
+            .ToList();
+        var removals = (remove ?? [])
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (additions.Count == 0 && removals.Count == 0)
         {
-            throw new SeikoException("add requires a sei name and optional @range", "usage");
+            throw new SeikoException("add requires at least one sei or --remove", "usage");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -273,14 +305,51 @@ public sealed class SeikoClient
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
         var config = ConfigLoader.Load(root);
-        var existing = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
-        if (existing is null)
+        var addNames = additions.Select(addition => addition.Name).ToHashSet(StringComparer.Ordinal);
+        var removedNames = removals.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var addition in additions)
         {
-            config.Sei.Add(new SeiSpec { Name = name, Version = version });
+            var existing = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, addition.Name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                config.Sei.Add(new SeiSpec { Name = addition.Name, Version = addition.Version });
+            }
+            else if (addition.Version is not null)
+            {
+                existing.Version = addition.Version;
+            }
         }
-        else
+
+        foreach (var name in removedNames)
         {
-            existing.Version = version;
+            if (addNames.Contains(name))
+            {
+                throw new SeikoException($"cannot add and remove {name} in the same operation", "usage");
+            }
+
+            if (config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) == 0)
+            {
+                throw new SeikoException($"{name} is not a direct dependency", "resolve");
+            }
+        }
+
+        var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
+        if (existingLock is not null && removedNames.Count > 0)
+        {
+            using var session = new DownloadSession(jobs, cancellationToken);
+            var sources = LoadSources(config, root, proxy, session);
+            using var sourceScope = new SourceScope(sources);
+            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+            var resolved = new Resolver(
+                sources,
+                existingLock,
+                rid,
+                allowPrerelease,
+                updateNames: null,
+                latestInstallable,
+                allowCritical).Resolve(config.Sei);
+            EnsureRemoveKeepsSelections(existingLock, resolved, removedNames, addNames);
         }
 
         ConfigWriter.WriteSpecs(root, "sei", config.Sei);
@@ -297,6 +366,19 @@ public sealed class SeikoClient
             updateNames: null,
             latestInstallable,
             allowCritical);
+    }
+
+    private static SeiSpec ParseAddSpecification(string specification)
+    {
+        var at = specification.LastIndexOf('@');
+        var name = (at > 0 ? specification[..at] : specification).Trim();
+        var version = at > 0 ? specification[(at + 1)..].Trim() : null;
+        if (string.IsNullOrWhiteSpace(name) || (at == specification.Length - 1))
+        {
+            throw new SeikoException("add requires a sei name and optional @range", "usage");
+        }
+
+        return new SeiSpec { Name = name, Version = version };
     }
 
     public SyncResult Remove(
@@ -346,7 +428,11 @@ public sealed class SeikoClient
                 updateNames: null,
                 latestInstallable,
                 allowCritical).Resolve(config.Sei);
-            EnsureRemoveKeepsSelections(existingLock, resolved, name);
+            EnsureRemoveKeepsSelections(
+                existingLock,
+                resolved,
+                new HashSet<string>(StringComparer.Ordinal) { name },
+                new HashSet<string>(StringComparer.Ordinal));
         }
 
         ConfigWriter.WriteSpecs(root, "sei", config.Sei);
@@ -1322,12 +1408,14 @@ public sealed class SeikoClient
     private static void EnsureRemoveKeepsSelections(
         SeikoLock existing,
         IReadOnlyList<ResolvedSei> resolved,
-        string removed)
+        IReadOnlySet<string> removed,
+        IReadOnlySet<string> authorized)
     {
         var byName = resolved.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
         foreach (var locked in existing.Sei)
         {
-            if (string.Equals(locked.Name, removed, StringComparison.Ordinal)
+            if (removed.Contains(locked.Name)
+                || authorized.Contains(locked.Name)
                 || !byName.TryGetValue(locked.Name, out var current))
             {
                 continue;
@@ -1346,8 +1434,9 @@ public sealed class SeikoClient
                 continue;
             }
 
+            var removedText = string.Join(", ", removed.OrderBy(name => name, StringComparer.Ordinal));
             throw new SeikoException(
-                $"remove {removed} would change {locked.Name} from {locked.Version}/{locked.Artifact.Sha256} to {current.Version}/{current.Artifact.Source.Sha256}; use `add {locked.Name} --remove {removed}` to authorize re-resolution, or `add P --remove {removed}` to keep the current artifact",
+                $"remove {removedText} would change {locked.Name} from {locked.Version}/{locked.Artifact.Sha256} to {current.Version}/{current.Artifact.Source.Sha256}; use `add {locked.Name} --remove {removedText}` to authorize re-resolution, or `add P --remove {removedText}` to keep the current artifact",
                 "resolve");
         }
     }
