@@ -65,10 +65,11 @@ public sealed class ArtifactLocation
 
 public sealed class SeikoConfig
 {
+    public const int CurrentSchemaVersion = 2;
+
     public List<SourceConfig> Sources { get; set; } = [];
     public string? Rid { get; set; }
     public List<SeiSpec> Sei { get; set; } = [];
-    public List<SeiSpec> Components { get; set; } = [];
 }
 
 public sealed class SourceConfig

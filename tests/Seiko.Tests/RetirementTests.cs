@@ -246,6 +246,7 @@ public sealed class RetirementTests
         File.WriteAllText(
             Path.Combine(first.Root, "seiko.conf"),
             $$"""
+            schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
             sources = [
               { id = "first", index = "{{firstIndex}}" },
               { id = "second", index = "{{secondIndex}}" }

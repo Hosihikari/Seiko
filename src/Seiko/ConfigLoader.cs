@@ -1,3 +1,4 @@
+using Hocon;
 using Hocon.Extensions.Configuration;
 using Microsoft.Extensions.Configuration;
 
@@ -23,6 +24,37 @@ public static class ConfigLoader
         catch (Exception ex)
         {
             throw new SeikoException($"{path}: {ex.Message}", "config", ex);
+        }
+
+        var schemaText = configuration["schemaVersion"];
+        if (!int.TryParse(schemaText, out var schemaVersion)
+            || schemaVersion != SeikoConfig.CurrentSchemaVersion)
+        {
+            throw new SeikoException(
+                $"{path}: unsupported config schemaVersion '{schemaText ?? "(missing)"}'; 0.3 requires {SeikoConfig.CurrentSchemaVersion}",
+                "config");
+        }
+
+        var hasComponents = configuration.GetSection("components").Exists()
+            || configuration.GetSection("components").GetChildren().Any();
+        if (!hasComponents)
+        {
+            try
+            {
+                hasComponents = HoconParser.Parse(File.ReadAllText(path), null)
+                    .TryGetValue("components", out _);
+            }
+            catch (Exception ex)
+            {
+                throw new SeikoException($"{path}: {ex.Message}", "config", ex);
+            }
+        }
+
+        if (hasComponents)
+        {
+            throw new SeikoException(
+                $"{path}: components is not supported; declare direct dependencies in sei",
+                "config");
         }
 
         var config = new SeikoConfig
@@ -66,7 +98,6 @@ public static class ConfigLoader
         }
 
         ReadSpecs(configuration.GetSection("sei"), config.Sei, path, "sei");
-        ReadSpecs(configuration.GetSection("components"), config.Components, path, "components");
         return config;
     }
 

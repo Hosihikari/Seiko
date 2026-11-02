@@ -50,6 +50,7 @@ public sealed class WorkflowTests
         File.WriteAllText(
             Path.Combine(first.Root, "seiko.conf"),
             $$"""
+            schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
             sources = [
               { id = "first", index = "{{firstIndex}}" },
               { id = "second", index = "{{secondIndex}}" }
@@ -245,13 +246,16 @@ public sealed class WorkflowTests
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
         });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0,3.0.0)"));
-        var path = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(
-            path,
-            File.ReadAllText(path).Replace(
-                "components = []",
-                "components = [ { name = \"hello\", version = \"[1.0.0,2.0.0)\" } ]"));
+        fixture.AddSei("parent", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("hello", "[1.0.0,2.0.0)")],
+            Artifacts = [new ArtifactFixture { Files = { ["parent.txt"] = "parent" } }],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0,3.0.0)"),
+            new SpecFixture("parent", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         fixture.AddSei("hello", new VersionFixture
@@ -370,6 +374,7 @@ public sealed class WorkflowTests
         File.WriteAllText(
             Path.Combine(first.Root, "seiko.conf"),
             $$"""
+            schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
             sources = [
               { id = "first", index = "{{firstIndex}}" },
               { id = "second", index = "{{secondIndex}}" }
@@ -408,6 +413,7 @@ public sealed class WorkflowTests
         File.WriteAllText(
             Path.Combine(first.Root, "seiko.conf"),
             $$"""
+            schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
             sources = [
               { id = "first", index = "{{firstIndex}}" },
               { id = "second", index = "{{secondIndex}}" }

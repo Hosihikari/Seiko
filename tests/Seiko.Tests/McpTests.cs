@@ -98,7 +98,7 @@ public sealed class McpTests
         using var fixture = new Fixture();
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
-            "sources = []\nrid = \"win-x64\"\nsei = []\ncomponents = []\n");
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsources = []\nrid = \"win-x64\"\nsei = []\n");
         var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
 
         var result = CallTool(

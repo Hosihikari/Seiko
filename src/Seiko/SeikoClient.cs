@@ -109,7 +109,7 @@ public sealed class SeikoClient
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
-        var specs = config.Sei.Concat(config.Components).ToList();
+        var specs = config.Sei;
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
@@ -273,11 +273,6 @@ public sealed class SeikoClient
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
         var config = ConfigLoader.Load(root);
-        if (config.Components.Any(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)))
-        {
-            throw new SeikoException($"{name} is already declared in components", "config");
-        }
-
         var existing = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
         if (existing is null)
         {
@@ -331,21 +326,12 @@ public sealed class SeikoClient
             $"install root {root}");
         var config = ConfigLoader.Load(root);
         var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
-        var removedComponent = config.Components.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
-        if (!removedSei && !removedComponent)
+        if (!removedSei)
         {
             throw new SeikoException($"{name} is not a direct dependency", "resolve");
         }
 
-        if (removedSei)
-        {
-            ConfigWriter.WriteSpecs(root, "sei", config.Sei);
-        }
-
-        if (removedComponent)
-        {
-            ConfigWriter.WriteSpecs(root, "components", config.Components);
-        }
+        ConfigWriter.WriteSpecs(root, "sei", config.Sei);
 
         return SyncLocked(
             root,
@@ -393,26 +379,16 @@ public sealed class SeikoClient
         if (string.IsNullOrWhiteSpace(name))
         {
             targets.AddRange(config.Sei);
-            targets.AddRange(config.Components);
         }
         else
         {
             var sei = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
-            var component = config.Components.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
-            if (sei is not null)
-            {
-                targets.Add(sei);
-            }
-
-            if (component is not null)
-            {
-                targets.Add(component);
-            }
-
-            if (targets.Count == 0)
+            if (sei is null)
             {
                 throw new SeikoException($"{name} is not a direct dependency", "resolve");
             }
+
+            targets.Add(sei);
         }
 
         if (latest && targets.Count > 0)
@@ -428,7 +404,6 @@ public sealed class SeikoClient
             }
 
             ConfigWriter.WriteSpecs(root, "sei", config.Sei);
-            ConfigWriter.WriteSpecs(root, "components", config.Components);
         }
 
         var updateNames = targets
@@ -1201,7 +1176,7 @@ public sealed class SeikoClient
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
         var sources = LoadSources(config, root, proxy, session);
         using var sourceScope = new SourceScope(sources);
-        var rangeTexts = config.Sei.Concat(config.Components)
+        var rangeTexts = config.Sei
             .GroupBy(spec => spec.Name, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
@@ -1335,7 +1310,7 @@ public sealed class SeikoClient
         string rid,
         bool allowPrerelease)
     {
-        var specs = config.Sei.Concat(config.Components)
+        var specs = config.Sei
             .Select(spec => new SeiSpec { Name = spec.Name, Version = spec.Version })
             .ToList();
         var direct = specs.Where(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)).ToList();

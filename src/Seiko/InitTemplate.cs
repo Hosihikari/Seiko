@@ -8,6 +8,8 @@ public static class InitTemplate
 
     public static string Create() => $$"""
 # Seiko install root
+schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
+
 # The official index; remove it or add sources to use other seis.
 sources = [
   { id = "{{OfficialSourceId}}", index = "{{OfficialIndex}}" }
@@ -15,6 +17,5 @@ sources = [
 
 # rid = "win-x64"
 sei = []
-components = []
 """;
 }

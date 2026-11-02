@@ -158,6 +158,7 @@ internal sealed class Fixture : IDisposable
 
         var lines = new List<string>
         {
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}",
             "sources = [",
             $"  {{ id = \"{sourceId}\", index = \"{indexUrl}\" }}",
             "]",
@@ -182,7 +183,6 @@ internal sealed class Fixture : IDisposable
             lines.Add("]");
         }
 
-        lines.Add("components = []");
         File.WriteAllText(Path.Combine(Root, "seiko.conf"), string.Join("\n", lines) + "\n");
     }
 

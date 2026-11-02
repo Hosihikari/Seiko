@@ -7,7 +7,7 @@ public static class ConfigWriter
 {
     public static void WriteSpecs(string root, string section, IReadOnlyList<SeiSpec> specs)
     {
-        if (section is not ("sei" or "components"))
+        if (section is not "sei")
         {
             throw new SeikoException($"unsupported config section: {section}", "config");
         }
@@ -183,8 +183,7 @@ public static class ConfigWriter
             return;
         }
 
-        var insertAt = FindSection(lines, "components")?.Start
-            ?? FindSection(lines, "sei")?.Start
+        var insertAt = FindSection(lines, "sei")?.Start
             ?? FindSection(lines, "sources")?.Start
             ?? lines.Count;
         if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)

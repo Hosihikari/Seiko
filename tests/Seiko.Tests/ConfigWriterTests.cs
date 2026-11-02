@@ -10,24 +10,25 @@ public sealed class ConfigWriterTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
         var path = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(path, """
+        File.WriteAllText(path, $$"""
 # keep me
+schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
 sources = [ { id = "local", index = "source/index.json" } ]
 rid = "win-x64"
 sei = [
   { name = "old", version = "1.0.0" },
 ]
-components = []
 """);
 
         ConfigWriter.WriteSpecs(fixture.Root, "sei", [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]);
 
         var text = File.ReadAllText(path);
         Assert.Contains("# keep me", text);
+        Assert.Contains($"schemaVersion = {SeikoConfig.CurrentSchemaVersion}", text);
         Assert.Contains("rid = \"win-x64\"", text);
         Assert.Contains("name = \"hello\"", text);
         Assert.DoesNotContain("name = \"old\"", text);
-        Assert.Contains("components = []", text);
+        Assert.DoesNotContain("components", text);
     }
 
     [Fact]
@@ -35,10 +36,10 @@ components = []
     {
         using var fixture = new Fixture();
         var path = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(path, """
+        File.WriteAllText(path, $$"""
+schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
 sources = [{ id = "local", index = "source/index.json" }], rid = "win-x64"
 sei = []
-components = []
 """);
         var before = File.ReadAllText(path);
 
@@ -55,10 +56,10 @@ components = []
     {
         using var fixture = new Fixture();
         var path = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(path, """
+        File.WriteAllText(path, $$"""
+schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
 sources = [{ id = "local", index = "source/index.json" }]
 rid = "win-x64", sei = []
-components = []
 """);
         var before = File.ReadAllText(path);
 
@@ -74,10 +75,10 @@ components = []
     {
         using var fixture = new Fixture();
         var path = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(path, """
+        File.WriteAllText(path, $$"""
+schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
 sources = [{ id = "local", index = "source/index.json" }], rid = "win-x64"
 sei = []
-components = []
 """);
         var before = File.ReadAllText(path);
 

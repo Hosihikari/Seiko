@@ -81,7 +81,7 @@ public sealed class Doctor
             return;
         }
 
-        var specs = config.Sei.Concat(config.Components).ToList();
+        var specs = config.Sei;
         var names = new HashSet<string>(specs.Select(spec => spec.Name), StringComparer.Ordinal);
         foreach (var spec in specs)
         {
