@@ -12,6 +12,14 @@ public sealed record ListItem(
 
 public sealed record SyncData(int Sei, int Files, string Mode, List<string> Warnings);
 
+public sealed record PreviewData(
+    List<PlannedChange> Changes,
+    List<PreviewBlock> Blocked,
+    List<string> Warnings,
+    bool Downloaded);
+
+public sealed record PreviewEnvelope(int SchemaVersion, string Command, PreviewData Data);
+
 public sealed record RollbackData(int Generation, int Sei, int Files);
 
 public sealed record InitData(string Created);
@@ -75,6 +83,12 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ListEnvelope))]
 [JsonSerializable(typeof(SyncEnvelope))]
+[JsonSerializable(typeof(PreviewEnvelope))]
+[JsonSerializable(typeof(PreviewData))]
+[JsonSerializable(typeof(PlannedChange))]
+[JsonSerializable(typeof(PreviewBlock))]
+[JsonSerializable(typeof(List<PlannedChange>))]
+[JsonSerializable(typeof(List<PreviewBlock>))]
 [JsonSerializable(typeof(RollbackEnvelope))]
 [JsonSerializable(typeof(InitEnvelope))]
 [JsonSerializable(typeof(SearchEnvelope))]

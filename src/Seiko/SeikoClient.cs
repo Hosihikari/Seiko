@@ -11,6 +11,7 @@ public sealed class SyncResult
     public required int FilesDeployed { get; init; }
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public int SeiInstalled => Lock.Sei.Count;
+    public PreviewResult? Preview { get; init; }
 }
 
 public sealed class RollbackResult
@@ -52,7 +53,8 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default,
         IReadOnlySet<string>? updateNames = null,
         bool latestInstallable = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        bool dryRun = false)
     {
         root = Path.GetFullPath(root);
         cancellationToken.ThrowIfCancellationRequested();
@@ -78,7 +80,8 @@ public sealed class SeikoClient
             cancellationToken,
             updateNames,
             latestInstallable,
-            allowCritical);
+            allowCritical,
+            dryRun: dryRun);
     }
 
     private SyncResult SyncLocked(
@@ -94,7 +97,9 @@ public sealed class SeikoClient
         IReadOnlySet<string>? updateNames,
         bool latestInstallable,
         bool allowCritical,
-        DeploymentTransaction? transaction = null)
+        DeploymentTransaction? transaction = null,
+        bool dryRun = false,
+        IReadOnlyList<SeiSpec>? specsOverride = null)
     {
         if (transaction is null)
         {
@@ -114,7 +119,7 @@ public sealed class SeikoClient
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
-        var specs = config.Sei;
+        var specs = specsOverride ?? config.Sei;
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
@@ -166,6 +171,17 @@ public sealed class SeikoClient
         progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
 
         var store = new Store(storePath);
+        if (dryRun)
+        {
+            return new SyncResult
+            {
+                Lock = lockFile,
+                FilesDeployed = 0,
+                Warnings = warnings,
+                Preview = Preview(existingLock, lockFile, resolved, mode),
+            };
+        }
+
         var stored = DownloadAll(store, resolved, session, downloadCts);
         cancellationToken.ThrowIfCancellationRequested();
         progress?.Report(new SyncProgress(
@@ -205,6 +221,74 @@ public sealed class SeikoClient
             FilesDeployed = deployment.FileCount,
             Warnings = warnings,
         };
+    }
+
+    private static PreviewResult Preview(
+        SeikoLock? existing,
+        SeikoLock proposed,
+        IReadOnlyList<ResolvedSei> resolved,
+        SyncMode mode)
+    {
+        var previous = existing?.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal)
+            ?? new Dictionary<string, LockedSei>(StringComparer.Ordinal);
+        var current = proposed.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
+        var changes = new List<PlannedChange>();
+
+        foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            previous.TryGetValue(sei.Name, out var old);
+            var action = old is null
+                ? "add"
+                : old.Version == sei.Version
+                    && string.Equals(old.Artifact.Sha256, sei.Artifact.Source.Sha256, StringComparison.OrdinalIgnoreCase)
+                        ? "keep"
+                        : "update";
+            if (action == "keep" && mode != SyncMode.Normal)
+            {
+                action = "replay";
+            }
+
+            changes.Add(new PlannedChange(
+                action,
+                sei.Name,
+                old?.Version,
+                sei.Version,
+                sei.Source.Id,
+                sei.Artifact.Source.Sha256));
+        }
+
+        foreach (var removed in previous.Keys
+            .Where(name => !current.ContainsKey(name))
+            .OrderBy(name => name, StringComparer.Ordinal))
+        {
+            changes.Add(new PlannedChange("remove", removed, previous[removed].Version, null, null, null));
+        }
+
+        var blocked = new List<PreviewBlock>();
+        foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            var index = sei.Source.GetSei(sei.Name);
+            if (index is null)
+            {
+                continue;
+            }
+
+            var highest = index.Versions
+                .Select(entry => (Entry: entry, Version: NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : null))
+                .Where(item => item.Version is not null && !item.Entry.Yanked)
+                .OrderByDescending(item => item.Version)
+                .FirstOrDefault();
+            if (highest.Version is null || highest.Version <= sei.ParsedVersion)
+            {
+                continue;
+            }
+
+            blocked.Add(new PreviewBlock(
+                "newer-version",
+                $"{sei.Name} {highest.Version.ToNormalizedString()} is available; the graph keeps {sei.Version}"));
+        }
+
+        return new PreviewResult { Changes = changes, Blocked = blocked };
     }
 
     private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(
@@ -269,7 +353,8 @@ public sealed class SeikoClient
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        bool dryRun = false)
         => AddMany(
             root,
             [specification],
@@ -282,7 +367,8 @@ public sealed class SeikoClient
             log,
             cancellationToken,
             latestInstallable,
-            allowCritical);
+            allowCritical,
+            dryRun);
 
     public SyncResult AddMany(
         string root,
@@ -296,7 +382,8 @@ public sealed class SeikoClient
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        bool dryRun = false)
     {
         root = Path.GetFullPath(root);
         var additions = specifications
@@ -384,6 +471,24 @@ public sealed class SeikoClient
             }
         }
 
+        if (dryRun)
+        {
+            return PreviewWithoutWriting(
+                root,
+                storePath,
+                config.Sei,
+                allowPrerelease,
+                mode: SyncMode.Normal,
+                jobs,
+                proxy,
+                progress,
+                log,
+                cancellationToken,
+                updateNames: null,
+                latestInstallable,
+                allowCritical);
+        }
+
         return WriteSpecsAndSync(
             root,
             config.Sei,
@@ -402,6 +507,37 @@ public sealed class SeikoClient
                 allowCritical,
                 transaction));
     }
+
+    private SyncResult PreviewWithoutWriting(
+        string root,
+        string storePath,
+        IReadOnlyList<SeiSpec> specs,
+        bool allowPrerelease,
+        SyncMode mode,
+        int jobs,
+        string? proxy,
+        IProgress<SyncProgress>? progress,
+        Action<string>? log,
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? updateNames,
+        bool latestInstallable,
+        bool allowCritical)
+        => SyncLocked(
+            root,
+            storePath,
+            allowPrerelease,
+            mode,
+            jobs,
+            proxy,
+            progress,
+            log,
+            cancellationToken,
+            updateNames,
+            latestInstallable,
+            allowCritical,
+            transaction: null,
+            dryRun: true,
+            specs);
 
     private static SyncResult WriteSpecsAndSync(
         string root,
@@ -469,7 +605,8 @@ public sealed class SeikoClient
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        bool dryRun = false)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
@@ -513,6 +650,24 @@ public sealed class SeikoClient
                 new HashSet<string>(StringComparer.Ordinal));
         }
 
+        if (dryRun)
+        {
+            return PreviewWithoutWriting(
+                root,
+                storePath,
+                config.Sei,
+                allowPrerelease,
+                mode: SyncMode.Normal,
+                jobs,
+                proxy,
+                progress,
+                log,
+                cancellationToken,
+                updateNames: null,
+                latestInstallable,
+                allowCritical);
+        }
+
         return WriteSpecsAndSync(
             root,
             config.Sei,
@@ -544,7 +699,8 @@ public sealed class SeikoClient
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        bool dryRun = false)
     {
         root = Path.GetFullPath(root);
         if (latest && latestInstallable)
@@ -607,6 +763,24 @@ public sealed class SeikoClient
             latestInstallable,
             allowCritical,
             transaction);
+
+        if (dryRun)
+        {
+            return PreviewWithoutWriting(
+                root,
+                storePath,
+                config.Sei,
+                allowPrerelease,
+                mode: SyncMode.Normal,
+                jobs,
+                proxy,
+                progress,
+                log,
+                cancellationToken,
+                updateNames,
+                latestInstallable,
+                allowCritical);
+        }
 
         return writeConfig
             ? WriteSpecsAndSync(root, config.Sei, transaction => Sync(transaction))

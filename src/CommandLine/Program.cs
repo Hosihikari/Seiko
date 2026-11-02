@@ -49,6 +49,7 @@ var syncAllowCritical = new Option<bool>("--allow-critical")
 {
     Description = "Allow resolving versions with a critical advisory.",
 };
+var syncDryRun = DryRunOption();
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
@@ -58,6 +59,7 @@ sync.Add(syncJobs);
 sync.Add(syncProxy);
 sync.Add(syncLatestInstallable);
 sync.Add(syncAllowCritical);
+sync.Add(syncDryRun);
 sync.SetAction(parseResult => Run(
     "sync",
     IsJson(parseResult),
@@ -71,6 +73,7 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncProxy),
         parseResult.GetValue(syncLatestInstallable),
         parseResult.GetValue(syncAllowCritical),
+        parseResult.GetValue(syncDryRun),
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
@@ -80,6 +83,7 @@ var addStore = StoreOption();
 var addPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
 var addJobs = JobsOption();
 var addProxy = ProxyOption();
+var addDryRun = DryRunOption();
 var addLatestInstallable = new Option<bool>("--latest-installable")
 {
     Description = "Pick the highest version that has an artifact for the resolved graph.",
@@ -107,6 +111,7 @@ add.Add(addJobs);
 add.Add(addProxy);
 add.Add(addLatestInstallable);
 add.Add(addAllowCritical);
+add.Add(addDryRun);
 add.SetAction(parseResult => Run(
     "add",
     IsJson(parseResult),
@@ -120,6 +125,7 @@ add.SetAction(parseResult => Run(
         parseResult.GetValue(addProxy),
         parseResult.GetValue(addLatestInstallable),
         parseResult.GetValue(addAllowCritical),
+        parseResult.GetValue(addDryRun),
         IsJson(parseResult))));
 
 var remove = new Command("remove", "Remove a direct sei declaration and sync.");
@@ -128,6 +134,7 @@ var removeStore = StoreOption();
 var removePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
 var removeJobs = JobsOption();
 var removeProxy = ProxyOption();
+var removeDryRun = DryRunOption();
 var removeAllowCritical = new Option<bool>("--allow-critical")
 {
     Description = "Allow resolving versions with a critical advisory.",
@@ -140,6 +147,7 @@ remove.Add(removePre);
 remove.Add(removeJobs);
 remove.Add(removeProxy);
 remove.Add(removeAllowCritical);
+remove.Add(removeDryRun);
 remove.SetAction(parseResult => Run(
     "remove",
     IsJson(parseResult),
@@ -151,6 +159,7 @@ remove.SetAction(parseResult => Run(
         parseResult.GetValue(removeJobs) ?? DownloadSession.DefaultJobs,
         parseResult.GetValue(removeProxy),
         parseResult.GetValue(removeAllowCritical),
+        parseResult.GetValue(removeDryRun),
         IsJson(parseResult))));
 
 var update = new Command("update", "Update direct declarations and sync.");
@@ -159,6 +168,7 @@ var updateStore = StoreOption();
 var updatePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
 var updateJobs = JobsOption();
 var updateProxy = ProxyOption();
+var updateDryRun = DryRunOption();
 var updateLatest = new Option<bool>("--latest") { Description = "Rewrite direct ranges to the latest version." };
 var updateLatestInstallable = new Option<bool>("--latest-installable")
 {
@@ -182,6 +192,7 @@ update.Add(updateProxy);
 update.Add(updateLatest);
 update.Add(updateLatestInstallable);
 update.Add(updateAllowCritical);
+update.Add(updateDryRun);
 update.SetAction(parseResult => Run(
     "update",
     IsJson(parseResult),
@@ -195,6 +206,7 @@ update.SetAction(parseResult => Run(
         parseResult.GetValue(updateProxy),
         parseResult.GetValue(updateLatestInstallable),
         parseResult.GetValue(updateAllowCritical),
+        parseResult.GetValue(updateDryRun),
         IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
@@ -577,6 +589,9 @@ static Option<string?> ProxyOption()
 static Option<int?> JobsOption()
     => new("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
 
+static Option<bool> DryRunOption()
+    => new("--dry-run") { Description = "Resolve and print the plan without downloading or writing." };
+
 static int Sync(
     string? rootOption,
     string? store,
@@ -587,6 +602,7 @@ static int Sync(
     string? proxy,
     bool latestInstallable,
     bool allowCritical,
+    bool dryRun,
     bool json)
 {
     if (frozen && locked)
@@ -611,7 +627,8 @@ static int Sync(
             display,
             Log.Debug,
             latestInstallable: latestInstallable,
-            allowCritical: allowCritical);
+            allowCritical: allowCritical,
+            dryRun: dryRun);
     }
     else
     {
@@ -624,8 +641,15 @@ static int Sync(
             proxy,
             log: Log.Debug,
             latestInstallable: latestInstallable,
-            allowCritical: allowCritical);
+            allowCritical: allowCritical,
+            dryRun: dryRun);
     }
+
+    if (dryRun)
+    {
+        return PrintPreview("sync", result.Preview!, json);
+    }
+
     if (json)
     {
         WriteJson(
@@ -642,6 +666,36 @@ static int Sync(
     return 0;
 }
 
+static int PrintPreview(string command, PreviewResult preview, bool json)
+{
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.PreviewEnvelope,
+            new PreviewEnvelope(1, command, new PreviewData(
+                preview.Changes.ToList(),
+                preview.Blocked.ToList(),
+                [],
+                false)));
+        return 0;
+    }
+
+    foreach (var change in preview.Changes)
+    {
+        var from = change.From is null ? "" : $" {change.From} ->";
+        var to = change.To is null ? "" : $" {change.To}";
+        Console.WriteLine($"{change.Action}\t{change.Name}{from}{to}");
+    }
+
+    foreach (var block in preview.Blocked)
+    {
+        Console.WriteLine($"blocked\t{block.Code}: {block.Message}");
+    }
+
+    Console.WriteLine("no files were downloaded or deployed; run without --dry-run to apply");
+    return 0;
+}
+
 static int Add(
     string? rootOption,
     IReadOnlyList<string> specifications,
@@ -652,10 +706,12 @@ static int Add(
     string? proxy,
     bool latestInstallable,
     bool allowCritical,
+    bool dryRun,
     bool json)
     => RunMutation(
         "add",
         json,
+        dryRun,
         (progress, log) => new SeikoClient().AddMany(
             rootOption ?? FindRoot(),
             specifications,
@@ -667,7 +723,8 @@ static int Add(
             progress,
             log,
             latestInstallable: latestInstallable,
-            allowCritical: allowCritical));
+            allowCritical: allowCritical,
+            dryRun: dryRun));
 
 static int Remove(
     string? rootOption,
@@ -677,10 +734,12 @@ static int Remove(
     int jobs,
     string? proxy,
     bool allowCritical,
+    bool dryRun,
     bool json)
     => RunMutation(
         "remove",
         json,
+        dryRun,
         (progress, log) => new SeikoClient().Remove(
             rootOption ?? FindRoot(),
             name,
@@ -690,7 +749,8 @@ static int Remove(
             proxy,
             progress,
             log,
-            allowCritical: allowCritical));
+            allowCritical: allowCritical,
+            dryRun: dryRun));
 
 static int Update(
     string? rootOption,
@@ -702,10 +762,12 @@ static int Update(
     string? proxy,
     bool latestInstallable,
     bool allowCritical,
+    bool dryRun,
     bool json)
     => RunMutation(
         "update",
         json,
+        dryRun,
         (progress, log) => new SeikoClient().Update(
             rootOption ?? FindRoot(),
             name,
@@ -717,7 +779,8 @@ static int Update(
             progress,
             log,
             latestInstallable: latestInstallable,
-            allowCritical: allowCritical));
+            allowCritical: allowCritical,
+            dryRun: dryRun));
 
 static int Why(string? rootOption, string name, bool json)
 {
@@ -905,6 +968,7 @@ static int CacheCleanCommand(string? rootOption, string? store, bool json)
 static int RunMutation(
     string command,
     bool json,
+    bool dryRun,
     Func<IProgress<SyncProgress>?, Action<string>, SyncResult> action)
 {
     var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
@@ -917,6 +981,11 @@ static int RunMutation(
     else
     {
         result = action(null, Log.Debug);
+    }
+
+    if (dryRun)
+    {
+        return PrintPreview(command, result.Preview!, json);
     }
 
     if (json)
