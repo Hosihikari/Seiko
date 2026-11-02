@@ -61,6 +61,21 @@ internal static class SourceValidation
                         $"source '{sourceId}': artifact for {name} {entry.Version} has no source",
                         code);
                 }
+
+                if (artifact.Selectors is not null)
+                {
+                    foreach (var (key, value) in artifact.Selectors)
+                    {
+                        if (string.IsNullOrWhiteSpace(key)
+                            || value is null
+                            || string.IsNullOrWhiteSpace(value))
+                        {
+                            throw Fail(
+                                $"source '{sourceId}': artifact for {name} {entry.Version} has an empty selector",
+                                code);
+                        }
+                    }
+                }
             }
         }
     }

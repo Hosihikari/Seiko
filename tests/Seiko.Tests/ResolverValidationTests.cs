@@ -66,6 +66,27 @@ public sealed class ResolverValidationTests
     }
 
     [Fact]
+    public void Sync_RejectsNullSelectorValueFromSourceJson()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+        File.WriteAllText(
+            Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
+            """{"schemaVersion":1,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"selectors":{"rid":null},"layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("selector", error.Message);
+    }
+
+    [Fact]
     public void Resolve_RejectsEmptyVersionList()
     {
         var source = new SingleSource(new SeiIndex { Name = "hello", Versions = [] });
