@@ -114,7 +114,9 @@ public sealed class Resolver
                     sei.Direct = directNames.Contains(sei.Name);
                 }
 
-                var missing = SelectArtifacts();
+                // In latest-installable mode Search already selected the
+                // artifacts for the accepted graph; only Direct flags changed.
+                var missing = _latestInstallable ? null : SelectArtifacts();
                 if (missing is not null)
                 {
                     throw Fail(missing.Value.Message);
