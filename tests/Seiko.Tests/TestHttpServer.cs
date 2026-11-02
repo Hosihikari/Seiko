@@ -29,6 +29,8 @@ internal sealed class TestHttpServer : IDisposable
 
     public string TruncateBodyPath { get; set; } = "";
 
+    public string UnknownLengthPath { get; set; } = "";
+
     public IReadOnlyList<string?> Authorizations
     {
         get
@@ -119,7 +121,15 @@ internal sealed class TestHttpServer : IDisposable
 
             if (method == "HEAD")
             {
-                await WriteResponseAsync(stream, "200 OK", [], extra, bytes.Length);
+                var unknownLength = UnknownLengthPath.Length > 0
+                    && relative.Contains(UnknownLengthPath, StringComparison.Ordinal);
+                await WriteResponseAsync(
+                    stream,
+                    "200 OK",
+                    [],
+                    extra,
+                    bytes.Length,
+                    omitContentLength: unknownLength);
                 return;
             }
 
@@ -195,12 +205,17 @@ internal sealed class TestHttpServer : IDisposable
         string status,
         byte[] body,
         Dictionary<string, string>? extra,
-        int? contentLength = null)
+        int? contentLength = null,
+        bool omitContentLength = false)
     {
         var builder = new StringBuilder()
-            .Append("HTTP/1.1 ").Append(status).Append("\r\n")
-            .Append("Content-Length: ").Append(contentLength ?? body.Length).Append("\r\n")
-            .Append("Connection: close\r\n");
+            .Append("HTTP/1.1 ").Append(status).Append("\r\n");
+        if (!omitContentLength)
+        {
+            builder.Append("Content-Length: ").Append(contentLength ?? body.Length).Append("\r\n");
+        }
+
+        builder.Append("Connection: close\r\n");
         if (extra is not null)
         {
             foreach (var (key, value) in extra)

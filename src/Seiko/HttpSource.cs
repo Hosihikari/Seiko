@@ -139,10 +139,14 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
         var state = PartialArtifactStateFile.Read(statePath);
         var urlHash = Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(uri));
+        // Unknown total length cannot be resumed safely: there is no Range
+        // end to validate and a retried GET would append a full body to the
+        // existing prefix. Discard the partial state instead.
         var reusable = state is not null
             && state.SchemaVersion == 2
             && string.Equals(state.UrlHash, urlHash, StringComparison.Ordinal)
             && state.Size == size
+            && size > 0
             && state.SegmentCount == segmentCount
             && state.SegmentSize == segmentSize
             && string.Equals(state.ETag, remote.ETag, StringComparison.Ordinal)
@@ -178,7 +182,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         }
 
         session.ReportDownloading(name, downloaded, size);
-        void OnRead(int bytes)
+        void OnRead(long bytes)
         {
             var current = Interlocked.Add(ref downloaded, bytes);
             session.ReportDownloading(name, current, size);
@@ -246,7 +250,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         int index,
         string directory,
         DownloadSession session,
-        Action<int> onRead,
+        Action<long> onRead,
         CancellationToken cancellationToken)
     {
         var segmentPath = Path.Combine(directory, $"seg-{index}");
@@ -262,6 +266,16 @@ public sealed class HttpSource : ISeiSource, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             var have = File.Exists(segmentPath) ? new FileInfo(segmentPath).Length : 0;
+            if (end < 0 && have > 0)
+            {
+                // Without a known total length we cannot issue a Range request,
+                // so a retry must restart the segment rather than append a full
+                // body to an existing prefix.
+                File.Delete(segmentPath);
+                onRead(-have);
+                have = 0;
+            }
+
             if (expectedLength >= 0 && have == expectedLength)
             {
                 return;
@@ -371,7 +385,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         string segmentPath,
         long have,
         long maxBytes,
-        Action<int> onRead,
+        Action<long> onRead,
         CancellationToken cancellationToken)
     {
         await using var body = await OpenBodyAsync(response, cancellationToken).ConfigureAwait(false);
