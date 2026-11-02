@@ -616,6 +616,81 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recover_DeletesAnUnreadableCreatedFileWithTheRecordedDigest()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var created = Path.Combine(root, "created.txt");
+        File.WriteAllText(created, "created");
+        File.SetUnixFileMode(created, UnixFileMode.None);
+        var journal = new DeploymentJournal
+        {
+            Entries =
+            [
+                new DeploymentJournalEntry
+                {
+                    Path = "created.txt",
+                    Existed = false,
+                    Sha256 = Hashing.Sha256Bytes("created"u8),
+                },
+            ],
+        };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "transaction.json"),
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.False(File.Exists(created));
+    }
+
+    [Fact]
+    public void Recover_RejectsDeletingAChangedUnreadableFile()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var created = Path.Combine(root, "created.txt");
+        File.WriteAllText(created, "changed");
+        File.SetUnixFileMode(created, UnixFileMode.None);
+        var journal = new DeploymentJournal
+        {
+            Entries =
+            [
+                new DeploymentJournalEntry
+                {
+                    Path = "created.txt",
+                    Existed = false,
+                    Sha256 = Hashing.Sha256Bytes("created"u8),
+                },
+            ],
+        };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "transaction.json"),
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Contains("not a file created", error.Message);
+        Assert.Equal("changed", File.ReadAllText(created));
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(created));
+    }
+
+    [Fact]
     public void Recover_RejectsDeletingAChangedCreatedFile()
     {
         using var fixture = new Fixture();

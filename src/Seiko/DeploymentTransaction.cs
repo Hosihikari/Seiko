@@ -282,10 +282,7 @@ internal sealed class DeploymentTransaction
     {
         if (entry.Sha256 is not null)
         {
-            return string.Equals(
-                Hashing.Sha256File(Resolve(root, relative)),
-                entry.Sha256,
-                StringComparison.Ordinal);
+            return MatchesCreatedDigest(Resolve(root, relative), entry.Sha256);
         }
 
         if (relative is "seiko.lock.json" or ".seiko/state.json")
@@ -307,6 +304,38 @@ internal sealed class DeploymentTransaction
             && parts[1] == "generations"
             && int.TryParse(parts[2], out _)
             && parts[3] is "state.json" or "lock.json";
+    }
+
+    private static bool MatchesCreatedDigest(string path, string expected)
+    {
+        UnixFileMode? original = null;
+        if (!OperatingSystem.IsWindows())
+        {
+            original = File.GetUnixFileMode(path);
+            if ((original.Value & UnixFileMode.UserRead) == 0)
+            {
+                File.SetUnixFileMode(path, original.Value | UnixFileMode.UserRead);
+            }
+        }
+
+        try
+        {
+            return string.Equals(Hashing.Sha256File(path), expected, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (original is { } mode && !OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    File.SetUnixFileMode(path, mode);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // A failed mode restore must not hide the digest result.
+                }
+            }
+        }
     }
 
     private static bool IsNewGeneration(string backupDirectory, string relative)
