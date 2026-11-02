@@ -1389,6 +1389,16 @@ public sealed class SeikoClient
 
         var snapshotConfig = File.ReadAllBytes(snapshotConfigPath);
         var snapshotConfigInfo = ConfigLoader.LoadPath(snapshotConfigPath);
+        var snapshotRid = string.IsNullOrWhiteSpace(snapshotConfigInfo.Rid)
+            ? DefaultRid()
+            : snapshotConfigInfo.Rid;
+        if (!string.Equals(snapshotLock.Target.Rid, snapshotRid, StringComparison.Ordinal))
+        {
+            throw new SeikoException(
+                $"generation {target} config selects rid '{snapshotRid}', but its lock targets '{snapshotLock.Target.Rid}'",
+                "io");
+        }
+
         var store = new Store(storePath);
         var sei = new List<DeployedSei>();
         var needsFetch = false;
