@@ -196,12 +196,15 @@ internal sealed class DeploymentTransaction
             }
         }
 
-        // A failed commit write can leave the in-memory flag set. Restore is
-        // only reached for an uncommitted transaction, so persist that state
-        // before any file is restored (the per-file writes will retain it).
-        if (journal.Committed)
+        // This path only handles an uncommitted transaction. Persist that
+        // state before any restore work, and register every temporary in one
+        // journal write instead of rewriting the whole journal per file.
+        var wasCommitted = journal.Committed;
+        journal.Committed = false;
+        journal.TemporaryPaths = [];
+        var restoreTemporaries = PlanRestoreTemporaries(rootFull, journal);
+        if (restoreTemporaries.Count > 0 || journal.Entries.Count > 0 || wasCommitted)
         {
-            journal.Committed = false;
             WriteJournalFile(journalPath, journal);
         }
 
@@ -234,12 +237,8 @@ internal sealed class DeploymentTransaction
                 // hardlink to a shared store payload, and an in-place copy
                 // would truncate the store inode. Replace the directory entry
                 // through a fresh temporary file owned by this transaction.
-                var temporary = CreateRestoreTemporary(
-                    root,
-                    relative,
-                    backup,
-                    journal,
-                    journalPath);
+                var temporary = Resolve(rootFull, restoreTemporaries[relative]);
+                CreateRestoreTemporary(temporary, backup);
                 File.Move(temporary, destination, overwrite: true);
                 SetMode(destination, entry.UnixMode);
             }
@@ -260,72 +259,62 @@ internal sealed class DeploymentTransaction
         }
     }
 
-    private static string CreateRestoreTemporary(
+    private static Dictionary<string, string> PlanRestoreTemporaries(
         string root,
-        string relative,
-        string backup,
-        DeploymentJournal journal,
-        string journalPath)
+        DeploymentJournal journal)
     {
-        // A fixed-length leaf keeps the temporary path valid when the
-        // destination basename is close to the filesystem component limit.
-        var slash = relative.LastIndexOf('/');
-        var directory = slash < 0 ? "" : relative[..(slash + 1)];
-        for (var attempt = 0; attempt < 16; attempt++)
+        var temporaries = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in journal.Entries)
         {
-            var relativeTemporary = directory + ".seiko-restore-" + Guid.NewGuid().ToString("N");
-            var temporary = Resolve(root, relativeTemporary);
-            FileStream output;
-            try
-            {
-                output = new FileStream(
-                    temporary,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None);
-            }
-            catch (IOException) when (File.Exists(temporary))
+            if (!entry.Existed)
             {
                 continue;
             }
 
-            try
+            var relative = Normalize(entry.Path);
+            if (temporaries.ContainsKey(relative))
             {
-                journal.TemporaryPaths ??= [];
-                journal.TemporaryPaths.Add(relativeTemporary);
-                WriteJournalFile(journalPath, journal);
-                using (output)
-                using (var input = File.OpenRead(backup))
-                {
-                    input.CopyTo(output);
-                }
-
-                return temporary;
+                continue;
             }
-            catch
-            {
-                output.Dispose();
-                try
-                {
-                    if (File.Exists(temporary))
-                    {
-                        File.Delete(temporary);
-                    }
-                }
-                catch (IOException)
-                {
-                }
-                catch (UnauthorizedAccessException)
-                {
-                }
 
-                throw;
+            var relativeTemporary = RestoreTemporaryName(root, relative);
+            temporaries[relative] = relativeTemporary;
+            journal.TemporaryPaths!.Add(relativeTemporary);
+        }
+
+        return temporaries;
+    }
+
+    // A fixed-length leaf keeps the temporary path valid when the destination
+    // basename is already close to the filesystem's component limit.
+    private static string RestoreTemporaryName(string root, string relative)
+    {
+        var slash = relative.LastIndexOf('/');
+        var directory = slash < 0 ? "" : relative[..(slash + 1)];
+        for (var attempt = 0; attempt < 16; attempt++)
+        {
+            var candidate = directory + ".seiko-restore-" + Guid.NewGuid().ToString("N");
+            var path = Resolve(root, candidate);
+            if (!File.Exists(path) && !Directory.Exists(path))
+            {
+                return candidate;
             }
         }
 
         throw new SeikoException(
-            $"could not create a restore temporary for {relative}",
+            $"could not reserve a restore temporary for {relative}",
             "deploy");
+    }
+
+    private static void CreateRestoreTemporary(string temporary, string backup)
+    {
+        using var output = new FileStream(
+            temporary,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None);
+        using var input = File.OpenRead(backup);
+        input.CopyTo(output);
     }
 
     internal static void RemoveEmptyDirectories(string path)
