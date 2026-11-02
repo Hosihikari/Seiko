@@ -134,7 +134,8 @@ public static class Deployer
                 transaction.WillChange(
                     mutation.RelativePath,
                     allowDirectory: mutation.File is not null
-                        && replaceable.Contains(mutation.RelativePath));
+                        && replaceable.Contains(mutation.RelativePath),
+                    sha256: mutation.File?.Sha256);
             }
 
             foreach (var temporary in temporaryPaths.Values)

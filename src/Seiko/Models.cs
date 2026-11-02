@@ -145,6 +145,7 @@ public sealed class DeploymentJournalEntry
 {
     public string Path { get; set; } = "";
     public bool Existed { get; set; }
+    public string? Sha256 { get; set; }
     public int? UnixMode { get; set; }
 }
 

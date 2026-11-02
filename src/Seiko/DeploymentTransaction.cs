@@ -42,7 +42,7 @@ internal sealed class DeploymentTransaction
         return new DeploymentTransaction(root, stateDirectory);
     }
 
-    public void WillChange(string relative, bool allowDirectory = false)
+    public void WillChange(string relative, bool allowDirectory = false, string? sha256 = null)
     {
         var normalized = Normalize(relative);
         if (_entries.ContainsKey(normalized))
@@ -60,6 +60,7 @@ internal sealed class DeploymentTransaction
         {
             Path = normalized,
             Existed = File.Exists(fullPath),
+            Sha256 = sha256,
         };
         if (entry.Existed)
         {
@@ -245,6 +246,13 @@ internal sealed class DeploymentTransaction
             }
             else if (File.Exists(destination))
             {
+                if (!CanDeleteCreated(rootFull, relative, entry))
+                {
+                    throw new SeikoException(
+                        $"rollback cannot delete {relative}: it is not a file created by this transaction",
+                        "deploy");
+                }
+
                 File.Delete(destination);
             }
         }
@@ -255,9 +263,84 @@ internal sealed class DeploymentTransaction
             var path = Resolve(rootFull, normalized);
             if (Directory.Exists(path))
             {
+                if (!IsNewGeneration(backupFull, normalized))
+                {
+                    throw new SeikoException(
+                        $"rollback cannot delete generation directory {normalized}: it predates this transaction",
+                        "deploy");
+                }
+
                 Directory.Delete(path, recursive: true);
             }
         }
+    }
+
+    private static bool CanDeleteCreated(
+        string root,
+        string relative,
+        DeploymentJournalEntry entry)
+    {
+        if (entry.Sha256 is not null)
+        {
+            return string.Equals(
+                Hashing.Sha256File(Resolve(root, relative)),
+                entry.Sha256,
+                StringComparison.Ordinal);
+        }
+
+        if (relative is "seiko.lock.json" or ".seiko/state.json")
+        {
+            return true;
+        }
+
+        var parts = relative.Split('/');
+        if (parts.Length == 5
+            && parts[0] == ".seiko"
+            && parts[1] == "installed"
+            && parts[4] == "sei.json")
+        {
+            return true;
+        }
+
+        return parts.Length == 4
+            && parts[0] == ".seiko"
+            && parts[1] == "generations"
+            && int.TryParse(parts[2], out _)
+            && parts[3] is "state.json" or "lock.json";
+    }
+
+    private static bool IsNewGeneration(string backupDirectory, string relative)
+    {
+        var slash = relative.LastIndexOf('/');
+        if (slash < 0 || !int.TryParse(relative[(slash + 1)..], out var generation))
+        {
+            return false;
+        }
+
+        var stateDirectory = Path.GetDirectoryName(Path.GetFullPath(backupDirectory))!;
+        var statePath = Path.Combine(stateDirectory, "state.json");
+        var current = 0;
+        if (File.Exists(statePath))
+        {
+            try
+            {
+                var state = JsonSerializer.Deserialize(
+                    File.ReadAllBytes(statePath),
+                    SeikoJsonContext.Default.LocalState);
+                if (state is null)
+                {
+                    return false;
+                }
+
+                current = state.Generation;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        return generation == current + 1;
     }
 
     private static void ValidateJournalPaths(
