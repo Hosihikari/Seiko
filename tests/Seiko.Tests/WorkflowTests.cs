@@ -168,6 +168,44 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Outdated_RecomputesInstallableAgainstTheCandidateGraph()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "one" } }],
+        });
+        fixture.AddSei("marker", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["marker.txt"] = "marker" } }],
+        });
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "2.0.0",
+            Dependencies = [new DepFixture("marker", "*")],
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                    Files = { ["app.txt"] = "two" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
+
+        var item = Assert.Single(client.Outdated(fixture.Root));
+
+        Assert.Equal("app", item.Name);
+        Assert.Equal("2.0.0", item.LatestInstallable);
+    }
+
+    [Fact]
     public void Outdated_UsesTransitiveDependencyRanges()
     {
         using var fixture = new Fixture();

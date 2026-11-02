@@ -1259,9 +1259,8 @@ public sealed class SeikoClient
 
             NuGetVersion? latest = null;
             NuGetVersion? latestInRange = null;
-            NuGetVersion? latestInstallable = null;
-            var graphNames = lockFile.Sei.Select(sei => sei.Name).ToHashSet(StringComparer.Ordinal);
             var rid = string.IsNullOrWhiteSpace(lockFile.Target.Rid) ? DefaultRid() : lockFile.Target.Rid;
+            var candidates = new List<NuGetVersion>();
             foreach (var entry in index.Versions)
             {
                 if (entry.Yanked || Retirement.IsCritical(entry)
@@ -1280,16 +1279,30 @@ public sealed class SeikoClient
                     latest = version;
                 }
 
-                if (range.Satisfies(version) && (latestInRange is null || version > latestInRange))
+                if (range.Satisfies(version))
                 {
-                    latestInRange = version;
+                    candidates.Add(version);
+                    if (latestInRange is null || version > latestInRange)
+                    {
+                        latestInRange = version;
+                    }
                 }
+            }
 
-                if ((latestInstallable is null || version > latestInstallable)
-                    && entry.Artifacts.Any(artifact =>
-                        Resolver.ScoreArtifact(artifact, rid, graphNames) >= 0))
+            NuGetVersion? latestInstallable = null;
+            foreach (var version in candidates.OrderByDescending(candidate => candidate))
+            {
+                if (IsInstallable(
+                    config,
+                    sources,
+                    lockFile,
+                    locked.Name,
+                    version,
+                    rid,
+                    allowPrerelease))
                 {
                     latestInstallable = version;
+                    break;
                 }
             }
 
@@ -1311,6 +1324,49 @@ public sealed class SeikoClient
         }
 
         return result;
+    }
+
+    private static bool IsInstallable(
+        SeikoConfig config,
+        IReadOnlyList<ISeiSource> sources,
+        SeikoLock lockFile,
+        string name,
+        NuGetVersion version,
+        string rid,
+        bool allowPrerelease)
+    {
+        var specs = config.Sei.Concat(config.Components)
+            .Select(spec => new SeiSpec { Name = spec.Name, Version = spec.Version })
+            .ToList();
+        var direct = specs.Where(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)).ToList();
+        if (direct.Count == 0)
+        {
+            specs.Add(new SeiSpec { Name = name, Version = $"[{version}]" });
+        }
+        else
+        {
+            foreach (var spec in direct)
+            {
+                spec.Version = $"[{version}]";
+            }
+        }
+
+        try
+        {
+            var resolver = new Resolver(
+                sources,
+                lockFile,
+                rid,
+                allowPrerelease,
+                updateNames: new HashSet<string>(StringComparer.Ordinal) { name },
+                latestInstallable: true);
+            resolver.Resolve(specs);
+            return true;
+        }
+        catch (SeikoException ex) when (ex.Code == "resolve")
+        {
+            return false;
+        }
     }
 
     private static void AddRanges(
