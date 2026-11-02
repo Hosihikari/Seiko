@@ -331,6 +331,24 @@ public sealed class SeikoClient
             throw new SeikoException($"{name} is not a direct dependency", "resolve");
         }
 
+        var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
+        if (existingLock is not null)
+        {
+            using var session = new DownloadSession(jobs, cancellationToken);
+            var sources = LoadSources(config, root, proxy, session);
+            using var sourceScope = new SourceScope(sources);
+            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+            var resolved = new Resolver(
+                sources,
+                existingLock,
+                rid,
+                allowPrerelease,
+                updateNames: null,
+                latestInstallable,
+                allowCritical).Resolve(config.Sei);
+            EnsureRemoveKeepsSelections(existingLock, resolved, name);
+        }
+
         ConfigWriter.WriteSpecs(root, "sei", config.Sei);
 
         return SyncLocked(
@@ -1299,6 +1317,39 @@ public sealed class SeikoClient
         }
 
         return result;
+    }
+
+    private static void EnsureRemoveKeepsSelections(
+        SeikoLock existing,
+        IReadOnlyList<ResolvedSei> resolved,
+        string removed)
+    {
+        var byName = resolved.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
+        foreach (var locked in existing.Sei)
+        {
+            if (string.Equals(locked.Name, removed, StringComparison.Ordinal)
+                || !byName.TryGetValue(locked.Name, out var current))
+            {
+                continue;
+            }
+
+            if (string.Equals(locked.Version, current.Version, StringComparison.Ordinal)
+                && string.Equals(
+                    locked.Artifact.Sha256,
+                    current.Artifact.Source.Sha256,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    locked.Artifact.Rid,
+                    current.Artifact.Rid,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            throw new SeikoException(
+                $"remove {removed} would change {locked.Name} from {locked.Version}/{locked.Artifact.Sha256} to {current.Version}/{current.Artifact.Source.Sha256}; use `add {locked.Name} --remove {removed}` to authorize re-resolution, or `add P --remove {removed}` to keep the current artifact",
+                "resolve");
+        }
     }
 
     private static bool IsInstallable(
