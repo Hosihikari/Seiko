@@ -31,6 +31,64 @@ components = []
     }
 
     [Fact]
+    public void WriteSources_RefusesInlineFieldsWithoutChangingTheFile()
+    {
+        using var fixture = new Fixture();
+        var path = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(path, """
+sources = [{ id = "local", index = "source/index.json" }], rid = "win-x64"
+sei = []
+components = []
+""");
+        var before = File.ReadAllText(path);
+
+        var error = Assert.Throws<SeikoException>(() => ConfigWriter.WriteSources(
+            fixture.Root,
+            [new SourceConfig { Id = "mirror", Index = "https://example.invalid/index.json" }]));
+
+        Assert.Equal("config", error.Code);
+        Assert.Equal(before, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void WriteRid_RefusesInlineFieldsWithoutChangingTheFile()
+    {
+        using var fixture = new Fixture();
+        var path = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(path, """
+sources = [{ id = "local", index = "source/index.json" }]
+rid = "win-x64", sei = []
+components = []
+""");
+        var before = File.ReadAllText(path);
+
+        var error = Assert.Throws<SeikoException>(
+            () => ConfigWriter.WriteRid(fixture.Root, "linux-x64"));
+
+        Assert.Equal("config", error.Code);
+        Assert.Equal(before, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void WriteRid_RefusesAnInlineRidWithoutChangingTheFile()
+    {
+        using var fixture = new Fixture();
+        var path = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(path, """
+sources = [{ id = "local", index = "source/index.json" }], rid = "win-x64"
+sei = []
+components = []
+""");
+        var before = File.ReadAllText(path);
+
+        var error = Assert.Throws<SeikoException>(
+            () => ConfigWriter.WriteRid(fixture.Root, "linux-x64"));
+
+        Assert.Equal("config", error.Code);
+        Assert.Equal(before, File.ReadAllText(path));
+    }
+
+    [Fact]
     public void SourceAndConfigCommands_RoundTrip()
     {
         using var fixture = new Fixture();

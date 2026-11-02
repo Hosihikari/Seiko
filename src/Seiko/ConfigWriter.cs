@@ -1,4 +1,5 @@
 using System.Text;
+using Hocon;
 
 namespace Seiko;
 
@@ -12,21 +13,29 @@ public static class ConfigWriter
         }
 
         var lines = ReadLines(root);
-        ReplaceSection(lines, section, BuildSpecsBlock(section, specs));
+        var original = string.Join("\n", lines);
+        var block = BuildSpecsBlock(section, specs);
+        ReplaceSection(lines, section, block);
+        EnsureSafeEdit(original, lines, section, string.Join("\n", block));
         WriteLines(root, lines);
     }
 
     public static void WriteSources(string root, IReadOnlyList<SourceConfig> sources)
     {
         var lines = ReadLines(root);
-        ReplaceSection(lines, "sources", BuildSourcesBlock(sources));
+        var original = string.Join("\n", lines);
+        var block = BuildSourcesBlock(sources);
+        ReplaceSection(lines, "sources", block);
+        EnsureSafeEdit(original, lines, "sources", string.Join("\n", block));
         WriteLines(root, lines);
     }
 
     public static void WriteRid(string root, string? rid)
     {
         var lines = ReadLines(root);
+        var original = string.Join("\n", lines);
         var index = FindScalar(lines, "rid");
+        string? expected = null;
         if (string.IsNullOrWhiteSpace(rid))
         {
             if (index >= 0)
@@ -36,20 +45,21 @@ public static class ConfigWriter
         }
         else
         {
-            var value = $"rid = \"{Escape(rid)}\"";
+            expected = $"rid = \"{Escape(rid)}\"";
             if (index >= 0)
             {
-                lines[index] = value;
+                lines[index] = expected;
             }
             else
             {
                 var insertAt = FindSection(lines, "sources")?.Start
                     ?? FindSection(lines, "sei")?.Start
                     ?? lines.Count;
-                lines.Insert(insertAt, value);
+                lines.Insert(insertAt, expected);
             }
         }
 
+        EnsureSafeEdit(original, lines, "rid", expected);
         WriteLines(root, lines);
     }
 
@@ -66,6 +76,88 @@ public static class ConfigWriter
             .Split('\n')
             .ToList();
     }
+
+    // The writer edits physical lines, which is only safe when each top-level
+    // field stays on its own lines. Re-parse the result and compare it with the
+    // input so a legal but unfamiliar layout (for example a field sharing the
+    // sources line) is rejected instead of silently losing the other field.
+    private static void EnsureSafeEdit(
+        string original,
+        List<string> edited,
+        string key,
+        string? expectedBlock)
+    {
+        HoconRoot before;
+        HoconRoot after;
+        HoconValue? expected = null;
+        try
+        {
+            before = Parse(original);
+            after = Parse(string.Join("\n", edited));
+            if (expectedBlock is not null)
+            {
+                if (!Parse(expectedBlock).TryGetValue(key, out var parsedExpected))
+                {
+                    throw new SeikoException("the generated config block is invalid", "config");
+                }
+
+                expected = parsedExpected;
+            }
+        }
+        catch (SeikoException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new SeikoException(
+                $"cannot safely edit seiko.conf; keep each top-level field on its own line ({ex.Message})",
+                "config",
+                ex);
+        }
+
+        if (expected is null)
+        {
+            if (after.TryGetValue(key, out _))
+            {
+                throw UnsafeLayout(key);
+            }
+        }
+        else if (!after.TryGetValue(key, out var actual)
+            || !string.Equals(actual.Raw, expected.Raw, StringComparison.Ordinal))
+        {
+            throw UnsafeLayout(key);
+        }
+
+        var beforeFields = TopLevel(before, key);
+        var afterFields = TopLevel(after, key);
+        if (beforeFields.Count != afterFields.Count)
+        {
+            throw UnsafeLayout(key);
+        }
+
+        foreach (var (name, value) in beforeFields)
+        {
+            if (!afterFields.TryGetValue(name, out var other)
+                || !string.Equals(value, other, StringComparison.Ordinal))
+            {
+                throw UnsafeLayout(key);
+            }
+        }
+    }
+
+    private static HoconRoot Parse(string text)
+        => HoconParser.Parse(text, null);
+
+    private static Dictionary<string, string> TopLevel(HoconRoot root, string skip)
+        => root.AsEnumerable()
+            .Where(pair => !string.Equals(pair.Key, skip, StringComparison.Ordinal))
+            .ToDictionary(pair => pair.Key, pair => pair.Value.Value.Raw, StringComparer.Ordinal);
+
+    private static SeikoException UnsafeLayout(string key)
+        => new(
+            $"cannot safely edit {key} in seiko.conf; keep each top-level field on its own line",
+            "config");
 
     private static void WriteLines(string root, List<string> lines)
     {

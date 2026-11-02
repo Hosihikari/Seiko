@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="NuGet.Versioning" Version="6.14.3" />
+    <PackageReference Include="Hocon" Version="2.0.4" />
     <PackageReference Include="Hocon.Extensions.Configuration" Version="2.0.4" />
   </ItemGroup>
 
