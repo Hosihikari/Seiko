@@ -267,9 +267,13 @@ internal sealed class DeploymentTransaction
         DeploymentJournal journal,
         string journalPath)
     {
+        // A fixed-length leaf keeps the temporary path valid when the
+        // destination basename is close to the filesystem component limit.
+        var slash = relative.LastIndexOf('/');
+        var directory = slash < 0 ? "" : relative[..(slash + 1)];
         for (var attempt = 0; attempt < 16; attempt++)
         {
-            var relativeTemporary = $"{relative}.seiko-restore-{Guid.NewGuid():N}";
+            var relativeTemporary = directory + ".seiko-restore-" + Guid.NewGuid().ToString("N");
             var temporary = Resolve(root, relativeTemporary);
             FileStream output;
             try

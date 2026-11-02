@@ -559,6 +559,28 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recover_RestoresALongFileName()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var name = new string('a', 205) + ".txt";
+        var file = Path.Combine(root, name);
+        File.WriteAllText(file, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange(name);
+        transaction.WriteJournal();
+        File.WriteAllText(file, "new");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.Equal("old", File.ReadAllText(file));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
     public void Recover_PreservesUnrelatedRestoreLookalikes()
     {
         using var fixture = new Fixture();
