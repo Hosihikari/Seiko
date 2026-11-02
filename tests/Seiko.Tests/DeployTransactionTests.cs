@@ -359,17 +359,18 @@ public sealed class DeployTransactionTests
         var stateDirectory = Path.Combine(root, ".seiko");
         Directory.CreateDirectory(stateDirectory);
         var tool = Path.Combine(root, "tool");
+        var temporary = "x.seiko-tmp-" + new string('a', 32);
         File.WriteAllText(tool, "old");
 
         var transaction = DeploymentTransaction.Begin(root, stateDirectory);
         transaction.WillChange("tool");
         transaction.WillChange("tool/x");
-        transaction.WillCreateTemporary("tool/x.seiko-tmp-crash");
+        transaction.WillCreateTemporary("tool/" + temporary);
         transaction.WriteJournal();
 
         File.Delete(tool);
         Directory.CreateDirectory(tool);
-        File.WriteAllText(Path.Combine(tool, "x.seiko-tmp-crash"), "partial");
+        File.WriteAllText(Path.Combine(tool, temporary), "partial");
 
         DeploymentTransaction.Recover(root, stateDirectory);
 
@@ -386,17 +387,18 @@ public sealed class DeployTransactionTests
         var stateDirectory = Path.Combine(root, ".seiko");
         Directory.CreateDirectory(stateDirectory);
         var tool = Path.Combine(root, "tool");
+        var temporary = "x.seiko-tmp-" + new string('a', 32);
         File.WriteAllText(tool, "old");
 
         var transaction = DeploymentTransaction.Begin(root, stateDirectory);
         transaction.WillChange("tool");
         transaction.WillChange("tool/x");
-        transaction.WillCreateTemporary("tool/x.seiko-tmp-crash");
+        transaction.WillCreateTemporary("tool/" + temporary);
         transaction.WriteJournal();
 
         File.Delete(tool);
         Directory.CreateDirectory(tool);
-        File.WriteAllText(Path.Combine(tool, "x.seiko-tmp-crash"), "partial");
+        File.WriteAllText(Path.Combine(tool, temporary), "partial");
         File.WriteAllText(Path.Combine(tool, "other.seiko-tmp-crash"), "keep");
 
         var error = Assert.Throws<SeikoException>(
@@ -404,7 +406,7 @@ public sealed class DeployTransactionTests
 
         Assert.Contains("non-empty directory", error.Message);
         Assert.True(File.Exists(Path.Combine(tool, "other.seiko-tmp-crash")));
-        Assert.False(File.Exists(Path.Combine(tool, "x.seiko-tmp-crash")));
+        Assert.False(File.Exists(Path.Combine(tool, temporary)));
     }
 
     [Fact]
@@ -556,6 +558,60 @@ public sealed class DeployTransactionTests
         Assert.Equal("OLD-A", File.ReadAllText(a));
         Assert.Equal("OLD-B", File.ReadAllText(b));
         Assert.False(File.Exists(journalPath));
+    }
+
+    [Fact]
+    public void Recover_RejectsUnrelatedTemporaryPathsBeforeDeleting()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var victim = Path.Combine(root, "victim.txt");
+        File.WriteAllText(victim, "keep");
+        var journal = new DeploymentJournal
+        {
+            TemporaryPaths = ["victim.txt"],
+            Entries = [],
+        };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "transaction.json"),
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Contains("temporary", error.Message);
+        Assert.Equal("keep", File.ReadAllText(victim));
+    }
+
+    [Fact]
+    public void Recover_RejectsAnInvalidGenerationPathBeforeDeleting()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var victimDirectory = Path.Combine(root, "victim");
+        Directory.CreateDirectory(victimDirectory);
+        File.WriteAllText(Path.Combine(victimDirectory, "keep.txt"), "keep");
+        var journal = new DeploymentJournal
+        {
+            NewGenerationPath = "victim",
+            Entries = [],
+        };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "transaction.json"),
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Contains("generation", error.Message);
+        Assert.True(Directory.Exists(victimDirectory));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(victimDirectory, "keep.txt")));
     }
 
     [Fact]

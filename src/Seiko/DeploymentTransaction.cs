@@ -186,6 +186,7 @@ internal sealed class DeploymentTransaction
     {
         var rootFull = Path.GetFullPath(root);
         var backupFull = Path.GetFullPath(backupDirectory);
+        ValidateJournalPaths(rootFull, backupFull, journal);
         foreach (var temporary in journal.TemporaryPaths ?? [])
         {
             var normalized = Normalize(temporary);
@@ -257,6 +258,116 @@ internal sealed class DeploymentTransaction
                 Directory.Delete(path, recursive: true);
             }
         }
+    }
+
+    private static void ValidateJournalPaths(
+        string root,
+        string backupDirectory,
+        DeploymentJournal journal)
+    {
+        var entries = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in journal.Entries)
+        {
+            var relative = Normalize(entry.Path);
+            Resolve(root, relative);
+            if (!entries.Add(relative))
+            {
+                throw new SeikoException(
+                    $"duplicate entry in deployment transaction: {relative}",
+                    "deploy");
+            }
+        }
+
+        foreach (var temporary in journal.TemporaryPaths ?? [])
+        {
+            var relative = Normalize(temporary);
+            Resolve(root, relative);
+            if (!IsDeploymentTemporary(relative, entries)
+                && !IsRestoreTemporary(relative, entries))
+            {
+                throw new SeikoException(
+                    $"invalid deployment transaction temporary path: {relative}",
+                    "deploy");
+            }
+        }
+
+        if (journal.NewGenerationPath is { } generation)
+        {
+            var relative = Normalize(generation);
+            Resolve(root, relative);
+            var stateDirectory = Path.GetDirectoryName(Path.GetFullPath(backupDirectory))!;
+            var stateRelative = Path.GetRelativePath(root, stateDirectory).Replace('\\', '/');
+            if (stateRelative == ".")
+            {
+                stateRelative = "";
+            }
+
+            var prefix = stateRelative.Length == 0
+                ? "generations/"
+                : stateRelative + "/generations/";
+            var leaf = relative.StartsWith(prefix, StringComparison.Ordinal)
+                ? relative[prefix.Length..]
+                : "";
+            if (leaf.Length == 0 || !leaf.All(char.IsAsciiDigit))
+            {
+                throw new SeikoException(
+                    $"invalid deployment transaction generation path: {relative}",
+                    "deploy");
+            }
+        }
+    }
+
+    private static bool IsDeploymentTemporary(string relative, HashSet<string> entries)
+    {
+        const string marker = ".seiko-tmp-";
+        var index = relative.LastIndexOf(marker, StringComparison.Ordinal);
+        if (index <= 0
+            || relative.Length != index + marker.Length + 32
+            || !IsLowerHex(relative.AsSpan(index + marker.Length)))
+        {
+            return false;
+        }
+
+        return entries.Contains(relative[..index]);
+    }
+
+    private static bool IsRestoreTemporary(string relative, HashSet<string> entries)
+    {
+        const string prefix = ".seiko-restore-";
+        var slash = relative.LastIndexOf('/');
+        var leaf = slash < 0 ? relative : relative[(slash + 1)..];
+        if (!leaf.StartsWith(prefix, StringComparison.Ordinal)
+            || leaf.Length != prefix.Length + 32
+            || !IsLowerHex(leaf.AsSpan(prefix.Length)))
+        {
+            return false;
+        }
+
+        var directory = slash < 0 ? "" : relative[..(slash + 1)];
+        foreach (var entry in entries)
+        {
+            var entrySlash = entry.LastIndexOf('/');
+            var entryDirectory = entrySlash < 0 ? "" : entry[..(entrySlash + 1)];
+            if (string.Equals(entryDirectory, directory, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsLowerHex(ReadOnlySpan<char> value)
+    {
+        foreach (var character in value)
+        {
+            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static Dictionary<string, string> PlanRestoreTemporaries(
