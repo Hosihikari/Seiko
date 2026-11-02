@@ -22,6 +22,9 @@ public sealed class Store
     public StoredSei? TryGet(string sha256)
     {
         sha256 = Hashing.NormalizeSha256(sha256);
+        using var artifactLock = ProcessLock.AcquireWaiting(
+            Path.Combine(Root, ".locks", sha256 + ".lock"),
+            $"artifact {sha256}");
         var directory = Path.Combine(Root, sha256);
         var manifestPath = Path.Combine(directory, "sei.json");
         if (!File.Exists(manifestPath))
@@ -52,6 +55,17 @@ public sealed class Store
         var expectedSha = Hashing.NormalizeSha256(sei.Artifact.Source.Sha256);
         var directory = Path.Combine(Root, expectedSha);
         var manifestPath = Path.Combine(directory, "sei.json");
+        var partialRoot = Path.Combine(Root, ".partial");
+        Directory.CreateDirectory(partialRoot);
+        var partialDirectory = Path.Combine(partialRoot, expectedSha);
+
+        // Hold the artifact lock for the read as well: another process may be
+        // replacing the directory, and a lock-free probe can observe the gap.
+        using var artifactLock = ProcessLock.AcquireWaiting(
+            Path.Combine(Root, ".locks", expectedSha + ".lock"),
+            $"artifact {expectedSha}",
+            cancellationToken: cancellationToken);
+
         if (File.Exists(manifestPath))
         {
             try
@@ -59,25 +73,6 @@ public sealed class Store
                 var stored = LoadStored(sei, directory, manifestPath);
                 session.ReportCompleted(sei.Name, sei.Artifact.Source.Size);
                 return stored;
-            }
-            catch (SeikoException ex) when (ex.Code == "cache-repair")
-            {
-                // Missing metadata or payload: re-download under the artifact lock.
-            }
-        }
-
-        var partialRoot = Path.Combine(Root, ".partial");
-        Directory.CreateDirectory(partialRoot);
-        var partialDirectory = Path.Combine(partialRoot, expectedSha);
-        using var artifactLock = ProcessLock.Acquire(
-            Path.Combine(Root, ".locks", expectedSha + ".lock"),
-            $"artifact {expectedSha}");
-
-        if (File.Exists(manifestPath))
-        {
-            try
-            {
-                return LoadStored(sei, directory, manifestPath);
             }
             catch (SeikoException ex) when (ex.Code == "cache-repair")
             {

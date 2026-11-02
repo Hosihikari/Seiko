@@ -35,6 +35,33 @@ public sealed class ProcessLock : IDisposable
         }
     }
 
+    public static ProcessLock AcquireWaiting(
+        string path,
+        string description,
+        string code = "lock",
+        CancellationToken cancellationToken = default)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
+        var delay = 25;
+        while (true)
+        {
+            var acquired = TryAcquire(path);
+            if (acquired is not null)
+            {
+                return acquired;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new SeikoException($"{description} is in use by another process", code);
+            }
+
+            cancellationToken.WaitHandle.WaitOne(delay);
+            cancellationToken.ThrowIfCancellationRequested();
+            delay = Math.Min(delay * 2, 500);
+        }
+    }
+
     public static ProcessLock Acquire(string path, string description, string code = "lock")
     {
         var directory = Path.GetDirectoryName(path);
