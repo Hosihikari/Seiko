@@ -265,7 +265,10 @@ public static class IndexVerifier
                     continue;
                 }
 
-                if (selectors.Any(existing => SelectorEquals(existing.Selectors, artifact.Selectors)))
+                if (selectors.Any(existing =>
+                        SelectorSemantics.EquivalentForResolution(
+                            existing.Selectors,
+                            artifact.Selectors)))
                 {
                     context.Error(
                         "artifact-ambiguous",
