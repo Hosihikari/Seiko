@@ -34,13 +34,7 @@ public sealed class Store
 
         var digests = LoadDigests(sha256, directory);
         VerifyFiles(directory, digests);
-        var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
-            ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
-        if (manifest.SchemaVersion != 1)
-        {
-            throw new SeikoException($"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}", "io");
-        }
-
+        var manifest = ReadManifest(directory, manifestPath);
         return new StoredSei(directory, manifest, digests);
     }
 
@@ -93,6 +87,7 @@ public sealed class Store
             cancellationToken.ThrowIfCancellationRequested();
 
             var artifactPath = Path.Combine(partialDirectory, "artifact");
+            List<StoreFileDigest> extracted;
             await session.ExtractSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -115,14 +110,14 @@ public sealed class Store
                 var temp = Path.Combine(Root, actual + ".tmp-" + Guid.NewGuid().ToString("N"));
                 try
                 {
-                    var digests = Extract(artifactPath, temp);
+                    extracted = Extract(artifactPath, temp);
                     if (Directory.Exists(directory))
                     {
                         Directory.Delete(directory, recursive: true);
                     }
 
                     Directory.Move(temp, directory);
-                    StoreDigests.Write(Root, new StoreDigestsState { Artifact = actual, Files = digests });
+                    StoreDigests.Write(Root, new StoreDigestsState { Artifact = actual, Files = extracted });
                 }
                 catch
                 {
@@ -141,7 +136,7 @@ public sealed class Store
 
             TryDeleteDirectory(partialDirectory);
             session.ReportCompleted(sei.Name, sei.Artifact.Source.Size);
-            return LoadStored(sei, directory, manifestPath);
+            return LoadExtracted(sei, directory, manifestPath, extracted);
         }
         catch (SeikoException ex) when (ex.Code == "checksum")
         {
@@ -172,10 +167,44 @@ public sealed class Store
     {
         var digests = LoadDigests(Hashing.NormalizeSha256(sei.Artifact.Source.Sha256), directory);
         VerifyFiles(directory, digests);
-        var manifest = JsonSerializer.Deserialize(File.ReadAllBytes(manifestPath), SeikoJsonContext.Default.SeiManifest)
-            ?? throw new SeikoException($"invalid sei.json for {sei.Name} {sei.Version}", "io");
+        var manifest = ReadManifest(directory, manifestPath);
         Validate(sei, manifest);
         return new StoredSei(directory, manifest, digests);
+    }
+
+    // The cold path just hashed every extracted file while writing it, so it
+    // can reuse those digests; cache hits still run VerifyFiles.
+    private static StoredSei LoadExtracted(
+        ResolvedSei sei,
+        string directory,
+        string manifestPath,
+        List<StoreFileDigest> extracted)
+    {
+        var manifest = ReadManifest(directory, manifestPath);
+        Validate(sei, manifest);
+        var digests = new Dictionary<string, StoreFileDigest>(StringComparer.Ordinal);
+        foreach (var digest in extracted)
+        {
+            digests[digest.Path] = digest;
+        }
+
+        return new StoredSei(directory, manifest, digests);
+    }
+
+    private static SeiManifest ReadManifest(string directory, string manifestPath)
+    {
+        var manifest = JsonSerializer.Deserialize(
+                File.ReadAllBytes(manifestPath),
+                SeikoJsonContext.Default.SeiManifest)
+            ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
+        if (manifest.SchemaVersion != 1)
+        {
+            throw new SeikoException(
+                $"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}",
+                "io");
+        }
+
+        return manifest;
     }
 
     private static void VerifyFiles(
