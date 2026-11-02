@@ -374,29 +374,10 @@ public sealed class Store
             throw new SeikoException($"{sei.Name}: sei.json dependencies do not match the index", "io");
         }
 
-        if (!SelectorEquals(manifest.Selectors, sei.Artifact.Selectors))
+        if (!SelectorSemantics.Equal(manifest.Selectors, sei.Artifact.Selectors))
         {
             throw new SeikoException($"{sei.Name}: sei.json selectors do not match the index artifact", "io");
         }
     }
 
-    private static bool SelectorEquals(Dictionary<string, string>? left, Dictionary<string, string>? right)
-    {
-        var a = left ?? [];
-        var b = right ?? [];
-        if (a.Count != b.Count)
-        {
-            return false;
-        }
-
-        foreach (var (key, value) in a)
-        {
-            if (!b.TryGetValue(key, out var other) || !string.Equals(value, other, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

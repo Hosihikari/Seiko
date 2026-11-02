@@ -445,7 +445,7 @@ public static class IndexVerifier
                 path);
         }
 
-        if (!IsSha256(source.Sha256))
+        if (!Hashing.IsSha256(source.Sha256))
         {
             context.Error(
                 "artifact-sha256",
@@ -838,7 +838,7 @@ public static class IndexVerifier
                     $"{prefix}: sei.json dependencies do not match the index",
                     reference.Path);
             }
-            else if (!SelectorEquals(manifest.Selectors, reference.Artifact.Selectors))
+            else if (!SelectorSemantics.Equal(manifest.Selectors, reference.Artifact.Selectors))
             {
                 context.Error(
                     "manifest-mismatch",
@@ -899,28 +899,6 @@ public static class IndexVerifier
         return left.SequenceEqual(right, StringComparer.Ordinal);
     }
 
-    private static bool SelectorEquals(
-        Dictionary<string, string>? left,
-        Dictionary<string, string>? right)
-    {
-        var a = left ?? [];
-        var b = right ?? [];
-        if (a.Count != b.Count)
-        {
-            return false;
-        }
-
-        foreach (var (key, value) in a)
-        {
-            if (!b.TryGetValue(key, out var other) || !string.Equals(value, other, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private static string? NormalizeLayout(string? layout)
         => string.IsNullOrEmpty(layout) ? "root" : layout;
 
@@ -932,24 +910,6 @@ public static class IndexVerifier
         }
 
         return VersionRange.TryParse(text, out _);
-    }
-
-    private static bool IsSha256(string? value)
-    {
-        if (value is null || value.Length != 64)
-        {
-            return false;
-        }
-
-        foreach (var c in value)
-        {
-            if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static bool IsValidArtifactUrl(string? url)

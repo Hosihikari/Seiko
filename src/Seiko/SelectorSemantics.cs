@@ -6,6 +6,29 @@ namespace Seiko;
 // that the resolver would then reject as ambiguous.
 internal static class SelectorSemantics
 {
+    public static bool Equal(
+        Dictionary<string, string>? left,
+        Dictionary<string, string>? right)
+    {
+        var a = left ?? [];
+        var b = right ?? [];
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+
+        foreach (var (key, value) in a)
+        {
+            if (!b.TryGetValue(key, out var other)
+                || !string.Equals(value, other, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static bool EquivalentForResolution(
         Dictionary<string, string>? left,
         Dictionary<string, string>? right)
