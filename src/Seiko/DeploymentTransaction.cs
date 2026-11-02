@@ -406,7 +406,7 @@ internal sealed class DeploymentTransaction
         var index = relative.LastIndexOf(marker, StringComparison.Ordinal);
         if (index <= 0
             || relative.Length != index + marker.Length + 32
-            || !IsLowerHex(relative.AsSpan(index + marker.Length)))
+            || !Hashing.IsLowerHex(relative.AsSpan(index + marker.Length)))
         {
             return false;
         }
@@ -421,7 +421,7 @@ internal sealed class DeploymentTransaction
         var leaf = slash < 0 ? relative : relative[(slash + 1)..];
         if (!leaf.StartsWith(prefix, StringComparison.Ordinal)
             || leaf.Length != prefix.Length + 32
-            || !IsLowerHex(leaf.AsSpan(prefix.Length)))
+            || !Hashing.IsLowerHex(leaf.AsSpan(prefix.Length)))
         {
             return false;
         }
@@ -438,19 +438,6 @@ internal sealed class DeploymentTransaction
         }
 
         return false;
-    }
-
-    private static bool IsLowerHex(ReadOnlySpan<char> value)
-    {
-        foreach (var character in value)
-        {
-            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static Dictionary<string, string> PlanRestoreTemporaries(

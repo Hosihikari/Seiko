@@ -14,9 +14,9 @@ internal static class StoreStaging
     {
         artifact = "";
         if (name.Length != HashLength + Marker.Length + GuidLength
-            || !IsLowerHex(name.AsSpan(0, HashLength))
+            || !Hashing.IsLowerHex(name.AsSpan(0, HashLength))
             || !name.AsSpan(HashLength, Marker.Length).SequenceEqual(Marker)
-            || !IsLowerHex(name.AsSpan(HashLength + Marker.Length)))
+            || !Hashing.IsLowerHex(name.AsSpan(HashLength + Marker.Length)))
         {
             return false;
         }
@@ -62,16 +62,4 @@ internal static class StoreStaging
         return true;
     }
 
-    private static bool IsLowerHex(ReadOnlySpan<char> value)
-    {
-        foreach (var character in value)
-        {
-            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

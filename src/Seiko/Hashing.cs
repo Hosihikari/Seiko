@@ -14,8 +14,20 @@ public static class Hashing
         => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     public static bool IsSha256(string? value)
-        => value is { Length: 64 }
-            && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+        => value is { Length: 64 } && IsLowerHex(value);
+
+    internal static bool IsLowerHex(ReadOnlySpan<char> value)
+    {
+        foreach (var character in value)
+        {
+            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     public static string NormalizeSha256(string? value)
     {
