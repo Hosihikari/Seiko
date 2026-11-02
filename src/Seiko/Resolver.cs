@@ -221,6 +221,11 @@ public sealed class Resolver
                     throw Fail($"invalid sei name '{dependency.Name}'");
                 }
 
+                if (string.Equals(dependency.Name, requirement.Name, StringComparison.Ordinal))
+                {
+                    throw Fail($"sei '{requirement.Name}' depends on itself");
+                }
+
                 _pending.Add(CreateRequirement(dependency.Name, dependency.Version, requirement.Name));
                 added++;
             }
@@ -258,12 +263,19 @@ public sealed class Resolver
         var allowPrerelease = _allowPrerelease
             || constraints.Any(constraint => RangeAllowsPrerelease(constraint.Range));
         var candidates = new List<(SeiVersionEntry Entry, NuGetVersion Version)>();
+        var seenVersions = new HashSet<NuGetVersion>();
 
         foreach (var entry in index.Versions)
         {
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
+            }
+
+            if (!seenVersions.Add(version))
+            {
+                throw Fail(
+                    $"source '{source.Id}': duplicate version '{entry.Version}' for {name}");
             }
 
             if (!constraints.All(constraint => constraint.Range.Satisfies(version)))

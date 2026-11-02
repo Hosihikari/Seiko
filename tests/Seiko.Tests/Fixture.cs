@@ -29,6 +29,7 @@ internal sealed class Fixture : IDisposable
 {
     private readonly List<string> _sei = [];
     private readonly Dictionary<string, SeiIndex> _indexes = new(StringComparer.Ordinal);
+    private int _artifactIndex;
 
     public Fixture()
     {
@@ -55,7 +56,7 @@ internal sealed class Fixture : IDisposable
             for (var i = 0; i < version.Artifacts.Count; i++)
             {
                 var artifact = version.Artifacts[i];
-                var zipName = $"{name}-{version.Version}-{i}.zip";
+                var zipName = $"{name}-{version.Version}-{_artifactIndex++}.zip";
                 var zipPath = Path.Combine(SourceDirectory, "artifacts", zipName);
                 var manifest = new SeiManifest
                 {
