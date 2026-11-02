@@ -304,6 +304,11 @@ public sealed class Store
                 throw new SeikoException($"zip-slip entry rejected: {name}", "io");
             }
 
+            if (!StoreDigests.IsSafeRelativePath(name))
+            {
+                throw new SeikoException($"unsafe zip entry path: {name}", "io");
+            }
+
             if (!seenNames.Add(name))
             {
                 throw new SeikoException($"duplicate zip entry: {name}", "io");

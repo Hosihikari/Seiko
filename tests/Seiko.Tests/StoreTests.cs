@@ -27,6 +27,24 @@ public sealed class StoreTests
     }
 
     [Fact]
+    public void Sync_RejectsUnsafeStoreEntryNames()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["foo:bar"] = "x" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("io", error.Code);
+        Assert.Contains("unsafe", error.Message);
+    }
+
+    [Fact]
     public async Task Store_WaitsForTheArtifactLockBeforeReading()
     {
         using var fixture = new Fixture();
