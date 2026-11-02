@@ -10,7 +10,7 @@ public sealed class SyncTests
         using var fixture = new Fixture();
         fixture.AddSei("levilamina", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("hosihikari", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("hello-csharp", new VersionFixture
+        fixture.AddSei("hello-seiko", new VersionFixture
         {
             Version = "1.0.0",
             Dependencies = [new DepFixture("levilamina", null), new DepFixture("hosihikari", "[1.0.0,2.0.0)")],
@@ -20,25 +20,25 @@ public sealed class SyncTests
                 {
                     Files =
                     {
-                        ["plugins/hello-csharp/main.cs"] = "Console.WriteLine(\"hello\");",
-                        ["plugins/hello-csharp/manifest.json"] = "{}",
+                        ["plugins/hello-seiko/main.cs"] = "Console.WriteLine(\"hello\");",
+                        ["plugins/hello-seiko/manifest.json"] = "{}",
                     },
                 },
             ],
         });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello-csharp", "[1.0.0,2.0.0)"));
+        fixture.WriteConfig("win-x64", new SpecFixture("hello-seiko", "[1.0.0,2.0.0)"));
 
         var client = new SeikoClient();
         var result = client.Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal(3, result.SeiInstalled);
-        Assert.True(File.Exists(Path.Combine(fixture.Root, "plugins", "hello-csharp", "main.cs")));
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "plugins", "hello-seiko", "main.cs")));
         Assert.False(File.Exists(Path.Combine(fixture.Root, "sei.json")));
-        Assert.True(File.Exists(Path.Combine(fixture.Root, ".seiko", "installed", "hello-csharp", "1.0.0", "sei.json")));
+        Assert.True(File.Exists(Path.Combine(fixture.Root, ".seiko", "installed", "hello-seiko", "1.0.0", "sei.json")));
 
         var lockFile = client.ReadLock(fixture.Root)!;
         Assert.Equal(3, lockFile.Sei.Count);
-        Assert.True(lockFile.Sei.Single(p => p.Name == "hello-csharp").Direct);
+        Assert.True(lockFile.Sei.Single(p => p.Name == "hello-seiko").Direct);
         Assert.False(lockFile.Sei.Single(p => p.Name == "levilamina").Direct);
     }
 
