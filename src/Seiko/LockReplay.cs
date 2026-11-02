@@ -73,7 +73,7 @@ public static class LockReplay
 
             var artifact = entry.Artifacts.FirstOrDefault(a =>
                     string.Equals(a.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                    && SelectorsEqual(a.Selectors, locked.Artifact.Selectors))
+                    && SelectorSemantics.Equal(a.Selectors, locked.Artifact.Selectors))
                 ?? throw Fail(
                     $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'");
 
@@ -188,7 +188,7 @@ public static class LockReplay
                 || !string.Equals(a.Source, b.Source, StringComparison.Ordinal)
                 || a.Direct != b.Direct
                 || !string.Equals(a.Artifact.Sha256, b.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                || !SelectorsEqual(a.Artifact.Selectors, b.Artifact.Selectors)
+                || !SelectorSemantics.Equal(a.Artifact.Selectors, b.Artifact.Selectors)
                 || !DependenciesEqual(a.Dependencies, b.Dependencies))
             {
                 return $"{a.Name} differs";
@@ -196,15 +196,6 @@ public static class LockReplay
         }
 
         return null;
-    }
-
-    private static bool SelectorsEqual(Dictionary<string, string>? left, Dictionary<string, string>? right)
-    {
-        var a = left ?? [];
-        var b = right ?? [];
-        return a.Count == b.Count
-            && a.All(pair => b.TryGetValue(pair.Key, out var value)
-                && string.Equals(pair.Value, value, StringComparison.Ordinal));
     }
 
     private static bool DependenciesEqual(List<SeiDependency> left, List<SeiDependency> right)
