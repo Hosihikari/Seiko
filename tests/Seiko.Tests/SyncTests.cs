@@ -43,6 +43,36 @@ public sealed class SyncTests
     }
 
     [Fact]
+    public void Sync_DeploysPayloadNamedToothJson()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["tooth.json"] = """{"payload":true}""",
+                        ["nested/tooth.json"] = "nested",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(
+            """{"payload":true}""",
+            File.ReadAllText(Path.Combine(fixture.Root, "tooth.json")));
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "nested", "tooth.json")));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "sei.json")));
+    }
+
+    [Fact]
     public void Sync_SelectsArtifactByCarrierAndRid()
     {
         using var fixture = new Fixture();

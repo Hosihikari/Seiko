@@ -258,7 +258,7 @@ public static class Deployer
             foreach (var file in Directory.EnumerateFiles(item.Directory, "*", SearchOption.AllDirectories))
             {
                 var relative = Path.GetRelativePath(item.Directory, file).Replace('\\', '/');
-                if (relative is "sei.json" or "tooth.json")
+                if (relative is "sei.json")
                 {
                     continue;
                 }
