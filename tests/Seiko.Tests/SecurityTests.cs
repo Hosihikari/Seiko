@@ -275,6 +275,9 @@ public sealed class SecurityTests
             client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256)!;
         var root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        File.WriteAllText(
+            Path.Combine(root, "seiko.conf"),
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsei = []\n");
         try
         {
             var error = Assert.Throws<SeikoException>(() => Deployer.Deploy(
@@ -321,6 +324,9 @@ public sealed class SecurityTests
             client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256)!;
         var root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        File.WriteAllText(
+            Path.Combine(root, "seiko.conf"),
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsei = []\n");
         try
         {
             var error = Assert.Throws<SeikoException>(() => Deployer.Deploy(

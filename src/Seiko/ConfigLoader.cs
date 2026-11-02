@@ -7,8 +7,10 @@ namespace Seiko;
 public static class ConfigLoader
 {
     public static SeikoConfig Load(string root, bool requireSources = true)
+        => LoadPath(Path.Combine(root, "seiko.conf"), requireSources);
+
+    internal static SeikoConfig LoadPath(string path, bool requireSources = true)
     {
-        var path = Path.Combine(root, "seiko.conf");
         if (!File.Exists(path))
         {
             throw new SeikoException($"missing {path}; run `sk init` or pass --root", "config");

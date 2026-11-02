@@ -93,9 +93,14 @@ public sealed class SeikoClient
         CancellationToken cancellationToken,
         IReadOnlySet<string>? updateNames,
         bool latestInstallable,
-        bool allowCritical)
+        bool allowCritical,
+        DeploymentTransaction? transaction = null)
     {
-        Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        if (transaction is null)
+        {
+            Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        }
+
         var config = ConfigLoader.Load(root);
         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var session = new DownloadSession(jobs, downloadCts.Token)
@@ -178,12 +183,21 @@ public sealed class SeikoClient
                 item.Stored.Manifest,
                 item.Stored.Digests))
             .ToList();
-        var deployment = Deployer.Deploy(
-            root,
-            deployedSei,
-            Path.Combine(root, ".seiko"),
-            lockFile,
-            writeLock: mode == SyncMode.Normal);
+        var stateDirectory = Path.Combine(root, ".seiko");
+        var deployment = transaction is null
+            ? Deployer.Deploy(
+                root,
+                deployedSei,
+                stateDirectory,
+                lockFile,
+                writeLock: mode == SyncMode.Normal)
+            : Deployer.DeployInTransaction(
+                root,
+                deployedSei,
+                stateDirectory,
+                lockFile,
+                transaction,
+                writeLock: mode == SyncMode.Normal);
 
         return new SyncResult
         {
@@ -304,6 +318,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root);
         var addNames = additions.Select(addition => addition.Name).ToHashSet(StringComparer.Ordinal);
         var removedNames = removals.ToHashSet(StringComparer.Ordinal);
@@ -372,7 +387,7 @@ public sealed class SeikoClient
         return WriteSpecsAndSync(
             root,
             config.Sei,
-            () => SyncLocked(
+            transaction => SyncLocked(
                 root,
                 storePath,
                 allowPrerelease,
@@ -384,31 +399,35 @@ public sealed class SeikoClient
                 cancellationToken,
                 updateNames: null,
                 latestInstallable,
-                allowCritical));
+                allowCritical,
+                transaction));
     }
 
     private static SyncResult WriteSpecsAndSync(
         string root,
         IReadOnlyList<SeiSpec> specs,
-        Func<SyncResult> sync)
+        Func<DeploymentTransaction, SyncResult> sync)
     {
-        var path = Path.Combine(root, "seiko.conf");
-        var original = File.ReadAllText(path);
+        var stateDirectory = Path.Combine(root, ".seiko");
+        DeploymentTransaction? transaction = null;
         try
         {
+            transaction = DeploymentTransaction.Begin(root, stateDirectory);
+            transaction.WillChange("seiko.conf");
+            transaction.WriteJournal();
             ConfigWriter.WriteSpecs(root, "sei", specs);
-            return sync();
+            return sync(transaction);
         }
         catch (Exception ex)
         {
             try
             {
-                File.WriteAllText(path, original, new System.Text.UTF8Encoding(false));
+                DeploymentTransaction.Recover(root, stateDirectory);
             }
             catch (Exception restore)
             {
                 throw new SeikoException(
-                    $"failed to restore {path} after a failed sync: {restore.Message}",
+                    $"failed to restore the environment after a failed change: {restore.Message}",
                     "config",
                     ex);
             }
@@ -464,6 +483,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root);
         var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
         if (!removedSei)
@@ -496,7 +516,7 @@ public sealed class SeikoClient
         return WriteSpecsAndSync(
             root,
             config.Sei,
-            () => SyncLocked(
+            transaction => SyncLocked(
                 root,
                 storePath,
                 allowPrerelease,
@@ -508,7 +528,8 @@ public sealed class SeikoClient
                 cancellationToken,
                 updateNames: null,
                 latestInstallable,
-                allowCritical));
+                allowCritical,
+                transaction));
     }
 
     public SyncResult Update(
@@ -537,6 +558,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root);
         var targets = new List<SeiSpec>();
         if (string.IsNullOrWhiteSpace(name))
@@ -571,7 +593,7 @@ public sealed class SeikoClient
         var updateNames = targets
             .Select(spec => spec.Name)
             .ToHashSet(StringComparer.Ordinal);
-        SyncResult Sync() => SyncLocked(
+        SyncResult Sync(DeploymentTransaction? transaction) => SyncLocked(
             root,
             storePath,
             allowPrerelease,
@@ -583,11 +605,12 @@ public sealed class SeikoClient
             cancellationToken,
             updateNames,
             latestInstallable,
-            allowCritical);
+            allowCritical,
+            transaction);
 
         return writeConfig
-            ? WriteSpecsAndSync(root, config.Sei, Sync)
-            : Sync();
+            ? WriteSpecsAndSync(root, config.Sei, transaction => Sync(transaction))
+            : Sync(null);
     }
 
     private static string? FindLatestVersion(
@@ -1078,7 +1101,21 @@ public sealed class SeikoClient
 
         var snapshotLock = LockFile.Read(snapshotLockPath)
             ?? throw new SeikoException($"generation {target} has no lock", "lock");
+        var snapshotConfigPath = Path.Combine(
+            stateDirectory,
+            "generations",
+            target.ToString(),
+            "seiko.conf");
+        PathSafety.EnsureNoLinks(
+            root,
+            Path.GetRelativePath(root, snapshotConfigPath).Replace('\\', '/'));
+        if (!File.Exists(snapshotConfigPath))
+        {
+            throw new SeikoException($"generation {target} has no config", "io");
+        }
 
+        var snapshotConfig = File.ReadAllBytes(snapshotConfigPath);
+        var snapshotConfigInfo = ConfigLoader.LoadPath(snapshotConfigPath);
         var store = new Store(storePath);
         var sei = new List<DeployedSei>();
         var needsFetch = false;
@@ -1120,8 +1157,7 @@ public sealed class SeikoClient
         if (needsFetch)
         {
             using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
-            var config = ConfigLoader.Load(root);
-            var sources = LoadSources(config, root, proxy, session);
+            var sources = LoadSources(snapshotConfigInfo, root, proxy, session);
             using var sourceScope = new SourceScope(sources);
             var specs = snapshotLock.Sei
                 .Where(item => item.Direct)
@@ -1148,7 +1184,8 @@ public sealed class SeikoClient
             stateDirectory,
             snapshotLock,
             generationOverride: target,
-            writeLock: true);
+            writeLock: true,
+            restoreConfig: snapshotConfig);
 
         return new RollbackResult
         {

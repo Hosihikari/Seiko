@@ -52,6 +52,32 @@ public sealed class AddTests
             () => new SeikoClient().Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory));
 
         Assert.Empty(ConfigLoader.Load(fixture.Root).Sei);
+        Assert.False(File.Exists(Path.Combine(fixture.Root, ".seiko", "transaction.json")));
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, ".seiko", "transaction")));
+    }
+
+    [Fact]
+    public void Add_RecoversIncompleteConfigTransactionBeforeReading()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.2.3",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("seiko.conf");
+        transaction.WriteJournal();
+        File.WriteAllText(configPath, "schemaVersion = 1\nsei = []\n");
+
+        new SeikoClient().Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
+
+        Assert.Equal("[1.2.3,2.0.0)", Assert.Single(ConfigLoader.Load(fixture.Root).Sei).Version);
+        Assert.Contains("name = \"hello\"", File.ReadAllText(configPath));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
     }
 
     [Fact]

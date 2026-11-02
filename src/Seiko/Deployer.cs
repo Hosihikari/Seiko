@@ -28,10 +28,56 @@ public static class Deployer
         string stateDirectory,
         SeikoLock lockFile,
         int? generationOverride = null,
-        bool writeLock = false)
+        bool writeLock = false,
+        byte[]? restoreConfig = null)
+        => DeployCore(
+            root,
+            sei,
+            stateDirectory,
+            lockFile,
+            generationOverride,
+            writeLock,
+            restoreConfig,
+            transaction: null);
+
+    internal static DeployResult DeployInTransaction(
+        string root,
+        IReadOnlyList<DeployedSei> sei,
+        string stateDirectory,
+        SeikoLock lockFile,
+        DeploymentTransaction transaction,
+        int? generationOverride = null,
+        bool writeLock = false,
+        byte[]? restoreConfig = null)
+        => DeployCore(
+            root,
+            sei,
+            stateDirectory,
+            lockFile,
+            generationOverride,
+            writeLock,
+            restoreConfig,
+            transaction);
+
+    private static DeployResult DeployCore(
+        string root,
+        IReadOnlyList<DeployedSei> sei,
+        string stateDirectory,
+        SeikoLock lockFile,
+        int? generationOverride,
+        bool writeLock,
+        byte[]? restoreConfig,
+        DeploymentTransaction? transaction)
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
+        var configPath = Path.Combine(root, "seiko.conf");
+        if (restoreConfig is null && !File.Exists(configPath))
+        {
+            throw new SeikoException("missing seiko.conf; cannot record a generation", "config");
+        }
+
+        var configSnapshot = restoreConfig ?? File.ReadAllBytes(configPath);
         var desired = BuildDesired(sei);
         var statePath = Path.Combine(stateDirectory, "state.json");
         var state = File.Exists(statePath)
@@ -124,11 +170,15 @@ public static class Deployer
             .Select(item => Path.Combine(stateDirectory, "installed", item.Name, item.Version, "sei.json"))
             .ToList();
 
-        DeploymentTransaction? transaction = null;
         var createdDirectories = new List<string>();
         try
         {
-            transaction = DeploymentTransaction.Begin(root, stateDirectory);
+            transaction ??= DeploymentTransaction.Begin(root, stateDirectory);
+            if (restoreConfig is not null)
+            {
+                transaction.WillChange("seiko.conf");
+            }
+
             foreach (var mutation in mutations)
             {
                 transaction.WillChange(
@@ -158,6 +208,7 @@ public static class Deployer
             {
                 transaction.WillChange(Relative(root, Path.Combine(generationDirectory, "state.json")));
                 transaction.WillChange(Relative(root, Path.Combine(generationDirectory, "lock.json")));
+                transaction.WillChange(Relative(root, Path.Combine(generationDirectory, "seiko.conf")));
             }
             else
             {
@@ -170,6 +221,10 @@ public static class Deployer
             }
 
             transaction.WriteJournal();
+            if (restoreConfig is not null)
+            {
+                WriteAtomic(configPath, restoreConfig);
+            }
 
             var applied = 0;
             foreach (var mutation in mutations)
@@ -234,7 +289,7 @@ public static class Deployer
             }
 
             WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
-            WriteGeneration(stateDirectory, newState, lockFile);
+            WriteGeneration(stateDirectory, newState, lockFile, configSnapshot);
             WriteInstalledManifests(installedPaths, sei);
             if (writeLock)
             {
@@ -508,7 +563,11 @@ public static class Deployer
         }
     }
 
-    private static void WriteGeneration(string stateDirectory, LocalState state, SeikoLock lockFile)
+    private static void WriteGeneration(
+        string stateDirectory,
+        LocalState state,
+        SeikoLock lockFile,
+        byte[] config)
     {
         var directory = Path.Combine(stateDirectory, "generations", state.Generation.ToString());
         Directory.CreateDirectory(directory);
@@ -516,6 +575,7 @@ public static class Deployer
             Path.Combine(directory, "state.json"),
             JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState));
         LockFile.Write(Path.Combine(directory, "lock.json"), lockFile);
+        WriteAtomic(Path.Combine(directory, "seiko.conf"), config);
     }
 
     private static void PruneGenerations(string stateDirectory, int generation)
@@ -644,9 +704,12 @@ public static class Deployer
         => RootedPath.Resolve(root, RelativePath.Parse(relative));
 
     private static void WriteAtomic(string path, string contents)
+        => WriteAtomic(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents));
+
+    private static void WriteAtomic(string path, byte[] contents)
     {
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
-        File.WriteAllText(temp, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.WriteAllBytes(temp, contents);
         File.Move(temp, path, overwrite: true);
     }
 
