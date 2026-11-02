@@ -98,7 +98,18 @@ internal sealed class DeploymentTransaction
     public void Commit()
     {
         _journal.Committed = true;
-        WriteJournalFile(_journalPath, _journal);
+        try
+        {
+            WriteJournalFile(_journalPath, _journal);
+        }
+        catch
+        {
+            // The on-disk journal is still uncommitted; rollback must see the
+            // same state even though this in-memory instance is reused.
+            _journal.Committed = false;
+            throw;
+        }
+
         Cleanup(_journalPath, _backupDirectory);
     }
 
@@ -183,6 +194,15 @@ internal sealed class DeploymentTransaction
             {
                 File.Delete(path);
             }
+        }
+
+        // A failed commit write can leave the in-memory flag set. Restore is
+        // only reached for an uncommitted transaction, so persist that state
+        // before any file is restored (the per-file writes will retain it).
+        if (journal.Committed)
+        {
+            journal.Committed = false;
+            WriteJournalFile(journalPath, journal);
         }
 
         for (var i = journal.Entries.Count - 1; i >= 0; i--)

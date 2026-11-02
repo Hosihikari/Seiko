@@ -499,6 +499,66 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void CommitFailureRollbackKeepsTheJournalUncommitted()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var a = Path.Combine(root, "a.txt");
+        var b = Path.Combine(root, "b.txt");
+        File.WriteAllText(a, "OLD-A");
+        File.WriteAllText(b, "OLD-B");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("b.txt");
+        transaction.WillChange("a.txt");
+        transaction.WriteJournal();
+        File.WriteAllText(a, "NEW-A");
+        File.WriteAllText(b, "NEW-B");
+
+        var journalPath = Path.Combine(stateDirectory, "transaction.json");
+        var backupB = Path.Combine(stateDirectory, "transaction", "b.txt");
+        var journalCopy = Path.Combine(stateDirectory, "journal-copy.json");
+        var backupCopy = Path.Combine(stateDirectory, "b-backup-copy");
+        File.Copy(journalPath, journalCopy);
+        File.Copy(backupB, backupCopy);
+
+        File.Delete(journalPath);
+        Directory.CreateDirectory(journalPath);
+        try
+        {
+            Assert.ThrowsAny<Exception>(() => transaction.Commit());
+        }
+        finally
+        {
+            Directory.Delete(journalPath);
+            File.Move(journalCopy, journalPath);
+        }
+
+        // Make the rollback stop after restoring a.txt.
+        File.Delete(backupB);
+        var rollback = Assert.Throws<SeikoException>(
+            () => transaction.RollbackAfterFailure(new IOException("commit failed")));
+        Assert.Contains("rollback also failed", rollback.Message);
+
+        var persisted = JsonSerializer.Deserialize(
+            File.ReadAllBytes(journalPath),
+            SeikoJsonContext.Default.DeploymentJournal)!;
+        Assert.False(persisted.Committed);
+        Assert.Equal("OLD-A", File.ReadAllText(a));
+        Assert.Equal("NEW-B", File.ReadAllText(b));
+
+        // Repair the missing backup and let the next recovery finish.
+        File.Move(backupCopy, backupB);
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.Equal("OLD-A", File.ReadAllText(a));
+        Assert.Equal("OLD-B", File.ReadAllText(b));
+        Assert.False(File.Exists(journalPath));
+    }
+
+    [Fact]
     public void Recover_PreservesUnrelatedRestoreLookalikes()
     {
         using var fixture = new Fixture();
