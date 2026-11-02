@@ -117,6 +117,7 @@ public sealed class Resolver
                     sei.Direct = directNames.Contains(sei.Name);
                 }
 
+                CrossSourceCheck.Verify(_sources, _assigned.Values, "checksum");
                 return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
             }
 

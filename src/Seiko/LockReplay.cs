@@ -104,6 +104,7 @@ public static class LockReplay
             });
         }
 
+        CrossSourceCheck.Verify(sources, result, "lock");
         return result;
     }
 

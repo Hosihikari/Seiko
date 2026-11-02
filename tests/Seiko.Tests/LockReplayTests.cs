@@ -14,7 +14,7 @@ public sealed class LockReplayTests
         {
             var shaA = new string('a', 64);
             var shaB = new string('b', 64);
-            var sourceA = CreateSource(Path.Combine(directory, "a"), "a", shaA);
+            var sourceA = CreateSource(Path.Combine(directory, "a"), "a", shaA, rid: "linux-x64");
             var sourceB = CreateSource(Path.Combine(directory, "b"), "b", shaB);
             var lockFile = Lock("b", shaB);
 
@@ -98,7 +98,11 @@ public sealed class LockReplayTests
             ],
         };
 
-    private static ISeiSource CreateSource(string directory, string id, string sha256)
+    private static ISeiSource CreateSource(
+        string directory,
+        string id,
+        string sha256,
+        string? rid = null)
     {
         Directory.CreateDirectory(Path.Combine(directory, "sei"));
         File.WriteAllBytes(
@@ -118,6 +122,7 @@ public sealed class LockReplayTests
                     [
                         new ArtifactEntry
                         {
+                            Rid = rid,
                             Layout = "root",
                             Source = new ArtifactLocation
                             {
