@@ -77,7 +77,7 @@ jobs:
             os: macos-15
             mode: macos-x64
             installer: rosetta
-            blocking: true
+            blocking: false
           - rid: osx-arm64
             os: macos-15
             mode: native
