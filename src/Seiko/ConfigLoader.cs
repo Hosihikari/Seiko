@@ -59,19 +59,23 @@ public static class ConfigLoader
             throw new SeikoException($"{path}: at least one source is required", "config");
         }
 
-        ReadSpecs(configuration.GetSection("sei"), config.Sei);
-        ReadSpecs(configuration.GetSection("components"), config.Components);
+        ReadSpecs(configuration.GetSection("sei"), config.Sei, path, "sei");
+        ReadSpecs(configuration.GetSection("components"), config.Components, path, "components");
         return config;
     }
 
-    private static void ReadSpecs(IConfigurationSection section, List<SeiSpec> specs)
+    private static void ReadSpecs(
+        IConfigurationSection section,
+        List<SeiSpec> specs,
+        string path,
+        string sectionName)
     {
         foreach (var child in section.GetChildren())
         {
             var name = child["name"];
             if (string.IsNullOrWhiteSpace(name))
             {
-                continue;
+                throw new SeikoException($"{path}: each {sectionName} entry needs a name", "config");
             }
 
             specs.Add(new SeiSpec

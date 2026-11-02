@@ -168,6 +168,35 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Config_RejectsDeclarationWithoutNameBeforeDeploying()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        var deployed = Path.Combine(fixture.Root, "hello.txt");
+        Assert.True(File.Exists(deployed));
+
+        fixture.WriteConfig("win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            configPath,
+            File.ReadAllText(configPath).Replace(
+                "sei = []",
+                "sei = [\n  { version = \"[1.0.0]\" }\n]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("config", error.Code);
+        Assert.True(File.Exists(deployed));
+    }
+
+    [Fact]
     public void Search_FallsThroughWhenTheFirstSourceCannotProvideThePackage()
     {
         using var first = new Fixture();
