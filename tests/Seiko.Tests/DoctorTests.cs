@@ -22,6 +22,22 @@ public sealed class DoctorTests
     }
 
     [Fact]
+    public void Doctor_ReportsBusyRoot()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        using var held = ProcessLock.Acquire(
+            Path.Combine(fixture.Root, ".seiko", "install.lock"),
+            "test root");
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("warning", finding.Severity);
+        Assert.Equal("root-busy", finding.Code);
+    }
+
+    [Fact]
     public void Doctor_ReportsMissingDeployedFile()
     {
         using var fixture = new Fixture();
@@ -88,7 +104,7 @@ public sealed class DoctorTests
     }
 
     [Fact]
-    public void Doctor_CleanRequiresInstallRootLock()
+    public void Doctor_CleanReportsBusyRoot()
     {
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
@@ -96,9 +112,9 @@ public sealed class DoctorTests
             Path.Combine(fixture.Root, ".seiko", "install.lock"),
             "test install root");
 
-        var error = Assert.Throws<SeikoException>(
-            () => new Doctor().Run(fixture.Root, fixture.StoreDirectory, clean: true));
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory, clean: true);
 
-        Assert.Equal("lock", error.Code);
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("root-busy", finding.Code);
     }
 }

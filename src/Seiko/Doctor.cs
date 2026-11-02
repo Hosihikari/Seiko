@@ -13,32 +13,29 @@ public sealed class Doctor
     {
         root = Path.GetFullPath(root);
         var findings = new List<DoctorFinding>();
-        ProcessLock? cleanLock = null;
-        try
+        using var installLock = ProcessLock.TryAcquire(
+            Path.Combine(root, ".seiko", "install.lock"));
+        if (installLock is null)
         {
-            if (clean)
-            {
-                cleanLock = ProcessLock.Acquire(
-                    Path.Combine(root, ".seiko", "install.lock"),
-                    $"install root {root}");
-            }
+            findings.Add(new DoctorFinding(
+                "warning",
+                "root-busy",
+                "install root is in use by another process; run doctor again after it finishes",
+                root));
+            return new DoctorResult(findings, 0);
+        }
 
-            var config = TryLoadConfig(root, findings);
-            var lockFile = TryReadLock(root, findings);
-            var storePath = Path.GetFullPath(storeRoot ?? SeikoClient.DefaultStorePath());
-            CheckLockMatchesConfig(config, lockFile, findings);
-            CheckStore(lockFile, storePath, findings);
-            CheckDeployment(root, lockFile, findings);
-            CheckTransaction(root, findings);
-            var cleanCount = clean
-                ? CleanPartials(storePath, findings)
-                : ReportPartials(storePath, findings);
-            return new DoctorResult(findings, cleanCount);
-        }
-        finally
-        {
-            cleanLock?.Dispose();
-        }
+        var config = TryLoadConfig(root, findings);
+        var lockFile = TryReadLock(root, findings);
+        var storePath = Path.GetFullPath(storeRoot ?? SeikoClient.DefaultStorePath());
+        CheckLockMatchesConfig(config, lockFile, findings);
+        CheckStore(lockFile, storePath, findings);
+        CheckDeployment(root, lockFile, findings);
+        CheckTransaction(root, findings);
+        var cleanCount = clean
+            ? CleanPartials(storePath, findings)
+            : ReportPartials(storePath, findings);
+        return new DoctorResult(findings, cleanCount);
     }
 
     private static SeikoConfig? TryLoadConfig(string root, List<DoctorFinding> findings)
