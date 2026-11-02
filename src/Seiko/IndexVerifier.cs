@@ -819,6 +819,15 @@ public static class IndexVerifier
                 return;
             }
 
+            if (manifests[0].Length > ArchiveLimits.MaxManifestBytes)
+            {
+                context.Error(
+                    "manifest-budget",
+                    $"sei '{reference.Sei}' {reference.Version}: sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
+                    reference.Path);
+                return;
+            }
+
             SeiManifest? manifest;
             try
             {

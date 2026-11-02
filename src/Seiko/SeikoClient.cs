@@ -804,6 +804,17 @@ public sealed class SeikoClient
 
             try
             {
+                if (new FileInfo(manifestPath).Length > ArchiveLimits.MaxManifestBytes)
+                {
+                    findings.Add(new CacheFinding(
+                        "error",
+                        "cache-manifest",
+                        $"sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
+                        manifestPath));
+                    VerifyArtifactFiles(storePath, artifact, directory, findings);
+                    continue;
+                }
+
                 var manifest = JsonSerializer.Deserialize(
                     File.ReadAllBytes(manifestPath),
                     SeikoJsonContext.Default.SeiManifest);

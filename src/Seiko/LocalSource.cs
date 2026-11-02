@@ -73,6 +73,13 @@ public sealed class LocalSource : ISeiSource
         var statePath = Path.Combine(directory, "meta.json");
         var sourceInfo = new FileInfo(sourcePath);
         var size = sourceInfo.Length;
+        if (size > ArchiveLimits.MaxTotalBytes)
+        {
+            throw new SeikoException(
+                $"artifact is larger than the {ArchiveLimits.MaxTotalBytes}-byte limit",
+                "checksum");
+        }
+
         if (source.Size > 0 && size != source.Size)
         {
             throw new SeikoException(
@@ -140,6 +147,13 @@ public sealed class LocalSource : ISeiSource
 
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             have += read;
+            if (have > ArchiveLimits.MaxTotalBytes)
+            {
+                throw new SeikoException(
+                    $"artifact is larger than the {ArchiveLimits.MaxTotalBytes}-byte limit",
+                    "checksum");
+            }
+
             session.ReportDownloading(name, have, size);
         }
     }

@@ -529,6 +529,30 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void CacheVerify_RejectsAnOversizedManifest()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var manifest = Path.Combine(
+            fixture.StoreDirectory,
+            ArtifactSha(fixture),
+            "sei.json");
+        using (var stream = new FileStream(
+            manifest,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.None))
+        {
+            stream.SetLength(ArchiveLimits.MaxManifestBytes + 1);
+        }
+
+        var findings = client.CacheVerify(fixture.StoreDirectory);
+
+        Assert.Contains(findings, finding => finding.Code == "cache-manifest");
+    }
+
+    [Fact]
     public void CacheVerify_WarnsWithoutDigestRecord()
     {
         using var fixture = NewFixture();

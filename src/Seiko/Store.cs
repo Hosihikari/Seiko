@@ -193,6 +193,13 @@ public sealed class Store
 
     private static SeiManifest ReadManifest(string directory, string manifestPath)
     {
+        if (new FileInfo(manifestPath).Length > ArchiveLimits.MaxManifestBytes)
+        {
+            throw new SeikoException(
+                $"sei.json in {directory} exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
+                "checksum");
+        }
+
         var manifest = JsonSerializer.Deserialize(
                 File.ReadAllBytes(manifestPath),
                 SeikoJsonContext.Default.SeiManifest)
