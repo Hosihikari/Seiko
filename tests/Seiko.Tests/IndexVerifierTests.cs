@@ -426,6 +426,23 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsInvalidPrerequisiteRange()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Prerequisites = [new DepFixture("marker", "not-a-range")],
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "prerequisite-range");
+    }
+
+    [Fact]
     public void Verify_RejectsArtifactSizesBeyondTheExtractionLimit()
     {
         using var fixture = NewFixture();

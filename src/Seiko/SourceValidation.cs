@@ -29,6 +29,15 @@ internal static class SourceValidation
                     code);
             }
 
+            if (entry.Prerequisites is null
+                || entry.OptionalPeers is null
+                || entry.Conflicts is null)
+            {
+                throw Fail(
+                    $"source '{sourceId}': {name} {entry.Version} has no relation list",
+                    code);
+            }
+
             if (entry.Artifacts is null)
             {
                 throw Fail(
@@ -36,12 +45,15 @@ internal static class SourceValidation
                     code);
             }
 
-            foreach (var dependency in entry.Dependencies)
+            foreach (var relation in entry.Dependencies
+                .Concat(entry.Prerequisites)
+                .Concat(entry.OptionalPeers)
+                .Concat(entry.Conflicts))
             {
-                if (dependency is null)
+                if (relation is null)
                 {
                     throw Fail(
-                        $"source '{sourceId}': invalid dependency for {name} {entry.Version}",
+                        $"source '{sourceId}': invalid relation for {name} {entry.Version}",
                         code);
                 }
             }
@@ -60,6 +72,29 @@ internal static class SourceValidation
                     throw Fail(
                         $"source '{sourceId}': artifact for {name} {entry.Version} has no source",
                         code);
+                }
+
+                if (artifact.Dependencies is null
+                    || artifact.Prerequisites is null
+                    || artifact.OptionalPeers is null
+                    || artifact.Conflicts is null)
+                {
+                    throw Fail(
+                        $"source '{sourceId}': artifact for {name} {entry.Version} has no relation list",
+                        code);
+                }
+
+                foreach (var relation in artifact.Dependencies
+                    .Concat(artifact.Prerequisites)
+                    .Concat(artifact.OptionalPeers)
+                    .Concat(artifact.Conflicts))
+                {
+                    if (relation is null)
+                    {
+                        throw Fail(
+                            $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid relation",
+                            code);
+                    }
                 }
 
                 if (artifact.Selectors is not null)

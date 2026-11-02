@@ -344,6 +344,10 @@ public static class IndexVerifier
             }
         }
 
+        ValidateRelations(context, path, name, entry.Version, "prerequisite", entry.Prerequisites);
+        ValidateRelations(context, path, name, entry.Version, "optional peer", entry.OptionalPeers);
+        ValidateRelations(context, path, name, entry.Version, "conflict", entry.Conflicts);
+
         if (entry.Deprecated is not null && string.IsNullOrWhiteSpace(entry.Deprecated))
         {
             context.Warning(
@@ -375,6 +379,53 @@ public static class IndexVerifier
         return version;
     }
 
+    private static void ValidateRelations(
+        Context context,
+        string path,
+        string name,
+        string version,
+        string kind,
+        List<SeiDependency>? relations)
+    {
+        var code = kind.Replace(' ', '-');
+        if (relations is null)
+        {
+            context.Error(
+                $"{code}-list",
+                $"sei '{name}' {version} has a null {kind} list",
+                path);
+            return;
+        }
+
+        foreach (var relation in relations)
+        {
+            if (relation is null || !SeiName.IsValid(relation.Name))
+            {
+                context.Error(
+                    $"{code}-name",
+                    $"sei '{name}' {version} has invalid {kind} name '{relation?.Name}'",
+                    path);
+                continue;
+            }
+
+            if (string.Equals(relation.Name, name, StringComparison.Ordinal))
+            {
+                context.Error(
+                    $"{code}-self",
+                    $"sei '{name}' {version} has a self {kind}",
+                    path);
+            }
+
+            if (!IsValidRange(relation.Version))
+            {
+                context.Error(
+                    $"{code}-range",
+                    $"sei '{name}' {version} has invalid version range '{relation.Version}' for {kind} '{relation.Name}'",
+                    path);
+            }
+        }
+    }
+
     private static bool ValidateArtifact(
         Context context,
         string path,
@@ -383,6 +434,19 @@ public static class IndexVerifier
         ArtifactEntry artifact)
     {
         var ok = true;
+
+        if (artifact.Rid is not null && string.IsNullOrWhiteSpace(artifact.Rid))
+        {
+            context.Error(
+                "artifact-rid",
+                $"sei '{name}' {entry.Version} has an empty rid",
+                path);
+            ok = false;
+        }
+
+        ValidateRelations(context, path, name, entry.Version, "artifact prerequisite", artifact.Prerequisites);
+        ValidateRelations(context, path, name, entry.Version, "artifact optional peer", artifact.OptionalPeers);
+        ValidateRelations(context, path, name, entry.Version, "artifact conflict", artifact.Conflicts);
 
         if (artifact.Layout is not null && artifact.Layout != "root")
         {
