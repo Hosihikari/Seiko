@@ -150,8 +150,8 @@ public sealed class DeploymentJournalEntry
 
 public sealed class PartialArtifactState
 {
-    public int SchemaVersion { get; set; } = 1;
-    public string Url { get; set; } = "";
+    public int SchemaVersion { get; set; } = 2;
+    public string UrlHash { get; set; } = "";
     public long Size { get; set; }
     public string? ETag { get; set; }
     public string? LastModified { get; set; }

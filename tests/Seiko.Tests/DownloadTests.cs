@@ -180,7 +180,8 @@ public sealed class DownloadTests
         Directory.CreateDirectory(downloadDirectory);
         var state = new PartialArtifactState
         {
-            Url = server.BaseUrl + "artifacts/blob.bin",
+            UrlHash = Hashing.Sha256Bytes(
+                System.Text.Encoding.UTF8.GetBytes(server.BaseUrl + "artifacts/blob.bin")),
             Size = data.Length,
             ETag = "\"" + Convert.ToHexString(SHA256.HashData(data)) + "\"",
             SegmentCount = 4,
@@ -204,6 +205,60 @@ public sealed class DownloadTests
             CancellationToken.None);
 
         Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(downloadDirectory, "artifact")));
+    }
+
+    [Fact]
+    public async Task HttpSource_DiscardsStateThatStillContainsTheRawUrl()
+    {
+        using var fixture = new Fixture();
+        var data = new byte[512];
+        Random.Shared.NextBytes(data);
+        var artifactDirectory = Path.Combine(fixture.SourceDirectory, "artifacts");
+        Directory.CreateDirectory(artifactDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
+        await File.WriteAllTextAsync(
+            Path.Combine(fixture.SourceDirectory, "index.json"),
+            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        using var session = new DownloadSession(4, CancellationToken.None);
+        using var source = new HttpSource(
+            new SourceConfig { Id = "test", Index = server.BaseUrl + "index.json" },
+            proxy: null,
+            session);
+        var downloadDirectory = Path.Combine(fixture.Root, "download");
+        Directory.CreateDirectory(downloadDirectory);
+        File.WriteAllText(
+            Path.Combine(downloadDirectory, "meta.json"),
+            $$"""
+            {
+              "schemaVersion": 1,
+              "url": "{{server.BaseUrl}}artifacts/blob.bin?sig=SECRET",
+              "size": {{data.Length}},
+              "etag": "\"old\"",
+              "lastModified": null,
+              "segmentCount": 1,
+              "segmentSize": {{data.Length}}
+            }
+            """);
+
+        await source.DownloadAsync(
+            "hello",
+            new ArtifactLocation
+            {
+                Url = "artifacts/blob.bin",
+                Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
+                Size = data.Length,
+            },
+            downloadDirectory,
+            session,
+            CancellationToken.None);
+
+        Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(downloadDirectory, "artifact")));
+        Assert.DoesNotContain(
+            "SECRET",
+            await File.ReadAllTextAsync(Path.Combine(downloadDirectory, "meta.json")),
+            StringComparison.Ordinal);
     }
 
     [Fact]

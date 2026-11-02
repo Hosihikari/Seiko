@@ -138,9 +138,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
         var segmentSize = size > 0 ? (size + segmentCount - 1) / segmentCount : 0;
 
         var state = PartialArtifactStateFile.Read(statePath);
+        var urlHash = Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(uri));
         var reusable = state is not null
-            && state.SchemaVersion == 1
-            && string.Equals(state.Url, uri, StringComparison.Ordinal)
+            && state.SchemaVersion == 2
+            && string.Equals(state.UrlHash, urlHash, StringComparison.Ordinal)
             && state.Size == size
             && state.SegmentCount == segmentCount
             && state.SegmentSize == segmentSize
@@ -156,7 +157,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
         state ??= new PartialArtifactState
         {
-            Url = uri,
+            UrlHash = urlHash,
             Size = size,
             ETag = remote.ETag,
             LastModified = remote.LastModified,

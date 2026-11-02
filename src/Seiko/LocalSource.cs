@@ -75,8 +75,11 @@ public sealed class LocalSource : ISeiSource
         var size = sourceInfo.Length;
         var lastModified = sourceInfo.LastWriteTimeUtc.ToString("R");
         var state = PartialArtifactStateFile.Read(statePath);
+        var urlHash = Hashing.Sha256Bytes(
+            System.Text.Encoding.UTF8.GetBytes(sourcePath));
         var reusable = state is not null
-            && string.Equals(state.Url, sourcePath, StringComparison.Ordinal)
+            && state.SchemaVersion == 2
+            && string.Equals(state.UrlHash, urlHash, StringComparison.Ordinal)
             && state.Size == size
             && string.Equals(state.LastModified, lastModified, StringComparison.Ordinal);
         if (!reusable)
@@ -87,7 +90,7 @@ public sealed class LocalSource : ISeiSource
 
         state ??= new PartialArtifactState
         {
-            Url = sourcePath,
+            UrlHash = urlHash,
             Size = size,
             LastModified = lastModified,
             SegmentCount = 1,
