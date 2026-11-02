@@ -274,17 +274,7 @@ public sealed class SeikoMcpServer
     }
 
     private string SourceList(JsonObject arguments)
-    {
-        var root = Root(arguments, required: false);
-        var config = ConfigLoader.Load(root);
-        var sources = new JsonArray();
-        foreach (var source in config.Sources)
-        {
-            sources.Add((JsonNode)SourceJson(source));
-        }
-
-        return sources.ToJsonString();
-    }
+        => SourcesJson(_client.ListSources(Root(arguments, required: false)));
 
     private static string SourcesJson(IReadOnlyList<SourceConfig> sources)
     {

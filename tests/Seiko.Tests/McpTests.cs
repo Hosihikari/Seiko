@@ -41,6 +41,24 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void SourceList_AllowsAnEmptySourceList()
+    {
+        using var fixture = new Fixture();
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            "sources = []\nrid = \"win-x64\"\nsei = []\ncomponents = []\n");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
+
+        var result = CallTool(
+            server,
+            "source_list",
+            new JsonObject { ["root"] = fixture.Root });
+
+        Assert.False(result["isError"]!.GetValue<bool>());
+        Assert.Equal("[]", ToolText(result));
+    }
+
+    [Fact]
     public void AddTool_WritesDeclarationAndInstalls()
     {
         using var fixture = new Fixture();
