@@ -354,13 +354,13 @@ public sealed class Resolver
 
     private (string Name, string Version, string Message)? SelectArtifacts()
     {
-        var graphNames = _assigned.Keys.ToHashSet(StringComparer.Ordinal);
+        var graphNames = _assigned.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList();
         foreach (var sei in _assigned.Values)
         {
             var scored = new List<(ArtifactEntry Artifact, int Score)>();
             foreach (var artifact in sei.Entry.Artifacts)
             {
-                var score = ScoreArtifact(artifact, _rid, graphNames);
+                var score = ScoreArtifact(artifact, _rid, _assigned);
                 if (score >= 0)
                 {
                     scored.Add((artifact, score));
@@ -372,7 +372,7 @@ public sealed class Resolver
                 return (
                     sei.Name,
                     sei.Version,
-                    $"no artifact of {sei.Name} {sei.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames.OrderBy(n => n, StringComparer.Ordinal))}]");
+                    $"no artifact of {sei.Name} {sei.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]");
             }
 
             var best = scored.Max(s => s.Score);
@@ -389,29 +389,59 @@ public sealed class Resolver
         return null;
     }
 
-    internal static int ScoreArtifact(ArtifactEntry artifact, string rid, IReadOnlySet<string> graphNames)
+    internal static int ScoreArtifact(
+        ArtifactEntry artifact,
+        string rid,
+        IReadOnlyDictionary<string, ResolvedSei> assigned)
     {
-        if (artifact.Selectors is null || artifact.Selectors.Count == 0)
+        if (artifact.Rid is not null
+            && !artifact.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase))
         {
-            return 0;
+            return -1;
         }
 
-        foreach (var (key, value) in artifact.Selectors)
+        if (artifact.Selectors is not null
+            && artifact.Selectors.TryGetValue("rid", out var selectorRid)
+            && !selectorRid.Equals(rid, StringComparison.OrdinalIgnoreCase))
         {
-            if (key.Equals("rid", StringComparison.OrdinalIgnoreCase))
+            return -1;
+        }
+
+        var score = 0;
+        foreach (var prerequisite in artifact.Prerequisites ?? [])
+        {
+            if (!assigned.TryGetValue(prerequisite.Name, out var target))
             {
-                if (!value.Equals(rid, StringComparison.OrdinalIgnoreCase))
-                {
-                    return -1;
-                }
+                return -1;
             }
-            else if (!graphNames.Contains(value))
+
+            if (!ParseRange(prerequisite.Version, prerequisite.Name).Satisfies(target.ParsedVersion))
+            {
+                return -1;
+            }
+
+            score++;
+        }
+
+        foreach (var peer in artifact.OptionalPeers ?? [])
+        {
+            if (assigned.TryGetValue(peer.Name, out var target)
+                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
             {
                 return -1;
             }
         }
 
-        return artifact.Selectors.Count;
+        foreach (var conflict in artifact.Conflicts ?? [])
+        {
+            if (assigned.TryGetValue(conflict.Name, out var target)
+                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
+            {
+                return -1;
+            }
+        }
+
+        return score;
     }
 
     private bool TryFindSource(
@@ -494,6 +524,80 @@ public sealed class Resolver
                 _lastConflict = new SeikoException(
                     $"prerelease {name} {resolved.Version} is not required by the resolved graph",
                     "resolve");
+                return false;
+            }
+        }
+
+        foreach (var (name, resolved) in _assigned)
+        {
+            if (!ValidateRelations(name, resolved, resolved.Entry.Prerequisites, requirePresent: true, "prerequisite"))
+            {
+                return false;
+            }
+
+            if (!ValidateRelations(name, resolved, resolved.Entry.OptionalPeers, requirePresent: false, "optional peer"))
+            {
+                return false;
+            }
+
+            if (!ValidateConflicts(name, resolved, resolved.Entry.Conflicts))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool ValidateRelations(
+        string owner,
+        ResolvedSei resolved,
+        List<SeiDependency>? relations,
+        bool requirePresent,
+        string label)
+    {
+        foreach (var relation in relations ?? [])
+        {
+            if (!_assigned.TryGetValue(relation.Name, out var target))
+            {
+                if (!requirePresent)
+                {
+                    continue;
+                }
+
+                _lastConflict = Fail(
+                    $"prerequisite '{relation.Name}' required by {owner} {resolved.Version} is not in the resolved graph; add it explicitly or through a dependency");
+                return false;
+            }
+
+            var range = ParseRange(relation.Version, relation.Name);
+            if (!range.Satisfies(target.ParsedVersion))
+            {
+                _lastConflict = Fail(
+                    $"{label} '{relation.Name}' for {owner} {resolved.Version} is {target.Version}, which does not satisfy {relation.Version ?? "*"}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool ValidateConflicts(
+        string owner,
+        ResolvedSei resolved,
+        List<SeiDependency>? conflicts)
+    {
+        foreach (var conflict in conflicts ?? [])
+        {
+            if (!_assigned.TryGetValue(conflict.Name, out var target))
+            {
+                continue;
+            }
+
+            if (ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
+            {
+                _lastConflict = Fail(
+                    $"conflict: {owner} {resolved.Version} cannot coexist with {conflict.Name} {target.Version}");
                 return false;
             }
         }

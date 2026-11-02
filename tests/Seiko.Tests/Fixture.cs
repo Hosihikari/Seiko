@@ -10,15 +10,23 @@ internal sealed record SpecFixture(string Name, string? Version = null);
 
 internal sealed class ArtifactFixture
 {
+    public string? Rid { get; init; }
     public Dictionary<string, string>? Selectors { get; init; }
     public Dictionary<string, string> Files { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, string>? Modes { get; init; }
+    public List<DepFixture> Dependencies { get; init; } = [];
+    public List<DepFixture> Prerequisites { get; init; } = [];
+    public List<DepFixture> OptionalPeers { get; init; } = [];
+    public List<DepFixture> Conflicts { get; init; } = [];
 }
 
 internal sealed class VersionFixture
 {
     public required string Version { get; init; }
     public List<DepFixture> Dependencies { get; init; } = [];
+    public List<DepFixture> Prerequisites { get; init; } = [];
+    public List<DepFixture> OptionalPeers { get; init; } = [];
+    public List<DepFixture> Conflicts { get; init; } = [];
     public List<ArtifactFixture> Artifacts { get; init; } = [];
     public bool Yanked { get; init; }
     public string? Deprecated { get; init; }
@@ -62,12 +70,23 @@ internal sealed class Fixture : IDisposable
                 {
                     Name = name,
                     Version = version.Version,
-                    Dependencies = version.Dependencies
-                        .Select(d => new SeiDependency { Name = d.Name, Version = d.Version })
-                        .ToList(),
+                    Dependencies = ToDependencies(version.Dependencies),
+                    Prerequisites = ToDependencies(version.Prerequisites),
+                    OptionalPeers = ToDependencies(version.OptionalPeers),
+                    Conflicts = ToDependencies(version.Conflicts),
                     Selectors = artifact.Selectors,
                     Layout = "root",
                     Modes = artifact.Modes,
+                    Artifact = new ArtifactManifest
+                    {
+                        Rid = artifact.Rid,
+                        Dependencies = ToDependencies(artifact.Dependencies),
+                        Prerequisites = ToDependencies(artifact.Prerequisites),
+                        OptionalPeers = ToDependencies(artifact.OptionalPeers),
+                        Conflicts = ToDependencies(artifact.Conflicts),
+                        Layout = "root",
+                        Modes = artifact.Modes,
+                    },
                 };
 
                 using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
@@ -82,8 +101,14 @@ internal sealed class Fixture : IDisposable
                 var info = new FileInfo(zipPath);
                 artifacts.Add(new ArtifactEntry
                 {
+                    Rid = artifact.Rid,
+                    Dependencies = ToDependencies(artifact.Dependencies),
+                    Prerequisites = ToDependencies(artifact.Prerequisites),
+                    OptionalPeers = ToDependencies(artifact.OptionalPeers),
+                    Conflicts = ToDependencies(artifact.Conflicts),
                     Selectors = artifact.Selectors,
                     Layout = "root",
+                    Modes = artifact.Modes,
                     Source = new ArtifactLocation
                     {
                         Url = "artifacts/" + zipName,
@@ -96,9 +121,10 @@ internal sealed class Fixture : IDisposable
             index.Versions.Add(new SeiVersionEntry
             {
                 Version = version.Version,
-                Dependencies = version.Dependencies
-                    .Select(d => new SeiDependency { Name = d.Name, Version = d.Version })
-                    .ToList(),
+                Dependencies = ToDependencies(version.Dependencies),
+                Prerequisites = ToDependencies(version.Prerequisites),
+                OptionalPeers = ToDependencies(version.OptionalPeers),
+                Conflicts = ToDependencies(version.Conflicts),
                 Artifacts = artifacts,
                 Yanked = version.Yanked,
                 Deprecated = version.Deprecated,
@@ -206,6 +232,15 @@ internal sealed class Fixture : IDisposable
         var path = Path.Combine(SourceDirectory, "sei", name + ".json");
         File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(_indexes[name], SeikoJsonContext.Default.SeiIndex));
     }
+
+    private static List<SeiDependency> ToDependencies(IEnumerable<DepFixture> dependencies)
+        => dependencies
+            .Select(dependency => new SeiDependency
+            {
+                Name = dependency.Name,
+                Version = dependency.Version,
+            })
+            .ToList();
 
     private static void AddEntry(ZipArchive zip, string name, byte[] contents)
     {

@@ -73,7 +73,7 @@ public sealed class SyncTests
     }
 
     [Fact]
-    public void Sync_SelectsArtifactByCarrierAndRid()
+    public void Sync_SelectsArtifactByPrerequisiteAndRid()
     {
         using var fixture = new Fixture();
         fixture.AddSei("levilamina", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
@@ -85,12 +85,14 @@ public sealed class SyncTests
             [
                 new ArtifactFixture
                 {
-                    Selectors = new Dictionary<string, string> { ["carrier"] = "levilamina", ["rid"] = "win-x64" },
+                    Rid = "win-x64",
+                    Prerequisites = [new DepFixture("levilamina", "*")],
                     Files = { ["selected.txt"] = "levilamina" },
                 },
                 new ArtifactFixture
                 {
-                    Selectors = new Dictionary<string, string> { ["carrier"] = "endstone", ["rid"] = "win-x64" },
+                    Rid = "win-x64",
+                    Prerequisites = [new DepFixture("endstone", "*")],
                     Files = { ["selected.txt"] = "endstone" },
                 },
             ],
@@ -101,8 +103,7 @@ public sealed class SyncTests
         var result = client.Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("levilamina", File.ReadAllText(Path.Combine(fixture.Root, "selected.txt")));
-        var hosting = result.Lock.Sei.Single(p => p.Name == "hosihikari-hosting");
-        Assert.Equal("levilamina", hosting.Artifact.Selectors!["carrier"]);
+        Assert.Contains(result.Lock.Sei, sei => sei.Name == "hosihikari-hosting");
     }
 
     [Fact]

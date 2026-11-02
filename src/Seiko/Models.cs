@@ -20,6 +20,7 @@ public sealed class SeiManifest
 public sealed class ArtifactManifest
 {
     public string? Rid { get; set; }
+    public List<SeiDependency> Dependencies { get; set; } = [];
     public List<SeiDependency> Prerequisites { get; set; } = [];
     public List<SeiDependency> OptionalPeers { get; set; } = [];
     public List<SeiDependency> Conflicts { get; set; } = [];
@@ -75,6 +76,7 @@ public sealed class AdvisoryInfo
 public sealed class ArtifactEntry
 {
     public string? Rid { get; set; }
+    public List<SeiDependency> Dependencies { get; set; } = [];
     public List<SeiDependency> Prerequisites { get; set; } = [];
     public List<SeiDependency> OptionalPeers { get; set; } = [];
     public List<SeiDependency> Conflicts { get; set; } = [];

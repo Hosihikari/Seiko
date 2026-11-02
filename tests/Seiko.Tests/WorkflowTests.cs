@@ -190,7 +190,7 @@ public sealed class WorkflowTests
             [
                 new ArtifactFixture
                 {
-                    Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                    Prerequisites = [new DepFixture("marker", "*")],
                     Files = { ["app.txt"] = "two" },
                 },
             ],

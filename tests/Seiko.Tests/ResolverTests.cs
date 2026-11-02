@@ -152,7 +152,7 @@ public sealed class ResolverTests
     }
 
     [Fact]
-    public void Resolve_SelectorMatchesABundleThatDependsOnThePackage()
+    public void Resolve_PrerequisiteMatchesABundleThatDependsOnThePackage()
     {
         using var fixture = new Fixture();
         fixture.AddSei("bundle", new VersionFixture
@@ -168,12 +168,12 @@ public sealed class ResolverTests
             [
                 new ArtifactFixture
                 {
-                    Selectors = new Dictionary<string, string> { ["carrier"] = "bundle" },
+                    Prerequisites = [new DepFixture("bundle", "[1.0.0]")],
                     Files = { ["hosting.txt"] = "selected" },
                 },
                 new ArtifactFixture
                 {
-                    Selectors = new Dictionary<string, string> { ["carrier"] = "other" },
+                    Prerequisites = [new DepFixture("other", "[1.0.0]")],
                     Files = { ["hosting.txt"] = "other" },
                 },
             ],
@@ -196,7 +196,7 @@ public sealed class ResolverTests
             [
                 new ArtifactFixture
                 {
-                    Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                    Prerequisites = [new DepFixture("marker", "*")],
                     Files = { ["a.txt"] = "a" },
                 },
             ],
@@ -234,7 +234,7 @@ public sealed class ResolverTests
                 [
                     new ArtifactFixture
                     {
-                        Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                        Prerequisites = [new DepFixture("marker", "*")],
                         Files = { ["a.txt"] = "two" },
                     },
                 ],
@@ -256,7 +256,7 @@ public sealed class ResolverTests
                 [
                     new ArtifactFixture
                     {
-                        Selectors = new Dictionary<string, string> { ["carrier"] = "marker" },
+                        Prerequisites = [new DepFixture("marker", "*")],
                         Files = { ["a.txt"] = "two" },
                     },
                 ],
@@ -411,6 +411,94 @@ public sealed class ResolverTests
         Assert.Equal("resolve", error.Code);
         Assert.Contains("required by a", error.Message);
         Assert.Contains("required by c", error.Message);
+    }
+
+    [Fact]
+    public void Resolve_RejectsMissingVersionPrerequisite()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Prerequisites = [new DepFixture("marker", "*")],
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("prerequisite", error.Message);
+        Assert.Contains("marker", error.Message);
+    }
+
+    [Fact]
+    public void Resolve_AcceptsVersionPrerequisitePresentInTheGraph()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("marker", Version("marker", "1.0.0"));
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Prerequisites = [new DepFixture("marker", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "[1.0.0]"),
+            new SpecFixture("marker", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
+        Assert.Contains(lockFile.Sei, sei => sei.Name == "marker");
+    }
+
+    [Fact]
+    public void Resolve_RejectsVersionConflict()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("b", Version("b", "1.0.0"));
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Conflicts = [new DepFixture("b", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "[1.0.0]"),
+            new SpecFixture("b", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("conflict", error.Message);
+    }
+
+    [Fact]
+    public void Resolve_RejectsIncompatibleOptionalPeer()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("b", Version("b", "1.0.0"));
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            OptionalPeers = [new DepFixture("b", "[2.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("a", "[1.0.0]"),
+            new SpecFixture("b", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("optional peer", error.Message);
     }
 
     private static VersionFixture Version(string name, string version, params DepFixture[] dependencies)
