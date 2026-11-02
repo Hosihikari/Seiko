@@ -145,6 +145,20 @@ public sealed class Doctor
                 continue;
             }
 
+            // Another root may be replacing this artifact under its artifact
+            // lock. Hold the same lock so a transient missing manifest is not
+            // reported as a corrupted store.
+            using var artifactLock = ProcessLock.TryAcquire(
+                Path.Combine(storePath, ".locks", digest! + ".lock"));
+            if (artifactLock is null)
+            {
+                findings.Add(Warning(
+                    "store-busy",
+                    $"{sei.Name} {sei.Version} is being updated by another process; run doctor again",
+                    Path.Combine(storePath, digest!)));
+                continue;
+            }
+
             var directory = Path.Combine(storePath, digest!);
             var manifestPath = Path.Combine(directory, "sei.json");
             if (!File.Exists(manifestPath))

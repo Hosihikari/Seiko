@@ -38,6 +38,29 @@ public sealed class DoctorTests
     }
 
     [Fact]
+    public void Doctor_ReportsBusyArtifactInsteadOfMissing()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
+        using var held = ProcessLock.Acquire(
+            Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
+            "test artifact");
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "store-busy");
+        Assert.DoesNotContain(result.Findings, finding => finding.Code == "store-missing");
+    }
+
+    [Fact]
     public void Doctor_ReportsMissingDeployedFile()
     {
         using var fixture = new Fixture();
