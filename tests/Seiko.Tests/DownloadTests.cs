@@ -45,6 +45,44 @@ public sealed class DownloadTests
     }
 
     [Fact]
+    public async Task HttpSource_RejectsResponseLargerThanExpected()
+    {
+        using var fixture = new Fixture();
+        var data = new byte[5000];
+        Random.Shared.NextBytes(data);
+        var artifactDirectory = Path.Combine(fixture.SourceDirectory, "artifacts");
+        Directory.CreateDirectory(artifactDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
+        await File.WriteAllTextAsync(
+            Path.Combine(fixture.SourceDirectory, "index.json"),
+            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        using var session = new DownloadSession(4, CancellationToken.None);
+        using var source = new HttpSource(
+            new SourceConfig { Id = "test", Index = server.BaseUrl + "index.json" },
+            proxy: null,
+            session);
+        var downloadDirectory = Path.Combine(fixture.Root, "download");
+        Directory.CreateDirectory(downloadDirectory);
+
+        var error = await Assert.ThrowsAsync<SeikoException>(() => source.DownloadAsync(
+            "hello",
+            new ArtifactLocation
+            {
+                Url = "artifacts/blob.bin",
+                Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
+                Size = 4000,
+            },
+            downloadDirectory,
+            session,
+            CancellationToken.None));
+
+        Assert.Equal("download", error.Code);
+        Assert.Contains("exceeded", error.Message);
+    }
+
+    [Fact]
     public async Task HttpSource_ErrorRedactsArtifactQuery()
     {
         using var fixture = new Fixture();

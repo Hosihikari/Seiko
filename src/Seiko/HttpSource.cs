@@ -125,6 +125,13 @@ public sealed class HttpSource : ISeiSource, IDisposable
         var artifactPath = Path.Combine(directory, "artifact");
         var remote = await GetRemoteInfoAsync(uri, artifact, session, cancellationToken).ConfigureAwait(false);
         var size = artifact.Size > 0 ? artifact.Size : remote.Size;
+        if (size > ArchiveLimits.MaxTotalBytes)
+        {
+            throw new SeikoException(
+                $"artifact is larger than the {ArchiveLimits.MaxTotalBytes}-byte limit",
+                "download");
+        }
+
         var useChunks = size > session.ChunkThreshold && remote.AcceptRanges;
         var segmentCount = useChunks ? MaxSegments : 1;
         var segmentSize = size > 0 ? (size + segmentCount - 1) / segmentCount : 0;
@@ -247,6 +254,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             ? Math.Min(start + state.SegmentSize - 1, state.Size - 1)
             : -1;
         var expectedLength = end >= 0 ? end - start + 1 : -1;
+        var maxBytes = expectedLength >= 0 ? expectedLength : ArchiveLimits.MaxTotalBytes;
 
         for (var attempt = 1; ; attempt++)
         {
@@ -257,7 +265,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
                 return;
             }
 
-            if (expectedLength >= 0 && have > expectedLength)
+            if (have > maxBytes)
             {
                 File.Delete(segmentPath);
                 have = 0;
@@ -293,7 +301,13 @@ public sealed class HttpSource : ISeiSource, IDisposable
                             "download");
                     }
 
-                    await AppendBodyAsync(response, segmentPath, onRead, cancellationToken).ConfigureAwait(false);
+                    await AppendBodyAsync(
+                        response,
+                        segmentPath,
+                        have,
+                        maxBytes,
+                        onRead,
+                        cancellationToken).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -341,6 +355,8 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private static async Task AppendBodyAsync(
         HttpResponseMessage response,
         string segmentPath,
+        long have,
+        long maxBytes,
         Action<int> onRead,
         CancellationToken cancellationToken)
     {
@@ -353,6 +369,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             bufferSize: 81920,
             useAsync: true);
         var buffer = new byte[81920];
+        var written = 0L;
         while (true)
         {
             var read = await ReadBodyAsync(body, buffer, cancellationToken).ConfigureAwait(false);
@@ -361,7 +378,15 @@ public sealed class HttpSource : ISeiSource, IDisposable
                 break;
             }
 
+            if (have + written + read > maxBytes)
+            {
+                throw new SeikoException(
+                    $"download exceeded the expected size of {maxBytes} bytes",
+                    "download");
+            }
+
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            written += read;
             onRead(read);
         }
     }
