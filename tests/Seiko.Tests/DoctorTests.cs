@@ -61,6 +61,22 @@ public sealed class DoctorTests
     }
 
     [Fact]
+    public void Doctor_ReportsNullFilesStateAsFinding()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        File.WriteAllText(
+            Path.Combine(stateDirectory, "state.json"),
+            """{"schemaVersion":1,"generation":1,"files":null}""");
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "deploy-state");
+    }
+
+    [Fact]
     public void Doctor_ReportsMissingDeployedFile()
     {
         using var fixture = new Fixture();

@@ -34,6 +34,29 @@ public sealed class LockReplayTests
     }
 
     [Fact]
+    public void Read_RejectsNullLockCollections()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "seiko.lock.json");
+            File.WriteAllText(
+                path,
+                """{"schemaVersion":1,"target":{"rid":"win-x64"},"sources":[],"sei":null}""");
+
+            var error = Assert.Throws<SeikoException>(() => LockFile.Read(path));
+
+            Assert.Equal("lock", error.Code);
+            Assert.Contains("invalid lock file", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Resolve_RejectsAMissingLockedSource()
     {
         var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));

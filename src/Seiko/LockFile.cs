@@ -20,6 +20,19 @@ public static class LockFile
             throw new SeikoException($"unsupported lock schemaVersion {value.SchemaVersion}", "lock");
         }
 
+        if (value.Target is null || value.Sources is null || value.Sei is null)
+        {
+            throw new SeikoException($"invalid lock file: {path}", "lock");
+        }
+
+        foreach (var entry in value.Sei)
+        {
+            if (entry is null || entry.Artifact is null || entry.Dependencies is null)
+            {
+                throw new SeikoException($"invalid lock file: {path}", "lock");
+            }
+        }
+
         return value;
     }
 

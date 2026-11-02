@@ -218,6 +218,12 @@ public sealed class Doctor
             return;
         }
 
+        if (state.Files is null)
+        {
+            findings.Add(Error("deploy-state", "invalid deployment state: files is null", statePath));
+            return;
+        }
+
         foreach (var (relative, file) in state.Files)
         {
             var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));

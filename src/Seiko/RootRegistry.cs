@@ -191,7 +191,7 @@ internal static class RootRegistry
             var state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
                 SeikoJsonContext.Default.RootRegistryState);
-            if (state is null || state.SchemaVersion != 1)
+            if (state is null || state.SchemaVersion != 1 || state.Roots is null)
             {
                 throw new SeikoException($"invalid root registry: {path}", "io");
             }
