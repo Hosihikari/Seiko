@@ -73,6 +73,13 @@ public sealed class LocalSource : ISeiSource
         var statePath = Path.Combine(directory, "meta.json");
         var sourceInfo = new FileInfo(sourcePath);
         var size = sourceInfo.Length;
+        if (source.Size > 0 && size != source.Size)
+        {
+            throw new SeikoException(
+                $"size mismatch for {name}: expected {source.Size}, got {size}",
+                "checksum");
+        }
+
         var lastModified = sourceInfo.LastWriteTimeUtc.ToString("R");
         var state = PartialArtifactStateFile.Read(statePath);
         var urlHash = Hashing.Sha256Bytes(

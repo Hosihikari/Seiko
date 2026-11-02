@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -40,6 +41,37 @@ public sealed class SyncTests
         Assert.Equal(3, lockFile.Sei.Count);
         Assert.True(lockFile.Sei.Single(p => p.Name == "hello-csharp").Direct);
         Assert.False(lockFile.Sei.Single(p => p.Name == "levilamina").Direct);
+    }
+
+    [Fact]
+    public void Sync_RejectsLocalArtifactSizeMismatchBeforeCopying()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var index = JsonSerializer.Deserialize(
+            File.ReadAllBytes(path),
+            SeikoJsonContext.Default.SeiIndex)!;
+        index.Versions[0].Artifacts[0].Source.Size = 1;
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("checksum", error.Code);
+        Assert.Contains("size mismatch", error.Message);
+        var partial = Path.Combine(fixture.StoreDirectory, ".partial");
+        if (Directory.Exists(partial))
+        {
+            Assert.Empty(Directory.EnumerateFiles(partial, "artifact", SearchOption.AllDirectories));
+        }
     }
 
     [Fact]
