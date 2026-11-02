@@ -32,15 +32,17 @@ public sealed class PathResolutionTests
         Assert.Equal(expected, RelativePath.IsSafeStrict(value));
     }
 
-    [Fact]
-    public void IsSafeStrict_RejectsWindowsInvalidFileNames()
+    [Theory]
+    [InlineData("a:b")]
+    [InlineData("a<b")]
+    [InlineData("a\"b")]
+    [InlineData("a|b")]
+    [InlineData("a?b")]
+    [InlineData("a*b")]
+    [InlineData("a\u0001b")]
+    public void IsSafeStrict_RejectsWindowsInvalidFileNames(string value)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        Assert.False(RelativePath.IsSafeStrict("a:b"));
+        Assert.False(RelativePath.IsSafeStrict(value));
     }
 
     [Fact]

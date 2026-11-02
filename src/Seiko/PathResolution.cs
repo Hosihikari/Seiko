@@ -12,10 +12,8 @@ internal readonly struct RelativePath
 
     public string Value { get; }
 
-    private static readonly char[] WindowsInvalidFileNameChars = Path
-        .GetInvalidFileNameChars()
-        .Where(character => character is not ('/' or '\\'))
-        .ToArray();
+    private static readonly char[] WindowsInvalidFileNameChars =
+        ['<', '>', ':', '"', '|', '?', '*'];
 
     public static RelativePath Parse(string value, string code = "deploy")
     {
@@ -32,18 +30,15 @@ internal readonly struct RelativePath
     }
 
     // Stricter form used for stored metadata: a backslash is rejected instead
-    // of normalized, and Windows-invalid file names are refused up front.
+    // of normalized, and Windows-invalid file names are refused on every
+    // platform so a store entry has the same validity everywhere.
     public static bool IsSafeStrict(string? value)
     {
         if (string.IsNullOrEmpty(value)
-            || value.Contains('\0')
             || value.Contains('\\')
+            || value.IndexOfAny(WindowsInvalidFileNameChars) >= 0
+            || value.Any(character => character < ' ')
             || Path.IsPathRooted(value))
-        {
-            return false;
-        }
-
-        if (OperatingSystem.IsWindows() && value.IndexOfAny(WindowsInvalidFileNameChars) >= 0)
         {
             return false;
         }
