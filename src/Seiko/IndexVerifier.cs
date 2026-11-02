@@ -217,7 +217,7 @@ public static class IndexVerifier
             context.Warning("sei-empty", $"sei '{name}' has no versions", relative);
         }
 
-        var parsedVersions = new List<NuGetVersion>();
+        var seenVersions = new HashSet<NuGetVersion>();
         foreach (var entry in versions)
         {
             if (entry is null)
@@ -226,13 +226,12 @@ public static class IndexVerifier
                 continue;
             }
 
-            var version = ValidateVersion(context, relative, name, entry, parsedVersions);
+            var version = ValidateVersion(context, relative, name, entry, seenVersions);
             if (version is null)
             {
                 continue;
             }
 
-            parsedVersions.Add(version);
             context.Versions++;
 
             if (entry.Dependencies is null)
@@ -297,7 +296,7 @@ public static class IndexVerifier
         string path,
         string name,
         SeiVersionEntry entry,
-        List<NuGetVersion> parsedVersions)
+        HashSet<NuGetVersion> seenVersions)
     {
         if (!NuGetVersion.TryParse(entry.Version, out var version))
         {
@@ -308,7 +307,7 @@ public static class IndexVerifier
             return null;
         }
 
-        if (parsedVersions.Any(existing => existing.Equals(version)))
+        if (!seenVersions.Add(version))
         {
             context.Error(
                 "version-duplicate",
