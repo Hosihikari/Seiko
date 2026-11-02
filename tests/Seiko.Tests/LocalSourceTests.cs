@@ -14,7 +14,7 @@ public sealed class LocalSourceTests
         await File.WriteAllTextAsync(Path.Combine(sourceRoot, "http", "artifact.zip"), "two");
         await File.WriteAllTextAsync(
             Path.Combine(sourceRoot, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
         var source = new LocalSource(
             new SourceConfig
             {
@@ -61,7 +61,7 @@ public sealed class LocalSourceTests
             new byte[128]);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
         var source = new LocalSource(
             new SourceConfig
             {

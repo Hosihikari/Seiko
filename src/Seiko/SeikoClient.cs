@@ -606,7 +606,7 @@ public sealed class SeikoClient
                 var manifest = JsonSerializer.Deserialize(
                     File.ReadAllBytes(manifestPath),
                     SeikoJsonContext.Default.SeiManifest);
-                if (manifest is null || manifest.SchemaVersion != 1 || string.IsNullOrWhiteSpace(manifest.Name))
+                if (manifest is null || manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion || string.IsNullOrWhiteSpace(manifest.Name))
                 {
                     findings.Add(new CacheFinding("error", "cache-manifest", "invalid sei.json", directory));
                 }

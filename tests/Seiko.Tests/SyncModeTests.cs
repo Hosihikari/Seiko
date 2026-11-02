@@ -35,7 +35,7 @@ public sealed class SyncModeTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":1,"name":"hello","versions":null}""");
+            """{"schemaVersion":2,"name":"hello","versions":null}""");
 
         var error = Assert.Throws<SeikoException>(() =>
             client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));

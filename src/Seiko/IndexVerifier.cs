@@ -131,7 +131,7 @@ public static class IndexVerifier
                 return null;
             }
 
-            if (index.SchemaVersion != 1)
+            if (index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
             {
                 context.Error(
                     "index-schema",
@@ -184,7 +184,7 @@ public static class IndexVerifier
             return;
         }
 
-        if (index.SchemaVersion != 1)
+        if (index.SchemaVersion != SeiIndex.CurrentSchemaVersion)
         {
             context.Error(
                 "sei-schema",
@@ -800,7 +800,7 @@ public static class IndexVerifier
             }
 
             var prefix = $"sei '{reference.Sei}' {reference.Version}";
-            if (manifest.SchemaVersion != 1)
+            if (manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion)
             {
                 context.Error(
                     "manifest-mismatch",

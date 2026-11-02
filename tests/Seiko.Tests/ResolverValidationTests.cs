@@ -35,7 +35,7 @@ public sealed class ResolverValidationTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":1,"name":"hello","versions":[{"version":"1.0.0","dependencies":null,"artifacts":[]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":null,"artifacts":[]}]}""");
 
         var error = Assert.Throws<SeikoException>(
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
@@ -56,7 +56,7 @@ public sealed class ResolverValidationTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":1,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":null}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":null}]}""");
 
         var error = Assert.Throws<SeikoException>(
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
@@ -77,7 +77,7 @@ public sealed class ResolverValidationTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":1,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"selectors":{"rid":null},"layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"selectors":{"rid":null},"layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
 
         var error = Assert.Throws<SeikoException>(
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));

@@ -98,7 +98,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             var sei = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiIndex)
                 ?? throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
 
-            if (sei.SchemaVersion != 1 || !string.Equals(sei.Name, name, StringComparison.Ordinal))
+            if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion || !string.Equals(sei.Name, name, StringComparison.Ordinal))
             {
                 throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
             }
@@ -676,7 +676,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         var bytes = FetchBytes(uri);
         var index = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.IndexRoot)
             ?? throw new SeikoException($"source '{Id}': invalid index", "source");
-        if (index.SchemaVersion != 1)
+        if (index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
         {
             throw new SeikoException(
                 $"source '{Id}': unsupported index schemaVersion {index.SchemaVersion}",

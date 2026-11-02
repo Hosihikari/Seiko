@@ -24,7 +24,7 @@ public sealed class LocalSource : ISeiSource
         Index = JsonSerializer.Deserialize(File.ReadAllBytes(IndexPath), SeikoJsonContext.Default.IndexRoot)
             ?? throw new SeikoException($"source '{config.Id}': invalid index", "source");
 
-        if (Index.SchemaVersion != 1)
+        if (Index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
         {
             throw new SeikoException($"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}", "source");
         }
@@ -46,7 +46,7 @@ public sealed class LocalSource : ISeiSource
         var sei = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex)
             ?? throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}", "source");
 
-        if (sei.SchemaVersion != 1)
+        if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion)
         {
             throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}", "source");
         }

@@ -2,11 +2,27 @@ namespace Seiko;
 
 public sealed class SeiManifest
 {
-    public int SchemaVersion { get; set; } = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string Name { get; set; } = "";
     public string Version { get; set; } = "";
     public List<SeiDependency> Dependencies { get; set; } = [];
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
     public Dictionary<string, string>? Selectors { get; set; }
+    public string? Layout { get; set; }
+    public Dictionary<string, string>? Modes { get; set; }
+    public ArtifactManifest? Artifact { get; set; }
+}
+
+public sealed class ArtifactManifest
+{
+    public string? Rid { get; set; }
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
     public string? Layout { get; set; }
     public Dictionary<string, string>? Modes { get; set; }
 }
@@ -19,14 +35,18 @@ public sealed class SeiDependency
 
 public sealed class IndexRoot
 {
-    public int SchemaVersion { get; set; } = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string? GeneratedBy { get; set; }
     public List<string>? Sei { get; set; }
 }
 
 public sealed class SeiIndex
 {
-    public int SchemaVersion { get; set; } = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string Name { get; set; } = "";
     public bool Unlisted { get; set; }
     public string? Deprecated { get; set; }
@@ -37,6 +57,9 @@ public sealed class SeiVersionEntry
 {
     public string Version { get; set; } = "";
     public List<SeiDependency> Dependencies { get; set; } = [];
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
     public List<ArtifactEntry> Artifacts { get; set; } = [];
     public bool Yanked { get; set; }
     public string? Deprecated { get; set; }
@@ -51,8 +74,13 @@ public sealed class AdvisoryInfo
 
 public sealed class ArtifactEntry
 {
+    public string? Rid { get; set; }
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
     public Dictionary<string, string>? Selectors { get; set; }
     public string? Layout { get; set; }
+    public Dictionary<string, string>? Modes { get; set; }
     public ArtifactLocation Source { get; set; } = new();
 }
 

@@ -197,7 +197,7 @@ public sealed class Store
                 File.ReadAllBytes(manifestPath),
                 SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
-        if (manifest.SchemaVersion != 1)
+        if (manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion)
         {
             throw new SeikoException(
                 $"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}",
@@ -369,7 +369,7 @@ public sealed class Store
 
     private static void Validate(ResolvedSei sei, SeiManifest manifest)
     {
-        if (manifest.SchemaVersion != 1)
+        if (manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion)
         {
             throw new SeikoException($"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}", "io");
         }

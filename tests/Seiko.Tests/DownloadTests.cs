@@ -18,7 +18,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(artifactPath, data);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
 
         using var server = new TestHttpServer(fixture.SourceDirectory);
         using var session = new DownloadSession(4, CancellationToken.None, chunkThreshold: 1024);
@@ -55,7 +55,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
 
         using var server = new TestHttpServer(fixture.SourceDirectory);
         using var session = new DownloadSession(4, CancellationToken.None);
@@ -88,7 +88,7 @@ public sealed class DownloadTests
         using var fixture = new Fixture();
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
         using var server = new TestHttpServer(fixture.SourceDirectory);
         using var session = new DownloadSession(4, CancellationToken.None);
         using var source = new HttpSource(
@@ -126,7 +126,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
 
         using var server = new TestHttpServer(fixture.SourceDirectory)
         {
@@ -168,7 +168,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
 
         using var server = new TestHttpServer(fixture.SourceDirectory);
         using var session = new DownloadSession(4, CancellationToken.None, chunkThreshold: 1024);
@@ -218,7 +218,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
 
         using var server = new TestHttpServer(fixture.SourceDirectory)
         {
@@ -271,7 +271,7 @@ public sealed class DownloadTests
         await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":1,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
 
         using var server = new TestHttpServer(fixture.SourceDirectory);
         using var session = new DownloadSession(4, CancellationToken.None);

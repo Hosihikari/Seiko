@@ -7,6 +7,7 @@ namespace Seiko;
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(SeiManifest))]
+[JsonSerializable(typeof(ArtifactManifest))]
 [JsonSerializable(typeof(IndexRoot))]
 [JsonSerializable(typeof(SeiIndex))]
 [JsonSerializable(typeof(SeikoLock))]
