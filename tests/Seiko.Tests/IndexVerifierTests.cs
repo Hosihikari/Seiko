@@ -207,6 +207,49 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsArtifactSizesBeyondTheExtractionLimit()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].Source.Size = ArchiveLimits.MaxTotalBytes + 1;
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-size");
+        Assert.Equal(0, result.CheckedArtifacts);
+    }
+
+    [Fact]
+    public void Verify_CheckArtifactsRejectsOversizedLocalArtifacts()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].Source.Size = 1;
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-size");
+    }
+
+    [Fact]
+    public void Verify_CheckArtifactsRejectsOversizedHttpResponses()
+    {
+        using var fixture = NewFixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        var sei = ReadSei(fixture, "hello");
+        var source = sei.Versions[0].Artifacts[0].Source;
+        source.Url = server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url);
+        source.Size = 1;
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-size");
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsDownloadsHttpArtifacts()
     {
         using var fixture = NewFixture();

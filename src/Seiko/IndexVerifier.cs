@@ -445,7 +445,7 @@ public static class IndexVerifier
             ok = false;
         }
 
-        if (source.Size <= 0)
+        if (source.Size <= 0 || source.Size > ArchiveLimits.MaxTotalBytes)
         {
             context.Error(
                 "artifact-size",
@@ -513,11 +513,22 @@ public static class IndexVerifier
                     return;
                 }
 
-                File.Copy(local, path);
+                var localLength = new FileInfo(local).Length;
+                if (localLength != source.Size)
+                {
+                    context.Error(
+                        "artifact-size",
+                        $"sei '{reference.Sei}' {reference.Version}: expected {source.Size} bytes, got {localLength}",
+                        reference.Path);
+                    return;
+                }
+
+                using var input = File.OpenRead(local);
+                CopyBounded(input, path, source.Size);
             }
             else
             {
-                Download(client, source.Url, path, cancellationToken);
+                Download(client, source.Url, path, source.Size, cancellationToken);
             }
 
             var length = new FileInfo(path).Length;
@@ -546,6 +557,13 @@ public static class IndexVerifier
         {
             throw;
         }
+        catch (ArtifactSizeException ex)
+        {
+            context.Error(
+                "artifact-size",
+                $"sei '{reference.Sei}' {reference.Version}: {ex.Message}",
+                reference.Path);
+        }
         catch (Exception ex) when (ex is IOException
             or HttpRequestException
             or TaskCanceledException
@@ -562,7 +580,12 @@ public static class IndexVerifier
         }
     }
 
-    private static void Download(HttpClient client, string url, string path, CancellationToken cancellationToken)
+    private static void Download(
+        HttpClient client,
+        string url,
+        string path,
+        long maxBytes,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         using var response = client
@@ -576,10 +599,41 @@ public static class IndexVerifier
                 $"HTTP {(int)response.StatusCode} for {safe}");
         }
 
+        if (response.Content.Headers.ContentLength is { } length && length > maxBytes)
+        {
+            throw new ArtifactSizeException(
+                $"artifact response is {length} bytes; expected {maxBytes}");
+        }
+
         using var input = response.Content.ReadAsStream(cancellationToken);
-        using var output = File.Create(path);
-        input.CopyTo(output);
+        CopyBounded(input, path, maxBytes);
     }
+
+    private static void CopyBounded(Stream input, string path, long maxBytes)
+    {
+        using var output = File.Create(path);
+        var buffer = new byte[81920];
+        var total = 0L;
+        while (true)
+        {
+            var read = input.Read(buffer);
+            if (read == 0)
+            {
+                return;
+            }
+
+            if (total + read > maxBytes)
+            {
+                throw new ArtifactSizeException(
+                    $"artifact response exceeds the expected {maxBytes} bytes");
+            }
+
+            output.Write(buffer, 0, read);
+            total += read;
+        }
+    }
+
+    private sealed class ArtifactSizeException(string message) : Exception(message);
 
     private static void ValidateManifest(Context context, ArtifactRef reference, string path)
     {
