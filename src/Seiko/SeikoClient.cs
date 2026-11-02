@@ -549,7 +549,8 @@ public sealed class SeikoClient
     private static SyncResult WriteSpecsAndSync(
         string root,
         IReadOnlyList<SeiSpec> specs,
-        Func<DeploymentTransaction, SyncResult> sync)
+        Func<DeploymentTransaction, SyncResult> sync,
+        Action<DeploymentTransaction>? afterConfigWrite = null)
     {
         var stateDirectory = Path.Combine(root, ".seiko");
         DeploymentTransaction? transaction = null;
@@ -559,6 +560,7 @@ public sealed class SeikoClient
             transaction.WillChange("seiko.conf");
             transaction.WriteJournal();
             ConfigWriter.WriteSpecs(root, "sei", specs);
+            afterConfigWrite?.Invoke(transaction);
             return sync(transaction);
         }
         catch (Exception ex)
@@ -613,7 +615,8 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
         bool allowCritical = false,
-        bool dryRun = false)
+        bool dryRun = false,
+        bool purge = false)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
@@ -691,8 +694,21 @@ public sealed class SeikoClient
                 updateNames: null,
                 latestInstallable,
                 allowCritical,
-                transaction));
+                transaction),
+            purge
+                ? transaction =>
+                {
+                    transaction.MoveToTrash(PurgeConfigPath(name));
+                    transaction.MoveToTrash(PurgeDataPath(name));
+                }
+                : null);
     }
+
+    internal static string PurgeConfigPath(string name)
+        => $"config/hosihikari/{name}.conf";
+
+    internal static string PurgeDataPath(string name)
+        => $"data/hosihikari/{name}";
 
     public SyncResult Update(
         string root,

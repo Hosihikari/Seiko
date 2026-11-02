@@ -8,6 +8,7 @@ internal sealed class DeploymentTransaction
     private const string JournalName = "transaction.json";
     private const string BackupName = "transaction";
     private const string OwnershipName = "transaction.created";
+    private const string TrashName = "trash";
 
     private readonly string _root;
     private readonly string _journalPath;
@@ -127,6 +128,57 @@ internal sealed class DeploymentTransaction
         WriteCreatedMarker(_ownershipDirectory, "generation", normalized, null);
     }
 
+    // Purge moves config/data into the transaction trash so rollback can move
+    // it back. A cross-volume rename is a hard failure: the caller must not
+    // continue with a half-published change.
+    public void MoveToTrash(string relative)
+    {
+        var normalized = Normalize(relative);
+        var source = Resolve(_root, normalized);
+        if (!File.Exists(source) && !Directory.Exists(source))
+        {
+            return;
+        }
+
+        PathSafety.EnsureNoLinks(_root, normalized);
+        var trash = Resolve(Path.Combine(_backupDirectory, TrashName), normalized);
+        Directory.CreateDirectory(Path.GetDirectoryName(trash)!);
+        var trashRelative = Path.Join(
+            Normalize(Path.GetRelativePath(_root, _backupDirectory)),
+            TrashName,
+            normalized);
+        WriteCreatedMarker(_ownershipDirectory, "trash", trashRelative, null);
+        _journal.TrashPaths ??= [];
+        _journal.TrashPaths.Add(trashRelative);
+        WriteJournalFile(_journalPath, _journal);
+        try
+        {
+            Move(source, trash);
+        }
+        catch (IOException ex) when (IsCrossDevice(ex))
+        {
+            throw new SeikoException(
+                $"cannot purge {normalized}: config/data and the install root are on different volumes ({ex.Message})",
+                "io",
+                ex);
+        }
+    }
+
+    private static void Move(string source, string destination)
+    {
+        if (Directory.Exists(source))
+        {
+            Directory.Move(source, destination);
+        }
+        else
+        {
+            File.Move(source, destination);
+        }
+    }
+
+    private static bool IsCrossDevice(IOException ex)
+        => ex.HResult is 18 or unchecked((int)0x80070011);
+
     public void WriteJournal()
     {
         WriteJournalFile(_journalPath, _journal);
@@ -240,6 +292,25 @@ internal sealed class DeploymentTransaction
             if (File.Exists(path))
             {
                 File.Delete(path);
+            }
+        }
+
+        foreach (var trashed in journal.TrashPaths ?? [])
+        {
+            var normalized = Normalize(trashed);
+            var trashPath = Resolve(rootFull, normalized);
+            var prefix = TrashPrefix(backupFull, rootFull);
+            var original = normalized[prefix.Length..];
+            var destination = Resolve(rootFull, original);
+            if (!File.Exists(trashPath) && !Directory.Exists(trashPath))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            if (!File.Exists(destination) && !Directory.Exists(destination))
+            {
+                Move(trashPath, destination);
             }
         }
 
@@ -376,8 +447,13 @@ internal sealed class DeploymentTransaction
     private static bool MatchesCreatedDigest(string path, string expected)
         => string.Equals(Hashing.Sha256File(path), expected, StringComparison.Ordinal);
 
-    private static bool IsNewGeneration(string backupDirectory, string relative)
+    private static string TrashPrefix(string backupFull, string rootFull)
     {
+        var relative = Path.GetRelativePath(rootFull, backupFull).Replace('\\', '/');
+        return relative + "/" + TrashName + "/";
+    }
+
+    private static bool IsNewGeneration(string backupDirectory, string relative)    {
         var slash = relative.LastIndexOf('/');
         if (slash < 0 || !int.TryParse(relative[(slash + 1)..], out var generation))
         {
@@ -456,6 +532,27 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"rollback temporary {relative} is not owned by this transaction",
+                    "deploy");
+            }
+        }
+
+        var trashPrefix = TrashPrefix(backupDirectory, root);
+        foreach (var trashed in journal.TrashPaths ?? [])
+        {
+            var relative = Normalize(trashed);
+            if (!relative.StartsWith(trashPrefix, StringComparison.Ordinal)
+                || relative.Length == trashPrefix.Length)
+            {
+                throw new SeikoException(
+                    $"invalid deployment transaction trash path: {relative}",
+                    "deploy");
+            }
+
+            Resolve(root, relative);
+            if (!HasCreatedMarker(ownershipDirectory, "trash", relative, null))
+            {
+                throw new SeikoException(
+                    $"rollback trash {relative} is not owned by this transaction",
                     "deploy");
             }
         }

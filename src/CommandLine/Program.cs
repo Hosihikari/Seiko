@@ -135,6 +135,10 @@ var removePre = new Option<bool>("--pre") { Description = "Allow prerelease vers
 var removeJobs = JobsOption();
 var removeProxy = ProxyOption();
 var removeDryRun = DryRunOption();
+var removePurge = new Option<bool>("--purge")
+{
+    Description = "Also delete config/hosihikari/<name>.conf and data/hosihikari/<name>/.",
+};
 var removeAllowCritical = new Option<bool>("--allow-critical")
 {
     Description = "Allow resolving versions with a critical advisory.",
@@ -148,6 +152,7 @@ remove.Add(removeJobs);
 remove.Add(removeProxy);
 remove.Add(removeAllowCritical);
 remove.Add(removeDryRun);
+remove.Add(removePurge);
 remove.SetAction(parseResult => Run(
     "remove",
     IsJson(parseResult),
@@ -160,6 +165,7 @@ remove.SetAction(parseResult => Run(
         parseResult.GetValue(removeProxy),
         parseResult.GetValue(removeAllowCritical),
         parseResult.GetValue(removeDryRun),
+        parseResult.GetValue(removePurge),
         IsJson(parseResult))));
 
 var update = new Command("update", "Update direct declarations and sync.");
@@ -735,6 +741,7 @@ static int Remove(
     string? proxy,
     bool allowCritical,
     bool dryRun,
+    bool purge,
     bool json)
     => RunMutation(
         "remove",
@@ -750,7 +757,8 @@ static int Remove(
             progress,
             log,
             allowCritical: allowCritical,
-            dryRun: dryRun));
+            dryRun: dryRun,
+            purge: purge));
 
 static int Update(
     string? rootOption,

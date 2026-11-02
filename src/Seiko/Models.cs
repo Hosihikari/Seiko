@@ -174,6 +174,7 @@ public sealed class DeploymentJournal
     public bool Committed { get; set; }
     public string? NewGenerationPath { get; set; }
     public List<string>? TemporaryPaths { get; set; }
+    public List<string>? TrashPaths { get; set; }
     public List<DeploymentJournalEntry> Entries { get; set; } = [];
 }
 
