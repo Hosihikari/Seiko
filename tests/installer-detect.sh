@@ -5,6 +5,9 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 TMPDIR=${TMPDIR:-/tmp}
 export TMPDIR
 tmp=$(mktemp -d)
+if command -v cygpath >/dev/null 2>&1; then
+  tmp=$(cygpath -u "$tmp")
+fi
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/archive"
 printf '#!/bin/sh\n' > "$tmp/archive/sk"
@@ -132,6 +135,22 @@ case "$(uname -s)" in
     [ -f "$fish_config" ] || fail "installer did not update fish config"
     grep -Fq "fish_add_path '" "$fish_config" || fail "fish PATH line is not single-quoted"
     grep -Fq "it\\'s" "$fish_config" || fail "fish single quote was not escaped"
+
+    work="$tmp/relative-work"
+    relative_home="$tmp/home-relative"
+    mkdir -p "$work" "$relative_home"
+    (cd "$work" && PATH="$tmp/bin:$PATH" MOCK_MACHINE=x86_64 \
+      MOCK_LDD="ldd (Ubuntu GLIBC 2.35) 2.35" \
+      MOCK_SUMS="$tmp/SHA256SUMS" MOCK_ARCHIVE="$tmp/sk-0.0.0-linux-x64.tar.gz" \
+      HOME="$relative_home" SHELL=/bin/bash \
+      sh "$root/install.sh" --version v0.0.0 --base-url http://127.0.0.1:1 \
+        --dir tools/bin --modify-path >"$tmp/relative.out" 2>&1) \
+      || fail "relative install failed: $(cat "$tmp/relative.out")"
+    grep -Fq "$work/tools/bin" "$relative_home/.bashrc" \
+      || fail "relative install directory was not stored as an absolute path"
+    if grep -Fq "PATH='tools/bin'" "$relative_home/.bashrc"; then
+      fail "relative install directory was persisted verbatim"
+    fi
     ;;
   *)
     printf 'installer-detect: special-path install skipped on %s\n' "$(uname -s)" >&2

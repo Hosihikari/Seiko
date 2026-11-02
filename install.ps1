@@ -65,6 +65,11 @@ $rid = switch ($arch) {
 if (-not $Dir) {
     $Dir = Join-Path $env:LOCALAPPDATA "Seiko\bin"
 }
+try {
+    $Dir = [System.IO.Path]::GetFullPath($Dir)
+} catch {
+    Fail "invalid install directory: $Dir"
+}
 
 if ($BaseUrl -and -not $Version) {
     Fail "--BaseUrl requires -Version"

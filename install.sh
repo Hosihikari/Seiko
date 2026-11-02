@@ -141,6 +141,10 @@ SUMS_URL="$BASE_URL/SHA256SUMS"
 if [ -z "$INSTALL_DIR" ]; then
     INSTALL_DIR="$HOME/.local/bin"
 fi
+case "$INSTALL_DIR" in
+    /*) ;;
+    *) INSTALL_DIR="$(pwd)/$INSTALL_DIR" ;;
+esac
 TARGET="$INSTALL_DIR/sk"
 MCP_TARGET="$INSTALL_DIR/seiko-mcp"
 
