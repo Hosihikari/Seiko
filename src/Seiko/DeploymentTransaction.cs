@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace Seiko;
@@ -6,10 +7,12 @@ internal sealed class DeploymentTransaction
 {
     private const string JournalName = "transaction.json";
     private const string BackupName = "transaction";
+    private const string OwnershipName = "transaction.created";
 
     private readonly string _root;
     private readonly string _journalPath;
     private readonly string _backupDirectory;
+    private readonly string _ownershipDirectory;
     private readonly DeploymentJournal _journal = new();
     private readonly Dictionary<string, DeploymentJournalEntry> _entries = new(StringComparer.Ordinal);
 
@@ -18,7 +21,9 @@ internal sealed class DeploymentTransaction
         _root = Path.GetFullPath(root);
         _journalPath = Path.Combine(stateDirectory, JournalName);
         _backupDirectory = Path.Combine(stateDirectory, BackupName);
+        _ownershipDirectory = Path.Combine(stateDirectory, OwnershipName);
         Directory.CreateDirectory(_backupDirectory);
+        Directory.CreateDirectory(_ownershipDirectory);
     }
 
     public static DeploymentTransaction Begin(string root, string stateDirectory)
@@ -37,6 +42,12 @@ internal sealed class DeploymentTransaction
         if (Directory.Exists(backup))
         {
             Directory.Delete(backup, recursive: true);
+        }
+
+        var ownership = Path.Combine(stateDirectory, OwnershipName);
+        if (Directory.Exists(ownership))
+        {
+            Directory.Delete(ownership, recursive: true);
         }
 
         return new DeploymentTransaction(root, stateDirectory);
@@ -68,6 +79,10 @@ internal sealed class DeploymentTransaction
             var backup = Resolve(_backupDirectory, normalized);
             Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
             File.Copy(fullPath, backup, overwrite: true);
+        }
+        else
+        {
+            WriteCreatedMarker(normalized, sha256);
         }
 
         _entries[normalized] = entry;
@@ -143,6 +158,12 @@ internal sealed class DeploymentTransaction
                 Directory.Delete(backupDirectory, recursive: true);
             }
 
+            var ownership = Path.Combine(stateDirectory, OwnershipName);
+            if (Directory.Exists(ownership))
+            {
+                Directory.Delete(ownership, recursive: true);
+            }
+
             return;
         }
 
@@ -187,7 +208,10 @@ internal sealed class DeploymentTransaction
     {
         var rootFull = Path.GetFullPath(root);
         var backupFull = Path.GetFullPath(backupDirectory);
-        ValidateJournalPaths(rootFull, backupFull, journal);
+        var ownershipDirectory = Path.Combine(
+            Path.GetDirectoryName(backupFull)!,
+            OwnershipName);
+        ValidateJournalPaths(rootFull, backupFull, journal, ownershipDirectory);
         foreach (var temporary in journal.TemporaryPaths ?? [])
         {
             var normalized = Normalize(temporary);
@@ -246,7 +270,7 @@ internal sealed class DeploymentTransaction
             }
             else if (File.Exists(destination))
             {
-                if (!CanDeleteCreated(rootFull, relative, entry))
+                if (!CanDeleteCreated(rootFull, relative, entry, ownershipDirectory))
                 {
                     throw new SeikoException(
                         $"rollback cannot delete {relative}: it is not a file created by this transaction",
@@ -278,32 +302,45 @@ internal sealed class DeploymentTransaction
     private static bool CanDeleteCreated(
         string root,
         string relative,
-        DeploymentJournalEntry entry)
+        DeploymentJournalEntry entry,
+        string ownershipDirectory)
     {
-        if (entry.Sha256 is not null)
+        if (!HasCreatedMarker(ownershipDirectory, relative, entry.Sha256))
         {
-            return MatchesCreatedDigest(Resolve(root, relative), entry.Sha256);
+            return false;
         }
 
-        if (relative is "seiko.lock.json" or ".seiko/state.json")
+        return entry.Sha256 is null
+            || MatchesCreatedDigest(Resolve(root, relative), entry.Sha256);
+    }
+
+    private void WriteCreatedMarker(string relative, string? sha256)
+    {
+        var marker = MarkerPath(_ownershipDirectory, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+        File.WriteAllText(marker, $"{relative}\n{sha256 ?? ""}\n");
+    }
+
+    private static string MarkerPath(string ownershipDirectory, string relative)
+        => Path.Combine(
+            ownershipDirectory,
+            Hashing.Sha256Bytes(Encoding.UTF8.GetBytes(relative)) + ".created");
+
+    private static bool HasCreatedMarker(
+        string ownershipDirectory,
+        string relative,
+        string? sha256)
+    {
+        var marker = MarkerPath(ownershipDirectory, relative);
+        if (!File.Exists(marker) || PathSafety.IsLink(marker))
         {
-            return true;
+            return false;
         }
 
-        var parts = relative.Split('/');
-        if (parts.Length == 5
-            && parts[0] == ".seiko"
-            && parts[1] == "installed"
-            && parts[4] == "sei.json")
-        {
-            return true;
-        }
-
-        return parts.Length == 4
-            && parts[0] == ".seiko"
-            && parts[1] == "generations"
-            && int.TryParse(parts[2], out _)
-            && parts[3] is "state.json" or "lock.json";
+        var lines = File.ReadAllText(marker).Split('\n');
+        return lines.Length >= 2
+            && string.Equals(lines[0], relative, StringComparison.Ordinal)
+            && string.Equals(lines[1], sha256 ?? "", StringComparison.Ordinal);
     }
 
     private static bool MatchesCreatedDigest(string path, string expected)
@@ -375,8 +412,12 @@ internal sealed class DeploymentTransaction
     private static void ValidateJournalPaths(
         string root,
         string backupDirectory,
-        DeploymentJournal journal)
+        DeploymentJournal journal,
+        string ownershipDirectory)
     {
+        var ownershipRelative = Path.GetRelativePath(root, ownershipDirectory).Replace('\\', '/');
+        PathSafety.EnsureNoLinks(root, ownershipRelative);
+
         var entries = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in journal.Entries)
         {
@@ -386,6 +427,13 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"duplicate entry in deployment transaction: {relative}",
+                    "deploy");
+            }
+
+            if (!entry.Existed && !HasCreatedMarker(ownershipDirectory, relative, entry.Sha256))
+            {
+                throw new SeikoException(
+                    $"rollback path {relative} is not a file created by this transaction",
                     "deploy");
             }
         }
@@ -588,6 +636,16 @@ internal sealed class DeploymentTransaction
             if (Directory.Exists(backupDirectory))
             {
                 Directory.Delete(backupDirectory, recursive: true);
+            }
+
+            var stateDirectory = Path.GetDirectoryName(journalPath);
+            if (!string.IsNullOrEmpty(stateDirectory))
+            {
+                var ownership = Path.Combine(stateDirectory, OwnershipName);
+                if (Directory.Exists(ownership))
+                {
+                    Directory.Delete(ownership, recursive: true);
+                }
             }
         }
         catch (IOException)
