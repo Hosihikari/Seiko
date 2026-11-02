@@ -237,7 +237,7 @@ install_pair() {
 bash_profile_for() {
     for candidate in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
         if [ -f "$candidate" ]; then
-            if grep -Eq '^[[:space:]]*(\.|source)[[:space:]]+.*\.bashrc([[:space:]]|$)' "$candidate"; then
+            if grep -Eq '^[[:space:]]*(\.|source)[[:space:]]+.*\.bashrc["'\'']?([[:space:]]|$)' "$candidate"; then
                 printf '%s\n' "$HOME/.bashrc"
             else
                 printf '%s\n' "$candidate"

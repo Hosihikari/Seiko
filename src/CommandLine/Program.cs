@@ -50,6 +50,8 @@ var syncAllowCritical = new Option<bool>("--allow-critical")
     Description = "Allow resolving versions with a critical advisory.",
 };
 var syncDryRun = DryRunOption();
+var syncAdopt = AdoptOption();
+var syncForce = ForceOption();
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
@@ -60,6 +62,8 @@ sync.Add(syncProxy);
 sync.Add(syncLatestInstallable);
 sync.Add(syncAllowCritical);
 sync.Add(syncDryRun);
+sync.Add(syncAdopt);
+sync.Add(syncForce);
 sync.SetAction(parseResult => Run(
     "sync",
     IsJson(parseResult),
@@ -74,6 +78,8 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncLatestInstallable),
         parseResult.GetValue(syncAllowCritical),
         parseResult.GetValue(syncDryRun),
+        parseResult.GetValue(syncAdopt),
+        parseResult.GetValue(syncForce),
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
@@ -84,6 +90,8 @@ var addPre = new Option<bool>("--pre") { Description = "Allow prerelease version
 var addJobs = JobsOption();
 var addProxy = ProxyOption();
 var addDryRun = DryRunOption();
+var addAdopt = AdoptOption();
+var addForce = ForceOption();
 var addLatestInstallable = new Option<bool>("--latest-installable")
 {
     Description = "Pick the highest version that has an artifact for the resolved graph.",
@@ -112,6 +120,8 @@ add.Add(addProxy);
 add.Add(addLatestInstallable);
 add.Add(addAllowCritical);
 add.Add(addDryRun);
+add.Add(addAdopt);
+add.Add(addForce);
 add.SetAction(parseResult => Run(
     "add",
     IsJson(parseResult),
@@ -126,6 +136,8 @@ add.SetAction(parseResult => Run(
         parseResult.GetValue(addLatestInstallable),
         parseResult.GetValue(addAllowCritical),
         parseResult.GetValue(addDryRun),
+        parseResult.GetValue(addAdopt),
+        parseResult.GetValue(addForce),
         IsJson(parseResult))));
 
 var remove = new Command("remove", "Remove a direct sei declaration and sync.");
@@ -135,6 +147,8 @@ var removePre = new Option<bool>("--pre") { Description = "Allow prerelease vers
 var removeJobs = JobsOption();
 var removeProxy = ProxyOption();
 var removeDryRun = DryRunOption();
+var removeAdopt = AdoptOption();
+var removeForce = ForceOption();
 var removePurge = new Option<bool>("--purge")
 {
     Description = "Also delete config/hosihikari/<name>.conf and data/hosihikari/<name>/.",
@@ -153,6 +167,8 @@ remove.Add(removeProxy);
 remove.Add(removeAllowCritical);
 remove.Add(removeDryRun);
 remove.Add(removePurge);
+remove.Add(removeAdopt);
+remove.Add(removeForce);
 remove.SetAction(parseResult => Run(
     "remove",
     IsJson(parseResult),
@@ -166,6 +182,8 @@ remove.SetAction(parseResult => Run(
         parseResult.GetValue(removeAllowCritical),
         parseResult.GetValue(removeDryRun),
         parseResult.GetValue(removePurge),
+        parseResult.GetValue(removeAdopt),
+        parseResult.GetValue(removeForce),
         IsJson(parseResult))));
 
 var update = new Command("update", "Update direct declarations and sync.");
@@ -175,6 +193,8 @@ var updatePre = new Option<bool>("--pre") { Description = "Allow prerelease vers
 var updateJobs = JobsOption();
 var updateProxy = ProxyOption();
 var updateDryRun = DryRunOption();
+var updateAdopt = AdoptOption();
+var updateForce = ForceOption();
 var updateLatest = new Option<bool>("--latest") { Description = "Rewrite direct ranges to the latest version." };
 var updateLatestInstallable = new Option<bool>("--latest-installable")
 {
@@ -199,6 +219,8 @@ update.Add(updateLatest);
 update.Add(updateLatestInstallable);
 update.Add(updateAllowCritical);
 update.Add(updateDryRun);
+update.Add(updateAdopt);
+update.Add(updateForce);
 update.SetAction(parseResult => Run(
     "update",
     IsJson(parseResult),
@@ -213,6 +235,8 @@ update.SetAction(parseResult => Run(
         parseResult.GetValue(updateLatestInstallable),
         parseResult.GetValue(updateAllowCritical),
         parseResult.GetValue(updateDryRun),
+        parseResult.GetValue(updateAdopt),
+        parseResult.GetValue(updateForce),
         IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
@@ -598,6 +622,12 @@ static Option<int?> JobsOption()
 static Option<bool> DryRunOption()
     => new("--dry-run") { Description = "Resolve and print the plan without downloading or writing." };
 
+static Option<bool> AdoptOption()
+    => new("--adopt") { Description = "Keep existing files and record them as adopted." };
+
+static Option<bool> ForceOption()
+    => new("--force") { Description = "Overwrite or delete conflicting existing files." };
+
 static int Sync(
     string? rootOption,
     string? store,
@@ -609,6 +639,8 @@ static int Sync(
     bool latestInstallable,
     bool allowCritical,
     bool dryRun,
+    bool adopt,
+    bool force,
     bool json)
 {
     if (frozen && locked)
@@ -634,7 +666,9 @@ static int Sync(
             Log.Debug,
             latestInstallable: latestInstallable,
             allowCritical: allowCritical,
-            dryRun: dryRun);
+            dryRun: dryRun,
+            adopt: adopt,
+            force: force);
     }
     else
     {
@@ -648,7 +682,9 @@ static int Sync(
             log: Log.Debug,
             latestInstallable: latestInstallable,
             allowCritical: allowCritical,
-            dryRun: dryRun);
+            dryRun: dryRun,
+            adopt: adopt,
+            force: force);
     }
 
     if (dryRun)
@@ -713,6 +749,8 @@ static int Add(
     bool latestInstallable,
     bool allowCritical,
     bool dryRun,
+    bool adopt,
+    bool force,
     bool json)
     => RunMutation(
         "add",
@@ -730,7 +768,9 @@ static int Add(
             log,
             latestInstallable: latestInstallable,
             allowCritical: allowCritical,
-            dryRun: dryRun));
+            dryRun: dryRun,
+            adopt: adopt,
+            force: force));
 
 static int Remove(
     string? rootOption,
@@ -742,6 +782,8 @@ static int Remove(
     bool allowCritical,
     bool dryRun,
     bool purge,
+    bool adopt,
+    bool force,
     bool json)
     => RunMutation(
         "remove",
@@ -771,6 +813,8 @@ static int Update(
     bool latestInstallable,
     bool allowCritical,
     bool dryRun,
+    bool adopt,
+    bool force,
     bool json)
     => RunMutation(
         "update",
@@ -788,7 +832,9 @@ static int Update(
             log,
             latestInstallable: latestInstallable,
             allowCritical: allowCritical,
-            dryRun: dryRun));
+            dryRun: dryRun,
+            adopt: adopt,
+            force: force));
 
 static int Why(string? rootOption, string name, bool json)
 {

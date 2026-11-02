@@ -54,7 +54,9 @@ public sealed class SeikoClient
         IReadOnlySet<string>? updateNames = null,
         bool latestInstallable = false,
         bool allowCritical = false,
-        bool dryRun = false)
+        bool dryRun = false,
+        bool adopt = false,
+        bool force = false)
     {
         root = Path.GetFullPath(root);
         cancellationToken.ThrowIfCancellationRequested();
@@ -81,7 +83,9 @@ public sealed class SeikoClient
             updateNames,
             latestInstallable,
             allowCritical,
-            dryRun: dryRun);
+            dryRun: dryRun,
+            adopt: adopt,
+            force: force);
     }
 
     private SyncResult SyncLocked(
@@ -99,7 +103,9 @@ public sealed class SeikoClient
         bool allowCritical,
         DeploymentTransaction? transaction = null,
         bool dryRun = false,
-        IReadOnlyList<SeiSpec>? specsOverride = null)
+        IReadOnlyList<SeiSpec>? specsOverride = null,
+        bool adopt = false,
+        bool force = false)
     {
         if (transaction is null)
         {
@@ -189,6 +195,8 @@ public sealed class SeikoClient
             };
         }
 
+        // Report conflicts before downloading anything; a later deploy still
+        // re-checks against the on-disk state.
         var stored = DownloadAll(store, resolved, session, downloadCts);
         cancellationToken.ThrowIfCancellationRequested();
         progress?.Report(new SyncProgress(
@@ -213,14 +221,18 @@ public sealed class SeikoClient
                 deployedSei,
                 stateDirectory,
                 lockFile,
-                writeLock: mode == SyncMode.Normal)
+                writeLock: mode == SyncMode.Normal,
+                adopt: adopt,
+                force: force)
             : Deployer.DeployInTransaction(
                 root,
                 deployedSei,
                 stateDirectory,
                 lockFile,
                 transaction,
-                writeLock: mode == SyncMode.Normal);
+                writeLock: mode == SyncMode.Normal,
+                adopt: adopt,
+                force: force);
 
         return new SyncResult
         {
@@ -361,7 +373,9 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
         bool allowCritical = false,
-        bool dryRun = false)
+        bool dryRun = false,
+        bool adopt = false,
+        bool force = false)
         => AddMany(
             root,
             [specification],
@@ -375,7 +389,9 @@ public sealed class SeikoClient
             cancellationToken,
             latestInstallable,
             allowCritical,
-            dryRun);
+            dryRun,
+            adopt,
+            force);
 
     public SyncResult AddMany(
         string root,
@@ -390,7 +406,9 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
         bool allowCritical = false,
-        bool dryRun = false)
+        bool dryRun = false,
+        bool adopt = false,
+        bool force = false)
     {
         root = Path.GetFullPath(root);
         var additions = specifications
@@ -493,7 +511,9 @@ public sealed class SeikoClient
                 cancellationToken,
                 updateNames: null,
                 latestInstallable,
-                allowCritical);
+                allowCritical,
+                adopt,
+                force);
         }
 
         return WriteSpecsAndSync(
@@ -512,7 +532,9 @@ public sealed class SeikoClient
                 updateNames: null,
                 latestInstallable,
                 allowCritical,
-                transaction));
+                transaction,
+                adopt: adopt,
+                force: force));
     }
 
     private SyncResult PreviewWithoutWriting(
@@ -528,7 +550,9 @@ public sealed class SeikoClient
         CancellationToken cancellationToken,
         IReadOnlySet<string>? updateNames,
         bool latestInstallable,
-        bool allowCritical)
+        bool allowCritical,
+        bool adopt = false,
+        bool force = false)
         => SyncLocked(
             root,
             storePath,
@@ -544,7 +568,9 @@ public sealed class SeikoClient
             allowCritical,
             transaction: null,
             dryRun: true,
-            specs);
+            specs,
+            adopt,
+            force);
 
     private static SyncResult WriteSpecsAndSync(
         string root,
@@ -616,7 +642,9 @@ public sealed class SeikoClient
         bool latestInstallable = false,
         bool allowCritical = false,
         bool dryRun = false,
-        bool purge = false)
+        bool purge = false,
+        bool adopt = false,
+        bool force = false)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
@@ -675,7 +703,9 @@ public sealed class SeikoClient
                 cancellationToken,
                 updateNames: null,
                 latestInstallable,
-                allowCritical);
+                allowCritical,
+                adopt,
+                force);
         }
 
         return WriteSpecsAndSync(
@@ -694,7 +724,9 @@ public sealed class SeikoClient
                 updateNames: null,
                 latestInstallable,
                 allowCritical,
-                transaction),
+                transaction,
+                adopt: adopt,
+                force: force),
             purge
                 ? transaction =>
                 {
@@ -723,7 +755,9 @@ public sealed class SeikoClient
         CancellationToken cancellationToken = default,
         bool latestInstallable = false,
         bool allowCritical = false,
-        bool dryRun = false)
+        bool dryRun = false,
+        bool adopt = false,
+        bool force = false)
     {
         root = Path.GetFullPath(root);
         if (latest && latestInstallable)
@@ -785,7 +819,9 @@ public sealed class SeikoClient
             updateNames,
             latestInstallable,
             allowCritical,
-            transaction);
+            transaction,
+            adopt: adopt,
+            force: force);
 
         if (dryRun)
         {
@@ -802,7 +838,9 @@ public sealed class SeikoClient
                 cancellationToken,
                 updateNames,
                 latestInstallable,
-                allowCritical);
+                allowCritical,
+                adopt,
+                force);
         }
 
         return writeConfig

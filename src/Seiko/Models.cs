@@ -160,6 +160,7 @@ public sealed class DeployedFile
 {
     public List<string> Owners { get; set; } = [];
     public string Sha256 { get; set; } = "";
+    public bool Adopted { get; set; }
 }
 
 public sealed class RootRegistryState

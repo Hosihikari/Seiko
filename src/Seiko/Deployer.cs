@@ -29,7 +29,9 @@ public static class Deployer
         SeikoLock lockFile,
         int? generationOverride = null,
         bool writeLock = false,
-        byte[]? restoreConfig = null)
+        byte[]? restoreConfig = null,
+        bool adopt = false,
+        bool force = false)
         => DeployCore(
             root,
             sei,
@@ -38,7 +40,9 @@ public static class Deployer
             generationOverride,
             writeLock,
             restoreConfig,
-            transaction: null);
+            transaction: null,
+            adopt,
+            force);
 
     internal static DeployResult DeployInTransaction(
         string root,
@@ -48,7 +52,9 @@ public static class Deployer
         DeploymentTransaction transaction,
         int? generationOverride = null,
         bool writeLock = false,
-        byte[]? restoreConfig = null)
+        byte[]? restoreConfig = null,
+        bool adopt = false,
+        bool force = false)
         => DeployCore(
             root,
             sei,
@@ -57,7 +63,9 @@ public static class Deployer
             generationOverride,
             writeLock,
             restoreConfig,
-            transaction);
+            transaction,
+            adopt,
+            force);
 
     private static DeployResult DeployCore(
         string root,
@@ -67,7 +75,9 @@ public static class Deployer
         int? generationOverride,
         bool writeLock,
         byte[]? restoreConfig,
-        DeploymentTransaction? transaction)
+        DeploymentTransaction? transaction,
+        bool adopt,
+        bool force)
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
@@ -96,7 +106,8 @@ public static class Deployer
         }
 
         var managed = new HashSet<string>(state.Files.Keys, StringComparer.Ordinal);
-        var replaceable = ValidateDesiredTree(root, desired, managed);
+        var replaceable = ValidateDesiredTree(root, desired, managed, force);
+        var adoptedHashes = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var mutations = new List<Mutation>();
         foreach (var oldFile in state.Files.Keys)
@@ -108,17 +119,70 @@ public static class Deployer
                     "deploy");
             }
 
-            if (!desired.ContainsKey(oldFile) && File.Exists(Native(root, oldFile)))
+            if (desired.ContainsKey(oldFile) || !File.Exists(Native(root, oldFile)))
             {
-                mutations.Add(new Mutation(oldFile, null));
+                continue;
             }
+
+            var record = state.Files[oldFile];
+            if (!record.Adopted
+                && !force
+                && !adopt
+                && !string.Equals(Hashing.Sha256File(Native(root, oldFile)), record.Sha256, StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"deployment conflict: managed file {oldFile} was modified; pass --force to delete it or --adopt to keep it",
+                    "deploy");
+            }
+
+            mutations.Add(new Mutation(oldFile, null));
         }
 
         foreach (var (relative, file) in desired)
         {
             var destination = Native(root, relative);
-            var unchanged = File.Exists(destination)
-                && string.Equals(Hashing.Sha256File(destination), file.Sha256, StringComparison.Ordinal);
+            var exists = File.Exists(destination);
+            var managedHere = state.Files.TryGetValue(relative, out var previous);
+            var unchanged = false;
+            if (exists)
+            {
+                var actual = Hashing.Sha256File(destination);
+                if (!managedHere && !adopt && !force)
+                {
+                    throw new SeikoException(
+                        $"deployment conflict: unmanaged path {relative} is in the way; pass --adopt to keep it or --force to overwrite it",
+                        "deploy");
+                }
+
+                var modified = managedHere
+                    && !previous!.Adopted
+                    && !string.Equals(actual, previous.Sha256, StringComparison.Ordinal);
+                // A hard-linked store payload shares its inode with the
+                // deployed file, so store corruption is indistinguishable from
+                // an in-place edit. When the requested artifact still has the
+                // recorded digest, redeploying is the repair path; only a
+                // different target digest counts as a user-visible change.
+                if (modified
+                    && !string.Equals(previous!.Sha256, file.Sha256, StringComparison.Ordinal)
+                    && !adopt
+                    && !force)
+                {
+                    throw new SeikoException(
+                        $"deployment conflict: managed file {relative} was modified; pass --force to overwrite it or --adopt to keep it",
+                        "deploy");
+                }
+
+                var keepExisting = !force
+                    && (adopt || (managedHere && previous!.Adopted));
+                if (keepExisting)
+                {
+                    adoptedHashes[relative] = actual;
+                    continue;
+                }
+
+                unchanged = string.Equals(actual, file.Sha256, StringComparison.Ordinal);
+            }
+
             if (!unchanged)
             {
                 mutations.Add(new Mutation(relative, file));
@@ -161,7 +225,10 @@ public static class Deployer
                 pair => new DeployedFile
                 {
                     Owners = pair.Value.Owners.Distinct(StringComparer.Ordinal).OrderBy(o => o, StringComparer.Ordinal).ToList(),
-                    Sha256 = pair.Value.Sha256,
+                    Sha256 = adoptedHashes.TryGetValue(pair.Key, out var kept)
+                        ? kept
+                        : pair.Value.Sha256,
+                    Adopted = adoptedHashes.ContainsKey(pair.Key),
                 },
                 StringComparer.Ordinal),
         };
@@ -408,7 +475,8 @@ public static class Deployer
     private static HashSet<string> ValidateDesiredTree(
         string root,
         IReadOnlyDictionary<string, DesiredFile> desired,
-        IReadOnlySet<string> managed)
+        IReadOnlySet<string> managed,
+        bool force)
     {
         var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var relative in desired.Keys)
@@ -422,7 +490,7 @@ public static class Deployer
             var destination = Native(root, relative);
             if (Directory.Exists(destination))
             {
-                EnsureReplaceableDirectory(root, relative, destination, managed, desired);
+                EnsureReplaceableDirectory(root, relative, destination, managed, desired, force);
                 replaceable.Add(relative);
             }
 
@@ -458,7 +526,8 @@ public static class Deployer
         string relative,
         string destination,
         IReadOnlySet<string> managed,
-        IReadOnlyDictionary<string, DesiredFile> desired)
+        IReadOnlyDictionary<string, DesiredFile> desired,
+        bool force)
     {
         var allowedDirectories = new HashSet<string>(StringComparer.Ordinal) { relative };
         var prefix = relative + "/";
@@ -501,22 +570,29 @@ public static class Deployer
                 var child = Path.GetRelativePath(root, entry).Replace('\\', '/');
                 if ((attributes & FileAttributes.Directory) != 0)
                 {
-                    if (!allowedDirectories.Contains(child))
+                    if (!allowedDirectories.Contains(child) && !force)
                     {
                         throw new SeikoException(
-                            $"path conflict: {relative} is a directory containing unmanaged directory {child}",
+                            $"path conflict: {relative} is a directory containing unmanaged directory {child}; pass --force to replace it",
                             "deploy");
                     }
 
-                    pending.Push(entry);
+                    if (!force || allowedDirectories.Contains(child))
+                    {
+                        pending.Push(entry);
+                    }
+
                     continue;
                 }
 
                 if (!managed.Contains(child) || desired.ContainsKey(child))
                 {
-                    throw new SeikoException(
-                        $"path conflict: {relative} is a directory containing unmanaged file {child}",
-                        "deploy");
+                    if (!force)
+                    {
+                        throw new SeikoException(
+                            $"path conflict: {relative} is a directory containing unmanaged file {child}; pass --force to replace it",
+                            "deploy");
+                    }
                 }
             }
         }
@@ -713,7 +789,7 @@ public static class Deployer
         File.Move(temp, path, overwrite: true);
     }
 
-    private sealed record Mutation(string RelativePath, DesiredFile? File);
+    private sealed record Mutation(string RelativePath, DesiredFile? File, bool Adopted = false);
 
     private static string HashStoredFile(DeployedSei sei, string file, string relative)
     {
