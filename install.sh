@@ -250,9 +250,13 @@ case ":$PATH:" in
                 *) profile="" ;;
             esac
             if [ "$shell_name" = fish ]; then
-                managed_line="fish_add_path \"$INSTALL_DIR\""
+                escaped_dir=$(printf '%s' "$INSTALL_DIR" \
+                    | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g")
+                managed_line="fish_add_path '$escaped_dir'"
             else
-                managed_line="export PATH=\"$INSTALL_DIR:\$PATH\""
+                escaped_dir=$(printf '%s' "$INSTALL_DIR" \
+                    | sed "s/'/'\\\\''/g")
+                managed_line="export PATH='$escaped_dir':\"\$PATH\""
             fi
 
             if [ -n "$profile" ] && ! grep -Fxq "$managed_line" "$profile" 2>/dev/null; then
