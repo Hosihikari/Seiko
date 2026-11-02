@@ -96,6 +96,23 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: dist
+      - name: Verify required release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          for rid in win-x64 win-arm64 win-x86 linux-x64 linux-arm64 linux-arm linux-musl-x64 linux-musl-arm64 osx-x64 osx-arm64; do
+            case "$rid" in
+              win-*) ext=zip ;;
+              *) ext=tar.gz ;;
+            esac
+            asset="sk-$version-$rid.$ext"
+            if [ ! -f "dist/$asset" ]; then
+              echo "::error::missing release asset: $asset"
+              exit 1
+            fi
+          done
+
       - name: Add installers and checksums
         shell: bash
         run: |
