@@ -211,13 +211,35 @@ public sealed class Store
         string directory,
         IReadOnlyDictionary<string, StoreFileDigest> digests)
     {
-        var recorded = new HashSet<string>(digests.Keys, StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        if (PathSafety.IsLink(directory))
         {
-            var relative = Path.GetRelativePath(directory, file).Replace('\\', '/');
-            if (!recorded.Contains(relative))
+            throw CorruptedStore(directory, directory);
+        }
+
+        var recorded = new HashSet<string>(digests.Keys, StringComparer.Ordinal);
+        var pending = new Stack<string>();
+        pending.Push(directory);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            foreach (var entry in Directory.EnumerateFileSystemEntries(current))
             {
-                throw CorruptedStore(directory, file);
+                if (PathSafety.IsLink(entry))
+                {
+                    throw CorruptedStore(directory, entry);
+                }
+
+                var relative = Path.GetRelativePath(directory, entry).Replace('\\', '/');
+                if ((File.GetAttributes(entry) & FileAttributes.Directory) != 0)
+                {
+                    pending.Push(entry);
+                    continue;
+                }
+
+                if (!recorded.Contains(relative))
+                {
+                    throw CorruptedStore(directory, entry);
+                }
             }
         }
 

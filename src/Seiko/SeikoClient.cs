@@ -783,6 +783,18 @@ public sealed class SeikoClient
         foreach (var directory in ArtifactDirectories(storePath))
         {
             var artifact = Path.GetFileName(directory);
+            using var artifactLock = ProcessLock.TryAcquire(
+                Path.Combine(storePath, ".locks", artifact + ".lock"));
+            if (artifactLock is null)
+            {
+                findings.Add(new CacheFinding(
+                    "warning",
+                    "cache-busy",
+                    "artifact is busy; skipped",
+                    directory));
+                continue;
+            }
+
             var manifestPath = Path.Combine(directory, "sei.json");
             if (!File.Exists(manifestPath))
             {
@@ -818,6 +830,11 @@ public sealed class SeikoClient
             using var artifactLock = StoreStaging.TryLock(storePath, artifact);
             if (artifactLock is null)
             {
+                findings.Add(new CacheFinding(
+                    "warning",
+                    "cache-busy",
+                    "artifact is busy; skipped",
+                    staging));
                 continue;
             }
 
@@ -837,6 +854,66 @@ public sealed class SeikoClient
         string directory,
         List<CacheFinding> findings)
     {
+        if (PathSafety.IsLink(directory))
+        {
+            findings.Add(new CacheFinding(
+                "error",
+                "cache-corrupt",
+                "artifact directory is a link",
+                directory));
+            return;
+        }
+
+        var files = new HashSet<string>(StringComparer.Ordinal);
+        var links = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>();
+        pending.Push(directory);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            List<string> entries;
+            try
+            {
+                entries = Directory.EnumerateFileSystemEntries(current).ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                findings.Add(new CacheFinding("error", "io", ex.Message, current));
+                continue;
+            }
+
+            foreach (var entry in entries)
+            {
+                var relative = Path.GetRelativePath(directory, entry).Replace('\\', '/');
+                if (PathSafety.IsLink(entry))
+                {
+                    links.Add(relative);
+                    findings.Add(new CacheFinding(
+                        "error",
+                        "cache-corrupt",
+                        $"artifact path {relative} is a link",
+                        entry));
+                    continue;
+                }
+
+                try
+                {
+                    if ((File.GetAttributes(entry) & FileAttributes.Directory) != 0)
+                    {
+                        pending.Push(entry);
+                    }
+                    else
+                    {
+                        files.Add(relative);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    findings.Add(new CacheFinding("error", "io", ex.Message, entry));
+                }
+            }
+        }
+
         var state = StoreDigests.TryRead(storePath, artifact);
         if (state is null)
         {
@@ -852,8 +929,13 @@ public sealed class SeikoClient
         foreach (var file in state.Files ?? [])
         {
             listed.Add(file.Path);
+            if (links.Contains(file.Path))
+            {
+                continue;
+            }
+
             var path = Path.Combine(directory, file.Path.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(path))
+            if (!files.Contains(file.Path))
             {
                 findings.Add(new CacheFinding(
                     "error",
@@ -881,16 +963,15 @@ public sealed class SeikoClient
             }
         }
 
-        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        foreach (var file in files)
         {
-            var relative = Path.GetRelativePath(directory, file).Replace('\\', '/');
-            if (!listed.Contains(relative))
+            if (!listed.Contains(file))
             {
                 findings.Add(new CacheFinding(
                     "warning",
                     "cache-unlisted",
-                    $"artifact file {relative} is not in the digest record",
-                    file));
+                    $"artifact file {file} is not in the digest record",
+                    Path.Combine(directory, file.Replace('/', Path.DirectorySeparatorChar))));
             }
         }
     }

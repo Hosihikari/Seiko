@@ -449,6 +449,86 @@ public sealed class DeployLinkTests
     }
 
     [Fact]
+    public void CacheVerify_SkipsABusyArtifact()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var sha = ArtifactSha(fixture);
+        var artifactLock = ProcessLock.TryAcquire(
+            Path.Combine(fixture.StoreDirectory, ".locks", sha + ".lock"));
+        Assert.NotNull(artifactLock);
+        try
+        {
+            var finding = Assert.Single(client.CacheVerify(fixture.StoreDirectory));
+
+            Assert.Equal("warning", finding.Severity);
+            Assert.Equal("cache-busy", finding.Code);
+        }
+        finally
+        {
+            artifactLock.Dispose();
+        }
+
+        Assert.Empty(client.CacheVerify(fixture.StoreDirectory));
+    }
+
+    [Fact]
+    public void CacheVerify_RejectsLinksInThePayload()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var directory = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture));
+        var outside = Path.Combine(fixture.StoreDirectory, "outside.txt");
+        File.WriteAllText(outside, "outside");
+        var link = Path.Combine(directory, "link.txt");
+        try
+        {
+            File.CreateSymbolicLink(link, outside);
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        var findings = client.CacheVerify(fixture.StoreDirectory);
+
+        Assert.Contains(findings, finding =>
+            finding.Code == "cache-corrupt" && finding.Path == link);
+    }
+
+    [Fact]
+    public void Sync_RepairsLinksInThePayload()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var directory = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture));
+        var outside = Path.Combine(fixture.StoreDirectory, "outside.txt");
+        File.WriteAllText(outside, "outside");
+        var link = Path.Combine(directory, "link.txt");
+        try
+        {
+            File.CreateSymbolicLink(link, outside);
+        }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.False(PathSafety.IsLink(link));
+        Assert.False(File.Exists(link));
+        Assert.Equal("outside", File.ReadAllText(outside));
+    }
+
+    [Fact]
     public void CacheVerify_WarnsWithoutDigestRecord()
     {
         using var fixture = NewFixture();
