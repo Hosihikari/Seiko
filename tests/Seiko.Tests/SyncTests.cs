@@ -103,7 +103,9 @@ public sealed class SyncTests
         var result = client.Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("levilamina", File.ReadAllText(Path.Combine(fixture.Root, "selected.txt")));
-        Assert.Contains(result.Lock.Sei, sei => sei.Name == "hosihikari-hosting");
+        var hosting = result.Lock.Sei.Single(sei => sei.Name == "hosihikari-hosting");
+        Assert.Equal("win-x64", hosting.Artifact.Rid);
+        Assert.Contains(hosting.Artifact.Prerequisites, relation => relation.Name == "levilamina");
     }
 
     [Fact]

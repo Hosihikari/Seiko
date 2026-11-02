@@ -15,7 +15,7 @@ public static class LockFile
         var value = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeikoLock)
             ?? throw new SeikoException($"invalid lock file: {path}", "lock");
 
-        if (value.SchemaVersion != 1)
+        if (value.SchemaVersion != SeikoLock.CurrentSchemaVersion)
         {
             throw new SeikoException($"unsupported lock schemaVersion {value.SchemaVersion}", "lock");
         }
@@ -27,7 +27,16 @@ public static class LockFile
 
         foreach (var entry in value.Sei)
         {
-            if (entry is null || entry.Artifact is null || entry.Dependencies is null)
+            if (entry is null
+                || entry.Artifact is null
+                || entry.Dependencies is null
+                || entry.Prerequisites is null
+                || entry.OptionalPeers is null
+                || entry.Conflicts is null
+                || entry.Artifact.Dependencies is null
+                || entry.Artifact.Prerequisites is null
+                || entry.Artifact.OptionalPeers is null
+                || entry.Artifact.Conflicts is null)
             {
                 throw new SeikoException($"invalid lock file: {path}", "lock");
             }
@@ -65,16 +74,28 @@ public static class LockFile
                     Artifact = new LockedArtifact
                     {
                         Sha256 = (p.Artifact.Source.Sha256 ?? "").ToLowerInvariant(),
+                        Rid = p.Artifact.Rid,
                         Selectors = SortSelectors(p.Artifact.Selectors),
+                        Dependencies = SortRelations(p.Artifact.Dependencies),
+                        Prerequisites = SortRelations(p.Artifact.Prerequisites),
+                        OptionalPeers = SortRelations(p.Artifact.OptionalPeers),
+                        Conflicts = SortRelations(p.Artifact.Conflicts),
                     },
-                    Dependencies = p.Entry.Dependencies
-                        .OrderBy(d => d.Name, StringComparer.Ordinal)
-                        .Select(d => new SeiDependency { Name = d.Name, Version = d.Version })
-                        .ToList(),
+                    Dependencies = SortRelations(p.Entry.Dependencies),
+                    Prerequisites = SortRelations(p.Entry.Prerequisites),
+                    OptionalPeers = SortRelations(p.Entry.OptionalPeers),
+                    Conflicts = SortRelations(p.Entry.Conflicts),
                 })
                 .ToList(),
         };
     }
+
+    private static List<SeiDependency> SortRelations(IEnumerable<SeiDependency>? relations)
+        => (relations ?? [])
+            .OrderBy(relation => relation.Name, StringComparer.Ordinal)
+            .ThenBy(relation => relation.Version ?? "", StringComparer.Ordinal)
+            .Select(relation => new SeiDependency { Name = relation.Name, Version = relation.Version })
+            .ToList();
 
     private static Dictionary<string, string>? SortSelectors(Dictionary<string, string>? selectors)
     {

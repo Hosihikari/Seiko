@@ -77,9 +77,21 @@ public static class LockReplay
                 ?? throw Fail(
                     $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'");
 
-            if (!DependenciesEqual(entry.Dependencies, locked.Dependencies))
+            if (!DependenciesEqual(entry.Dependencies, locked.Dependencies)
+                || !DependenciesEqual(entry.Prerequisites, locked.Prerequisites)
+                || !DependenciesEqual(entry.OptionalPeers, locked.OptionalPeers)
+                || !DependenciesEqual(entry.Conflicts, locked.Conflicts))
             {
-                throw Fail($"--frozen: dependencies of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
+                throw Fail($"--frozen: relations of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
+            }
+
+            if (!string.Equals(artifact.Rid, locked.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
+                || !DependenciesEqual(artifact.Dependencies, locked.Artifact.Dependencies)
+                || !DependenciesEqual(artifact.Prerequisites, locked.Artifact.Prerequisites)
+                || !DependenciesEqual(artifact.OptionalPeers, locked.Artifact.OptionalPeers)
+                || !DependenciesEqual(artifact.Conflicts, locked.Artifact.Conflicts))
+            {
+                throw Fail($"--frozen: artifact metadata of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
             }
 
             result.Add(new ResolvedSei
@@ -131,6 +143,14 @@ public static class LockReplay
                         $"--frozen: {locked.Name} requires {dependency.Name} {dependency.Version}, but the lock has {dependencyLocked.Version}");
                 }
             }
+
+            ValidateRelations(byName, locked, locked.Prerequisites, "prerequisite", requirePresent: true);
+            ValidateRelations(byName, locked, locked.OptionalPeers, "optional peer", requirePresent: false);
+            ValidateConflicts(byName, locked, locked.Conflicts);
+            ValidateRelations(byName, locked, locked.Artifact.Dependencies, "artifact dependency", requirePresent: true);
+            ValidateRelations(byName, locked, locked.Artifact.Prerequisites, "artifact prerequisite", requirePresent: true);
+            ValidateRelations(byName, locked, locked.Artifact.OptionalPeers, "artifact optional peer", requirePresent: false);
+            ValidateConflicts(byName, locked, locked.Artifact.Conflicts);
         }
 
         var reachable = new HashSet<string>(StringComparer.Ordinal);
@@ -156,6 +176,62 @@ public static class LockReplay
             {
                 throw Fail(
                     $"--frozen: {locked.Name} is not reachable from the direct declarations");
+            }
+        }
+    }
+
+    private static void ValidateRelations(
+        Dictionary<string, LockedSei> byName,
+        LockedSei owner,
+        List<SeiDependency>? relations,
+        string kind,
+        bool requirePresent)
+    {
+        foreach (var relation in relations ?? [])
+        {
+            if (string.Equals(relation.Name, owner.Name, StringComparison.Ordinal))
+            {
+                throw Fail($"--frozen: {owner.Name} has a self {kind}");
+            }
+
+            if (!byName.TryGetValue(relation.Name, out var target))
+            {
+                if (!requirePresent)
+                {
+                    continue;
+                }
+
+                throw Fail(
+                    $"--frozen: {owner.Name} {owner.Version} has {kind} {relation.Name}, which is missing from the lock");
+            }
+
+            var range = ParseRange(relation.Version, relation.Name);
+            if (!NuGetVersion.TryParse(target.Version, out var targetVersion)
+                || !range.Satisfies(targetVersion))
+            {
+                throw Fail(
+                    $"--frozen: {owner.Name} {owner.Version} requires {kind} {relation.Name} {relation.Version}, but the lock has {target.Version}");
+            }
+        }
+    }
+
+    private static void ValidateConflicts(
+        Dictionary<string, LockedSei> byName,
+        LockedSei owner,
+        List<SeiDependency>? conflicts)
+    {
+        foreach (var conflict in conflicts ?? [])
+        {
+            if (!byName.TryGetValue(conflict.Name, out var target))
+            {
+                continue;
+            }
+
+            if (NuGetVersion.TryParse(target.Version, out var targetVersion)
+                && ParseRange(conflict.Version, conflict.Name).Satisfies(targetVersion))
+            {
+                throw Fail(
+                    $"--frozen: {owner.Name} {owner.Version} conflicts with {conflict.Name} {target.Version}");
             }
         }
     }
@@ -188,8 +264,16 @@ public static class LockReplay
                 || !string.Equals(a.Source, b.Source, StringComparison.Ordinal)
                 || a.Direct != b.Direct
                 || !string.Equals(a.Artifact.Sha256, b.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(a.Artifact.Rid, b.Artifact.Rid, StringComparison.Ordinal)
                 || !SelectorSemantics.Equal(a.Artifact.Selectors, b.Artifact.Selectors)
-                || !DependenciesEqual(a.Dependencies, b.Dependencies))
+                || !DependenciesEqual(a.Dependencies, b.Dependencies)
+                || !DependenciesEqual(a.Prerequisites, b.Prerequisites)
+                || !DependenciesEqual(a.OptionalPeers, b.OptionalPeers)
+                || !DependenciesEqual(a.Conflicts, b.Conflicts)
+                || !DependenciesEqual(a.Artifact.Dependencies, b.Artifact.Dependencies)
+                || !DependenciesEqual(a.Artifact.Prerequisites, b.Artifact.Prerequisites)
+                || !DependenciesEqual(a.Artifact.OptionalPeers, b.Artifact.OptionalPeers)
+                || !DependenciesEqual(a.Artifact.Conflicts, b.Artifact.Conflicts))
             {
                 return $"{a.Name} differs";
             }
@@ -198,10 +282,10 @@ public static class LockReplay
         return null;
     }
 
-    private static bool DependenciesEqual(List<SeiDependency> left, List<SeiDependency> right)
+    private static bool DependenciesEqual(List<SeiDependency>? left, List<SeiDependency>? right)
     {
-        var a = left.OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
-        var b = right.OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
+        var a = (left ?? []).OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
+        var b = (right ?? []).OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
         return a.Count == b.Count
             && a.Zip(b).All(pair =>
                 string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)

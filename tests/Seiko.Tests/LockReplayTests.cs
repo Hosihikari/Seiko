@@ -43,7 +43,7 @@ public sealed class LockReplayTests
             var path = Path.Combine(directory, "seiko.lock.json");
             File.WriteAllText(
                 path,
-                """{"schemaVersion":1,"target":{"rid":"win-x64"},"sources":[],"sei":null}""");
+                """{"schemaVersion":2,"target":{"rid":"win-x64"},"sources":[],"sei":null}""");
 
             var error = Assert.Throws<SeikoException>(() => LockFile.Read(path));
 

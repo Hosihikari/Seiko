@@ -117,7 +117,9 @@ public sealed class SeiSpec
 
 public sealed class SeikoLock
 {
-    public int SchemaVersion { get; set; } = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public PlatformInfo Target { get; set; } = new();
     public List<string> Sources { get; set; } = [];
     public List<LockedSei> Sei { get; set; } = [];
@@ -136,12 +138,20 @@ public sealed class LockedSei
     public bool Direct { get; set; }
     public LockedArtifact Artifact { get; set; } = new();
     public List<SeiDependency> Dependencies { get; set; } = [];
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
 }
 
 public sealed class LockedArtifact
 {
     public string Sha256 { get; set; } = "";
+    public string? Rid { get; set; }
     public Dictionary<string, string>? Selectors { get; set; }
+    public List<SeiDependency> Dependencies { get; set; } = [];
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
 }
 
 public sealed class LocalState

@@ -453,6 +453,8 @@ public sealed class ResolverTests
 
         var lockFile = new SeikoClient().ReadLock(fixture.Root)!;
         Assert.Contains(lockFile.Sei, sei => sei.Name == "marker");
+        var lockedA = lockFile.Sei.Single(sei => sei.Name == "a");
+        Assert.Contains(lockedA.Prerequisites, relation => relation.Name == "marker");
     }
 
     [Fact]
