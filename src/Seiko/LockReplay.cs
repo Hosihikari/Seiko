@@ -49,6 +49,7 @@ public static class LockReplay
 
             var index = source.GetSei(locked.Name)
                 ?? throw Fail($"--frozen: {locked.Name} is not in source '{locked.Source}'");
+            SourceValidation.EnsureIndex(index, locked.Source, "lock");
             if (!NuGetVersion.TryParse(locked.Version, out var version))
             {
                 throw Fail($"--frozen: invalid locked version '{locked.Version}' for {locked.Name}");

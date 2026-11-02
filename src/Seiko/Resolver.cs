@@ -33,6 +33,7 @@ public sealed class Resolver
     private readonly SortedDictionary<string, SortedSet<string>> _skippedCritical = new(StringComparer.Ordinal);
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
+    private readonly HashSet<SeiIndex> _validatedIndexes = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
@@ -264,19 +265,13 @@ public sealed class Resolver
             || constraints.Any(constraint => RangeAllowsPrerelease(constraint.Range));
         var candidates = new List<(SeiVersionEntry Entry, NuGetVersion Version)>();
         var seenVersions = new HashSet<NuGetVersion>();
-        var entries = index.Versions ?? [];
-        if (entries.Count == 0)
+        if (_validatedIndexes.Add(index))
         {
-            throw Fail($"source '{source.Id}': sei '{name}' has no versions");
+            SourceValidation.EnsureIndex(index, source.Id, "resolve");
         }
 
-        foreach (var entry in entries)
+        foreach (var entry in index.Versions)
         {
-            if (entry is null)
-            {
-                throw Fail($"source '{source.Id}': invalid version entry for {name}");
-            }
-
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
