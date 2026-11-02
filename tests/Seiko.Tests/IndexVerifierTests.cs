@@ -1,4 +1,6 @@
+using System.IO.Compression;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -49,6 +51,53 @@ public sealed class IndexVerifierTests
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
         Assert.Empty(result.Findings);
+    }
+
+    [Fact]
+    public void Verify_RejectsNullIndexDependencyList()
+    {
+        using var fixture = NewFixture();
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        foreach (var version in node["versions"]!.AsArray())
+        {
+            version!.AsObject()["dependencies"] = null;
+        }
+
+        File.WriteAllText(path, node.ToJsonString());
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "dependency-list");
+    }
+
+    [Fact]
+    public void Verify_RejectsNullManifestDependencyList()
+    {
+        using var fixture = NewFixture();
+        MakeManifestDependenciesNull(fixture);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(
+            result.Findings,
+            finding => finding.Code == "manifest-mismatch"
+                && finding.Message.Contains("dependency", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Sync_RejectsNullManifestDependencyList()
+    {
+        using var fixture = NewFixture();
+        MakeManifestDependenciesNull(fixture);
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+        var client = new SeikoClient();
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("io", error.Code);
+        Assert.Contains("dependency", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -618,6 +667,37 @@ public sealed class IndexVerifierTests
         => File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "index.json"),
             JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.IndexRoot));
+
+    private static void MakeManifestDependenciesNull(Fixture fixture)
+    {
+        var zipPath = Assert.Single(Directory.GetFiles(
+            Path.Combine(fixture.SourceDirectory, "artifacts"),
+            "*.zip"));
+        using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("sei.json")!;
+            string text;
+            using (var stream = entry.Open())
+            using (var reader = new StreamReader(stream))
+            {
+                text = reader.ReadToEnd();
+            }
+
+            entry.Delete();
+            var replacement = archive.CreateEntry("sei.json");
+            using var output = replacement.Open();
+            using var writer = new StreamWriter(output);
+            var node = JsonNode.Parse(text)!;
+            node.AsObject()["dependencies"] = null;
+            writer.Write(node.ToJsonString());
+        }
+
+        var sei = ReadSei(fixture, "hello");
+        var source = sei.Versions[0].Artifacts[0].Source;
+        source.Sha256 = Hashing.Sha256File(zipPath);
+        source.Size = new FileInfo(zipPath).Length;
+        WriteSei(fixture, "hello", sei);
+    }
 
     private static SeiIndex ReadSei(Fixture fixture, string name)
         => JsonSerializer.Deserialize(

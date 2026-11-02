@@ -351,7 +351,17 @@ public sealed class Store
             throw new SeikoException($"{sei.Name}: sei.json declares version '{manifest.Version}', index has '{sei.Version}'", "io");
         }
 
-        var manifestDeps = manifest.Dependencies
+        var dependencies = manifest.Dependencies;
+        if (dependencies is null
+            || dependencies.Any(dependency =>
+                dependency is null || string.IsNullOrWhiteSpace(dependency.Name)))
+        {
+            throw new SeikoException(
+                $"{sei.Name}: sei.json has an invalid dependency list",
+                "io");
+        }
+
+        var manifestDeps = dependencies
             .OrderBy(d => d.Name, StringComparer.Ordinal)
             .Select(d => $"{d.Name}|{d.Version}")
             .ToList();

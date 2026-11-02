@@ -235,6 +235,14 @@ public static class IndexVerifier
             parsedVersions.Add(version);
             context.Versions++;
 
+            if (entry.Dependencies is null)
+            {
+                context.Error(
+                    "dependency-list",
+                    $"sei '{name}' {entry.Version} has a null dependency list",
+                    relative);
+            }
+
             var dependencies = (entry.Dependencies ?? [])
                 .Where(dependency => dependency is not null)
                 .ToList();
@@ -815,6 +823,13 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json declares version '{manifest.Version}'",
+                    reference.Path);
+            }
+            else if (manifest.Dependencies is null)
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json has a null dependency list",
                     reference.Path);
             }
             else if (!DependenciesEqual(manifest.Dependencies, reference.Dependencies))
