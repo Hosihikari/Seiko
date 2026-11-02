@@ -449,6 +449,13 @@ public sealed class Store
             throw new SeikoException($"{sei.Name}: sei.json has no artifact object", "io");
         }
 
+        if (NormalizeLayout(manifest.Artifact.Layout) != "root")
+        {
+            throw new SeikoException(
+                $"{sei.Name}: sei.json has unsupported layout '{manifest.Artifact.Layout}'",
+                "io");
+        }
+
         if (!string.Equals(manifest.Artifact.Rid, sei.Artifact.Rid, StringComparison.OrdinalIgnoreCase))
         {
             throw new SeikoException($"{sei.Name}: sei.json rid does not match the index artifact", "io");

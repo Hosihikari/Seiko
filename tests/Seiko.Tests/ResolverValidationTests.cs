@@ -87,6 +87,28 @@ public sealed class ResolverValidationTests
     }
 
     [Fact]
+    public void Sync_RejectsUnknownArtifactLayoutFromSourceJson()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+        File.WriteAllText(
+            Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"layout":"subdir","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("unsupported layout", error.Message);
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void Sync_RejectsNullRelationListFromSourceJson()
     {
         using var fixture = new Fixture();

@@ -103,6 +103,13 @@ internal static class SourceValidation
                         $"source '{sourceId}': artifact for {name} {entry.Version} has an empty rid",
                         code);
                 }
+
+                if (artifact.Layout is not null && artifact.Layout != "root")
+                {
+                    throw Fail(
+                        $"source '{sourceId}': artifact for {name} {entry.Version} has unsupported layout '{artifact.Layout}'",
+                        code);
+                }
             }
         }
     }
