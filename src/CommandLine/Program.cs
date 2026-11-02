@@ -1093,7 +1093,26 @@ static int Init(string? rootOption, bool json)
         throw new SeikoException($"{path} already exists", "io");
     }
 
-    File.WriteAllText(path, InitTemplate.Create() + "\n");
+    var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+    try
+    {
+        File.WriteAllText(temporary, InitTemplate.Create() + "\n");
+        File.Move(temporary, path, overwrite: false);
+    }
+    finally
+    {
+        try
+        {
+            if (File.Exists(temporary))
+            {
+                File.Delete(temporary);
+            }
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     if (json)
     {
         WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "init", new InitData(path)));
