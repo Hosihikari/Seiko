@@ -124,10 +124,28 @@ case "$(uname -s)" in
 
     bash_home="$tmp/home-bash"
     install_special "$bash_home" /bin/bash
-    [ -f "$bash_home/.bashrc" ] || fail "installer did not update .bashrc"
+    [ -f "$bash_home/.bash_profile" ] || fail "installer did not create .bash_profile"
     got=$(HOME="$bash_home" PATH="/usr/bin:/bin" bash -c \
-      '. "$HOME/.bashrc"; printf "%s" "${PATH%%:*}"')
+      '. "$HOME/.bash_profile"; printf "%s" "${PATH%%:*}"')
     [ "$got" = "$special" ] || fail "bash PATH did not round-trip: $got"
+
+    bash_source_home="$tmp/home-bash-source"
+    mkdir -p "$bash_source_home"
+    printf '. "$HOME/.bashrc"\n' > "$bash_source_home/.bash_profile"
+    install_special "$bash_source_home" /bin/bash
+    [ -f "$bash_source_home/.bashrc" ] || fail "installer did not update sourced .bashrc"
+    grep -Fq "$special" "$bash_source_home/.bashrc" \
+      || fail "sourced .bashrc did not receive PATH"
+    if grep -Fq "$special" "$bash_source_home/.bash_profile"; then
+      fail "installer wrote PATH to .bash_profile instead of sourced .bashrc"
+    fi
+
+    bash_login_home="$tmp/home-bash-login"
+    mkdir -p "$bash_login_home"
+    printf '# login profile\n' > "$bash_login_home/.bash_login"
+    install_special "$bash_login_home" /bin/bash
+    grep -Fq "$special" "$bash_login_home/.bash_login" \
+      || fail "installer did not update .bash_login"
 
     fish_home="$tmp/home-fish"
     install_special "$fish_home" /usr/bin/fish
@@ -146,9 +164,9 @@ case "$(uname -s)" in
       sh "$root/install.sh" --version v0.0.0 --base-url http://127.0.0.1:1 \
         --dir tools/bin --modify-path >"$tmp/relative.out" 2>&1) \
       || fail "relative install failed: $(cat "$tmp/relative.out")"
-    grep -Fq "$work/tools/bin" "$relative_home/.bashrc" \
+    grep -Fq "$work/tools/bin" "$relative_home/.bash_profile" \
       || fail "relative install directory was not stored as an absolute path"
-    if grep -Fq "PATH='tools/bin'" "$relative_home/.bashrc"; then
+    if grep -Fq "PATH='tools/bin'" "$relative_home/.bash_profile"; then
       fail "relative install directory was persisted verbatim"
     fi
     ;;

@@ -234,6 +234,20 @@ install_pair() {
     rm -f "$sk_backup" "$mcp_backup"
 }
 
+bash_profile_for() {
+    for candidate in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+        if [ -f "$candidate" ]; then
+            if grep -Eq '^[[:space:]]*(\.|source)[[:space:]]+.*\.bashrc([[:space:]]|$)' "$candidate"; then
+                printf '%s\n' "$HOME/.bashrc"
+            else
+                printf '%s\n' "$candidate"
+            fi
+            return
+        fi
+    done
+    printf '%s\n' "$HOME/.bash_profile"
+}
+
 mkdir -p "$INSTALL_DIR"
 install_pair
 printf 'installed sk %s (%s) to %s\n' "$VERSION" "$RID" "$TARGET"
@@ -246,7 +260,7 @@ case ":$PATH:" in
             shell_name=$(basename "${SHELL:-}")
             case "$shell_name" in
                 zsh) profile="$HOME/.zshrc" ;;
-                bash) profile="$HOME/.bashrc" ;;
+                bash) profile=$(bash_profile_for) ;;
                 fish)
                     mkdir -p "$HOME/.config/fish"
                     profile="$HOME/.config/fish/config.fish"
