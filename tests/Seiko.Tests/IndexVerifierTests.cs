@@ -223,6 +223,22 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsUnsafeArchivePaths()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["foo:bar"] = "x" } }],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
     public void Verify_RejectsOverlongArchivePaths()
     {
         using var fixture = new Fixture();

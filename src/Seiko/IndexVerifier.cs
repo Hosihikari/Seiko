@@ -702,9 +702,7 @@ public static class IndexVerifier
                     return;
                 }
 
-                if (name.Split('/').Any(segment => segment == "..")
-                    || name.StartsWith('/')
-                    || (name.Length >= 2 && name[1] == ':'))
+                if (!StoreDigests.IsSafeRelativePath(name))
                 {
                     context.Error(
                         "artifact-path",
