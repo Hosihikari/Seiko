@@ -24,6 +24,32 @@ public sealed class ResolverValidationTests
     }
 
     [Fact]
+    public void Resolve_RejectsEmptyVersionList()
+    {
+        var source = new SingleSource(new SeiIndex { Name = "hello", Versions = [] });
+        var resolver = new Resolver([source], null, "win-x64", false);
+
+        var error = Assert.Throws<SeikoException>(
+            () => resolver.Resolve([new SeiSpec { Name = "hello" }]));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("has no versions", error.Message);
+    }
+
+    [Fact]
+    public void Resolve_RejectsNullVersionEntry()
+    {
+        var source = new SingleSource(new SeiIndex { Name = "hello", Versions = [null!] });
+        var resolver = new Resolver([source], null, "win-x64", false);
+
+        var error = Assert.Throws<SeikoException>(
+            () => resolver.Resolve([new SeiSpec { Name = "hello" }]));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("invalid version entry", error.Message);
+    }
+
+    [Fact]
     public void Sync_RejectsDuplicateVersions()
     {
         using var fixture = new Fixture();
@@ -46,5 +72,32 @@ public sealed class ResolverValidationTests
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("duplicate version", error.Message);
+    }
+
+    private sealed class SingleSource : ISeiSource
+    {
+        private readonly SeiIndex? _index;
+
+        public SingleSource(SeiIndex? index)
+        {
+            _index = index;
+        }
+
+        public string Id => "test";
+
+        public IndexRoot Index => new() { Sei = ["hello"] };
+
+        public SeiIndex? GetSei(string name) => _index;
+
+        public string ResolveArtifact(ArtifactLocation source)
+            => throw new NotSupportedException();
+
+        public Task DownloadAsync(
+            string name,
+            ArtifactLocation source,
+            string directory,
+            DownloadSession session,
+            CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 }

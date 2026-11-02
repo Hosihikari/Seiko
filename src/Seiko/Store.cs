@@ -268,6 +268,14 @@ public sealed class Store
                 continue;
             }
 
+            if (name.Length > ArchiveLimits.MaxEntryNameLength
+                || name.Count(character => character == '/') + 1 > ArchiveLimits.MaxEntryNameDepth)
+            {
+                throw new SeikoException(
+                    $"zip entry path is too long or too deep: {name}",
+                    "io");
+            }
+
             if (name.Split('/').Any(segment => segment == ".."))
             {
                 throw new SeikoException($"zip-slip entry rejected: {name}", "io");

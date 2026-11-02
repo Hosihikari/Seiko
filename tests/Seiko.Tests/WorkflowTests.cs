@@ -168,6 +168,30 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Sync_RejectsOverlongArchiveEntryNames()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [new string('a', ArchiveLimits.MaxEntryNameLength + 1)] = "x" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("io", error.Code);
+        Assert.Contains("too long", error.Message);
+    }
+
+    [Fact]
     public void Config_RejectsDeclarationWithoutNameBeforeDeploying()
     {
         using var fixture = new Fixture();

@@ -264,9 +264,19 @@ public sealed class Resolver
             || constraints.Any(constraint => RangeAllowsPrerelease(constraint.Range));
         var candidates = new List<(SeiVersionEntry Entry, NuGetVersion Version)>();
         var seenVersions = new HashSet<NuGetVersion>();
-
-        foreach (var entry in index.Versions)
+        var entries = index.Versions ?? [];
+        if (entries.Count == 0)
         {
+            throw Fail($"source '{source.Id}': sei '{name}' has no versions");
+        }
+
+        foreach (var entry in entries)
+        {
+            if (entry is null)
+            {
+                throw Fail($"source '{source.Id}': invalid version entry for {name}");
+            }
+
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
