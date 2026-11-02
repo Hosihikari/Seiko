@@ -1356,19 +1356,24 @@ public sealed class SeikoClient
         => LockFile.Read(Path.Combine(Path.GetFullPath(root), "seiko.lock.json"));
 
     public static string DefaultRid()
+        => DefaultRidFor(
+            OperatingSystem.IsWindows() ? "win"
+                : OperatingSystem.IsLinux() ? "linux"
+                : OperatingSystem.IsMacOS() ? "osx"
+                : "unknown",
+            RuntimeInformation.ProcessArchitecture);
+
+    internal static string DefaultRidFor(string os, Architecture architecture)
     {
-        var os = OperatingSystem.IsWindows() ? "win"
-            : OperatingSystem.IsLinux() ? "linux"
-            : OperatingSystem.IsMacOS() ? "osx"
-            : "unknown";
-        var architecture = RuntimeInformation.ProcessArchitecture switch
+        var value = architecture switch
         {
             Architecture.X64 => "x64",
             Architecture.Arm64 => "arm64",
             Architecture.X86 => "x86",
+            Architecture.Arm => "arm",
             _ => "unknown",
         };
-        return $"{os}-{architecture}";
+        return $"{os}-{value}";
     }
 
     public static string CanonicalizePath(string path) => RootRegistry.Resolve(path);
