@@ -30,6 +30,7 @@ public static class ConfigLoader
             Rid = configuration["rid"],
         };
 
+        var sourceIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var child in configuration.GetSection("sources").GetChildren())
         {
             var id = child["id"];
@@ -37,6 +38,11 @@ public static class ConfigLoader
             if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(index))
             {
                 throw new SeikoException($"{path}: each source needs id and index", "config");
+            }
+
+            if (!sourceIds.Add(id))
+            {
+                throw new SeikoException($"{path}: duplicate source id '{id}'", "config");
             }
 
             var tokenHosts = child.GetSection("tokenHosts")
