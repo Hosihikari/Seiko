@@ -414,6 +414,37 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_AddsArtifactDependency()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["a.txt"] = "a" },
+                    Dependencies = [new DepFixture("marker", "[1.0.0]")],
+                },
+            ],
+        });
+        fixture.AddSei("marker", Version("marker", "1.0.0"));
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
+
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+
+        var lockFile = client.ReadLock(fixture.Root)!;
+        var marker = lockFile.Sei.Single(sei => sei.Name == "marker");
+        Assert.False(marker.Direct);
+        Assert.Contains(
+            lockFile.Sei.Single(sei => sei.Name == "a").Artifact.Dependencies,
+            dependency => dependency.Name == "marker");
+    }
+
+    [Fact]
     public void Resolve_RejectsMissingVersionPrerequisite()
     {
         using var fixture = new Fixture();

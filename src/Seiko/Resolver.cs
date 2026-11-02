@@ -39,6 +39,7 @@ public sealed class Resolver
     private SeikoException? _lastConflict;
     private long _totalAssignments;
     private bool _hintsGrew;
+    private List<SeiDependency> _artifactRequirements = [];
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -79,6 +80,32 @@ public sealed class Resolver
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
     {
+        var requirements = new List<SeiDependency>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (true)
+        {
+            _artifactRequirements = requirements;
+            var result = ResolveOnce(specs);
+            var needed = CollectArtifactDependencies();
+            if (RelationsEqual(needed, requirements))
+            {
+                return result;
+            }
+
+            var signature = string.Join(
+                "\n",
+                needed.Select(dependency => $"{dependency.Name}|{dependency.Version ?? ""}"));
+            if (!seen.Add(signature))
+            {
+                throw Fail("artifact dependency requirements did not converge");
+            }
+
+            requirements = needed;
+        }
+    }
+
+    private IReadOnlyList<ResolvedSei> ResolveOnce(IReadOnlyList<SeiSpec> specs)
+    {
         var directNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
@@ -106,6 +133,14 @@ public sealed class Resolver
             // Direct declarations are visible for the whole run; only hints
             // discovered while exploring dependencies require a restart.
             _hintsGrew = false;
+
+            foreach (var dependency in _artifactRequirements)
+            {
+                _pending.Add(CreateRequirement(
+                    dependency.Name,
+                    dependency.Version,
+                    "artifact dependency"));
+            }
 
             if (Search(0))
             {
@@ -350,6 +385,59 @@ public sealed class Resolver
         }
 
         return ordered;
+    }
+
+    private List<SeiDependency> CollectArtifactDependencies()
+    {
+        return _assigned.Values
+            .SelectMany(sei => sei.Artifact.Dependencies ?? [])
+            .Where(dependency => !string.IsNullOrWhiteSpace(dependency.Name))
+            .GroupBy(
+                dependency => (dependency.Name, dependency.Version ?? ""),
+                StringTupleComparer.Instance)
+            .Select(group => new SeiDependency
+            {
+                Name = group.Key.Name,
+                Version = group.First().Version,
+            })
+            .OrderBy(dependency => dependency.Name, StringComparer.Ordinal)
+            .ThenBy(dependency => dependency.Version ?? "", StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static bool RelationsEqual(
+        IReadOnlyList<SeiDependency> left,
+        IReadOnlyList<SeiDependency> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (!string.Equals(left[i].Name, right[i].Name, StringComparison.Ordinal)
+                || !string.Equals(left[i].Version ?? "", right[i].Version ?? "", StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private sealed class StringTupleComparer : IEqualityComparer<(string Name, string Version)>
+    {
+        public static readonly StringTupleComparer Instance = new();
+
+        public bool Equals((string Name, string Version) x, (string Name, string Version) y)
+            => string.Equals(x.Name, y.Name, StringComparison.Ordinal)
+                && string.Equals(x.Version, y.Version, StringComparison.Ordinal);
+
+        public int GetHashCode((string Name, string Version) obj)
+            => HashCode.Combine(
+                StringComparer.Ordinal.GetHashCode(obj.Name),
+                StringComparer.Ordinal.GetHashCode(obj.Version));
     }
 
     private (string Name, string Version, string Message)? SelectArtifacts()

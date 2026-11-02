@@ -164,7 +164,8 @@ public static class LockReplay
                 continue;
             }
 
-            foreach (var dependency in byName[name].Dependencies)
+            foreach (var dependency in byName[name].Dependencies
+                .Concat(byName[name].Artifact.Dependencies))
             {
                 pending.Push(dependency.Name);
             }
