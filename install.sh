@@ -187,18 +187,45 @@ tar -xzf "$archive" -C "$tmp_dir"
 [ -f "$tmp_dir/sk" ] || die "archive does not contain sk"
 [ -f "$tmp_dir/seiko-mcp" ] || die "archive does not contain seiko-mcp"
 
-install_binary() {
-    name="$1"
-    tmp_target="$INSTALL_DIR/.$name.tmp.$$"
-    cp "$tmp_dir/$name" "$tmp_target"
-    chmod 755 "$tmp_target"
-    mv -f "$tmp_target" "$INSTALL_DIR/$name"
+install_pair() {
+    sk_tmp="$INSTALL_DIR/.sk.tmp.$$"
+    mcp_tmp="$INSTALL_DIR/.seiko-mcp.tmp.$$"
+    sk_backup="$INSTALL_DIR/.sk.bak.$$"
+    mcp_backup="$INSTALL_DIR/.seiko-mcp.bak.$$"
+
+    cp "$tmp_dir/sk" "$sk_tmp" || { rm -f "$sk_tmp"; die "could not stage sk"; }
+    chmod 755 "$sk_tmp" || { rm -f "$sk_tmp"; die "could not mark sk executable"; }
+    cp "$tmp_dir/seiko-mcp" "$mcp_tmp" || { rm -f "$sk_tmp" "$mcp_tmp"; die "could not stage seiko-mcp"; }
+    chmod 755 "$mcp_tmp" || { rm -f "$sk_tmp" "$mcp_tmp"; die "could not mark seiko-mcp executable"; }
+
+    if [ -f "$TARGET" ]; then
+        cp -p "$TARGET" "$sk_backup" || { rm -f "$sk_tmp" "$mcp_tmp"; die "could not back up sk"; }
+    fi
+    if [ -f "$MCP_TARGET" ]; then
+        cp -p "$MCP_TARGET" "$mcp_backup" || { rm -f "$sk_tmp" "$mcp_tmp" "$sk_backup"; die "could not back up seiko-mcp"; }
+    fi
+
+    if ! mv -f "$sk_tmp" "$TARGET"; then
+        rm -f "$sk_tmp" "$mcp_tmp" "$sk_backup" "$mcp_backup"
+        die "could not install sk"
+    fi
+
+    if ! mv -f "$mcp_tmp" "$MCP_TARGET"; then
+        if [ -f "$sk_backup" ]; then
+            mv -f "$sk_backup" "$TARGET"
+        else
+            rm -f "$TARGET"
+        fi
+        rm -f "$sk_tmp" "$mcp_tmp" "$mcp_backup"
+        die "could not install seiko-mcp; restored sk"
+    fi
+
+    rm -f "$sk_backup" "$mcp_backup"
 }
 
 mkdir -p "$INSTALL_DIR"
-install_binary sk
+install_pair
 printf 'installed sk %s (%s) to %s\n' "$VERSION" "$RID" "$TARGET"
-install_binary seiko-mcp
 printf 'installed seiko-mcp %s (%s) to %s\n' "$VERSION" "$RID" "$MCP_TARGET"
 
 case ":$PATH:" in

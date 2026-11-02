@@ -142,16 +142,39 @@ try {
     }
 
     New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-    $items = @(
-        @{ Source = $binary; Target = $target; Name = "sk" },
-        @{ Source = $mcpBinary; Target = $mcpTarget; Name = "seiko-mcp" }
-    )
+    $skTmp = Join-Path $Dir (".sk.tmp." + $PID + ".exe")
+    $mcpTmp = Join-Path $Dir (".seiko-mcp.tmp." + $PID + ".exe")
+    $skBackup = Join-Path $Dir (".sk.bak." + $PID + ".exe")
+    $mcpBackup = Join-Path $Dir (".seiko-mcp.bak." + $PID + ".exe")
 
-    foreach ($item in $items) {
-        $tmpTarget = Join-Path $Dir ("." + $item.Name + ".tmp." + $PID + ".exe")
-        Copy-Item -Path $item.Source -Destination $tmpTarget -Force
-        Move-Item -Path $tmpTarget -Destination $item.Target -Force
-        Write-Output "installed $($item.Name) $versionNumber ($rid) to $($item.Target)"
+    try {
+        Copy-Item -Path $binary -Destination $skTmp -Force
+        Copy-Item -Path $mcpBinary -Destination $mcpTmp -Force
+        if (Test-Path $target) {
+            Copy-Item -Path $target -Destination $skBackup -Force
+        }
+        if (Test-Path $mcpTarget) {
+            Copy-Item -Path $mcpTarget -Destination $mcpBackup -Force
+        }
+
+        Move-Item -Path $skTmp -Destination $target -Force
+        try {
+            Move-Item -Path $mcpTmp -Destination $mcpTarget -Force
+        }
+        catch {
+            if (Test-Path $skBackup) {
+                Move-Item -Path $skBackup -Destination $target -Force
+            } else {
+                Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
+            }
+            throw
+        }
+
+        Write-Output "installed sk $versionNumber ($rid) to $target"
+        Write-Output "installed seiko-mcp $versionNumber ($rid) to $mcpTarget"
+    }
+    finally {
+        Remove-Item -Path $skTmp, $mcpTmp, $skBackup, $mcpBackup -Force -ErrorAction SilentlyContinue
     }
 
     $pathEntries = [Environment]::GetEnvironmentVariable("Path", "User") -split ";"
