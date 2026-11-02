@@ -1201,9 +1201,12 @@ public sealed class SeikoClient
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
         var sources = LoadSources(config, root, proxy, session);
         using var sourceScope = new SourceScope(sources);
-        var ranges = config.Sei.Concat(config.Components)
+        var rangeTexts = config.Sei.Concat(config.Components)
             .GroupBy(spec => spec.Name, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First().Version, StringComparer.Ordinal);
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(spec => spec.Version).ToList(),
+                StringComparer.Ordinal);
         var result = new List<OutdatedSei>();
 
         foreach (var locked in lockFile.Sei.OrderBy(sei => sei.Name, StringComparer.Ordinal))
@@ -1224,12 +1227,30 @@ public sealed class SeikoClient
             }
 
             var range = VersionRange.All;
-            if (ranges.TryGetValue(locked.Name, out var rangeText)
-                && !string.IsNullOrWhiteSpace(rangeText)
-                && rangeText.Trim() != "*"
-                && !VersionRange.TryParse(rangeText, out range))
+            if (rangeTexts.TryGetValue(locked.Name, out var texts))
             {
-                throw new SeikoException($"invalid version range '{rangeText}' for {locked.Name}", "config");
+                var parsed = new List<VersionRange>();
+                foreach (var rangeText in texts)
+                {
+                    if (string.IsNullOrWhiteSpace(rangeText) || rangeText.Trim() == "*")
+                    {
+                        continue;
+                    }
+
+                    if (!VersionRange.TryParse(rangeText, out var one))
+                    {
+                        throw new SeikoException(
+                            $"invalid version range '{rangeText}' for {locked.Name}",
+                            "config");
+                    }
+
+                    parsed.Add(one);
+                }
+
+                if (parsed.Count > 0)
+                {
+                    range = VersionRange.CommonSubSet(parsed);
+                }
             }
 
             NuGetVersion? latest = null;

@@ -168,6 +168,36 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Outdated_UsesEveryRangeForTheSameName()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0,3.0.0)"));
+        var path = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            path,
+            File.ReadAllText(path).Replace(
+                "components = []",
+                "components = [ { name = \"hello\", version = \"[1.0.0,2.0.0)\" } ]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+        });
+
+        var item = Assert.Single(client.Outdated(fixture.Root));
+
+        Assert.Equal("2.0.0", item.Latest);
+        Assert.Equal("1.0.0", item.LatestInRange);
+    }
+
+    [Fact]
     public void Sync_RejectsOverlongArchiveEntryNames()
     {
         using var fixture = new Fixture();
