@@ -8,6 +8,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
 {
     private const int MaxAttempts = 4;
     private const int MaxSegments = 4;
+    private const long MaxMetadataBytes = 32L << 20;
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(30);
 
@@ -459,6 +460,13 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
     private async Task<byte[]> ReadAllBytesAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        if (response.Content.Headers.ContentLength is { } length && length > MaxMetadataBytes)
+        {
+            throw new SeikoException(
+                $"source '{Id}': response exceeds the {MaxMetadataBytes}-byte limit",
+                "source");
+        }
+
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var memory = new MemoryStream();
         var buffer = new byte[81920];
@@ -468,6 +476,13 @@ public sealed class HttpSource : ISeiSource, IDisposable
             if (read == 0)
             {
                 return memory.ToArray();
+            }
+
+            if (memory.Length + read > MaxMetadataBytes)
+            {
+                throw new SeikoException(
+                    $"source '{Id}': response exceeds the {MaxMetadataBytes}-byte limit",
+                    "source");
             }
 
             memory.Write(buffer, 0, read);
