@@ -192,8 +192,15 @@ public sealed class Resolver
             return false;
         }
 
-        var source = FindSource(requirement.Name, out var indexData);
-        var candidates = Candidates(requirement.Name, source, indexData!, _pending);
+        if (!TryFindSource(requirement.Name, out var source, out var indexData))
+        {
+            _lastConflict = new SeikoException(
+                $"sei '{requirement.Name}' not found in any source (required by {Describe(requirement.From)})",
+                "resolve");
+            return false;
+        }
+
+        var candidates = Candidates(requirement.Name, source, indexData, _pending);
         if (candidates.Count == 0)
         {
             _lastConflict = Conflict(requirement.Name, source.Id, _pending);
@@ -213,7 +220,7 @@ public sealed class Resolver
                 ParsedVersion = version,
                 Entry = entry,
                 Source = source,
-                PackageDeprecated = indexData!.Deprecated,
+                PackageDeprecated = indexData.Deprecated,
             };
 
             var added = 0;
@@ -407,18 +414,24 @@ public sealed class Resolver
         return artifact.Selectors.Count;
     }
 
-    private ISeiSource FindSource(string name, out SeiIndex? index)
+    private bool TryFindSource(
+        string name,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ISeiSource? found,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SeiIndex? index)
     {
         foreach (var source in _sources)
         {
             index = source.GetSei(name);
             if (index is not null)
             {
-                return source;
+                found = source;
+                return true;
             }
         }
 
-        throw Fail($"sei '{name}' not found in any source");
+        found = null;
+        index = null;
+        return false;
     }
 
     private NuGetVersion? GetLockedVersion(string name)

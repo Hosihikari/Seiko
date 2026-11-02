@@ -49,6 +49,29 @@ public sealed class ResolverTests
     }
 
     [Fact]
+    public void Resolve_BacktracksWhenANewerVersionHasAMissingDependency()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("demo", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["demo.txt"] = "one" } }],
+        });
+        fixture.AddSei("demo", new VersionFixture
+        {
+            Version = "2.0.0",
+            Dependencies = [new DepFixture("missing", "*")],
+            Artifacts = [new ArtifactFixture { Files = { ["demo.txt"] = "two" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("demo", "*"));
+
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(1, result.SeiInstalled);
+        Assert.Equal("one", File.ReadAllText(Path.Combine(fixture.Root, "demo.txt")));
+    }
+
+    [Fact]
     public void Resolve_BacktracksToAnEarlierPackageVersion()
     {
         using var fixture = new Fixture();
