@@ -41,6 +41,45 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void RejectsInvalidJsonRpcEnvelopes()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
+
+        foreach (var request in new[]
+        {
+            """{"jsonrpc":"1.0","id":1,"method":"ping"}""",
+            """{"id":1,"method":"ping"}""",
+            """{"jsonrpc":2,"id":1,"method":"ping"}""",
+        })
+        {
+            var response = JsonNode.Parse(server.Handle(request)!)!.AsObject();
+            Assert.Equal(-32600, response["error"]!["code"]!.GetValue<int>());
+        }
+
+        var badId = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = new JsonObject { ["bad"] = true },
+            ["method"] = "tools/call",
+            ["params"] = new JsonObject
+            {
+                ["name"] = "config_set",
+                ["arguments"] = new JsonObject
+                {
+                    ["root"] = fixture.Root,
+                    ["key"] = "rid",
+                    ["value"] = "linux-x64",
+                },
+            },
+        }.ToJsonString();
+        var badIdResponse = JsonNode.Parse(server.Handle(badId)!)!.AsObject();
+        Assert.Equal(-32600, badIdResponse["error"]!["code"]!.GetValue<int>());
+        Assert.Equal("win-x64", ConfigLoader.Load(fixture.Root).Rid);
+    }
+
+    [Fact]
     public void SyncSchema_ExposesJobsAndProxy()
     {
         var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);

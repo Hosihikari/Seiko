@@ -62,7 +62,24 @@ public sealed class SeikoMcpServer
             return Error(null, -32600, "invalid request");
         }
 
-        var id = request["id"]?.DeepClone();
+        var version = request["jsonrpc"];
+        if (version is null
+            || version.GetValueKind() != JsonValueKind.String
+            || !string.Equals(version.GetValue<string>(), "2.0", StringComparison.Ordinal))
+        {
+            return Error(null, -32600, "invalid jsonrpc version");
+        }
+
+        var idNode = request["id"];
+        if (idNode is not null
+            && idNode.GetValueKind() is not (JsonValueKind.String
+                or JsonValueKind.Number
+                or JsonValueKind.Null))
+        {
+            return Error(null, -32600, "invalid id");
+        }
+
+        var id = idNode?.DeepClone();
         string? method;
         try
         {
