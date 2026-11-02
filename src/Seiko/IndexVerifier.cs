@@ -735,21 +735,21 @@ public static class IndexVerifier
                 collisionNames[collisionKey] = name;
             }
 
-            foreach (var name in seenNames)
+            var collisionLookup = collisionNames.GetAlternateLookup<ReadOnlySpan<char>>();
+            foreach (var (normalized, original) in collisionNames)
             {
-                for (var i = 0; i < name.Length; i++)
+                for (var i = 0; i < normalized.Length; i++)
                 {
-                    if (name[i] != '/')
+                    if (normalized[i] != '/')
                     {
                         continue;
                     }
 
-                    var ancestor = name[..i].Normalize(NormalizationForm.FormC);
-                    if (collisionNames.TryGetValue(ancestor, out var file))
+                    if (collisionLookup.TryGetValue(normalized.AsSpan(0, i), out var file))
                     {
                         context.Error(
                             "artifact-path",
-                            $"sei '{reference.Sei}' {reference.Version}: archive path '{file}' is both a file and a directory of '{name}'",
+                            $"sei '{reference.Sei}' {reference.Version}: archive path '{file}' is both a file and a directory of '{original}'",
                             reference.Path);
                         return;
                     }
