@@ -28,6 +28,10 @@ internal static class ArchiveLimits
         }
     }
 
+    public static bool ExceedsEntryNameLimits(string name)
+        => name.Length > MaxEntryNameLength
+            || name.AsSpan().Count('/') + 1 > MaxEntryNameDepth;
+
     public static string NormalizeName(string entryName)
     {
         var raw = entryName.Replace('\\', '/');

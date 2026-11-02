@@ -629,8 +629,7 @@ public static class IndexVerifier
                     continue;
                 }
 
-                if (name.Length > ArchiveLimits.MaxEntryNameLength
-                    || name.Count(character => character == '/') + 1 > ArchiveLimits.MaxEntryNameDepth)
+                if (ArchiveLimits.ExceedsEntryNameLimits(name))
                 {
                     context.Error(
                         "artifact-path",

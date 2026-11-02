@@ -268,8 +268,7 @@ public sealed class Store
                 continue;
             }
 
-            if (name.Length > ArchiveLimits.MaxEntryNameLength
-                || name.Count(character => character == '/') + 1 > ArchiveLimits.MaxEntryNameDepth)
+            if (ArchiveLimits.ExceedsEntryNameLimits(name))
             {
                 throw new SeikoException(
                     $"zip entry path is too long or too deep: {name}",
