@@ -323,6 +323,18 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
                 return;
             }
+            catch (SeikoException ex) when (ex.Code == "download-size")
+            {
+                // An overrun can leave the segment holding exactly the expected
+                // length (the excess arrived in a later read). Retrying would
+                // then accept that truncated prefix as a complete segment.
+                if (File.Exists(segmentPath))
+                {
+                    File.Delete(segmentPath);
+                }
+
+                throw new SeikoException(ex.Message, "download", ex);
+            }
             catch (SeikoException) when (attempt < MaxAttempts)
             {
                 await Task.Delay(Backoff(attempt), cancellationToken).ConfigureAwait(false);
@@ -384,7 +396,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             {
                 throw new SeikoException(
                     $"download exceeded the expected size of {maxBytes} bytes",
-                    "download");
+                    "download-size");
             }
 
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
