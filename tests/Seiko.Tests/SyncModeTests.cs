@@ -201,6 +201,28 @@ public sealed class SyncModeTests
     }
 
     [Fact]
+    public void Sync_LockedDoesNotRewriteLock()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        File.AppendAllText(lockPath, "\n");
+        var before = File.ReadAllText(lockPath);
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked);
+
+        Assert.Equal(before, File.ReadAllText(lockPath));
+    }
+
+    [Fact]
     public void Sync_FrozenRejectsUnsatisfiedRange()
     {
         using var fixture = new Fixture();

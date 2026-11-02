@@ -183,7 +183,7 @@ public sealed class SeikoClient
             deployedSei,
             Path.Combine(root, ".seiko"),
             lockFile,
-            writeLock: mode != SyncMode.Frozen);
+            writeLock: mode == SyncMode.Normal);
 
         return new SyncResult
         {
@@ -369,20 +369,53 @@ public sealed class SeikoClient
             }
         }
 
-        ConfigWriter.WriteSpecs(root, "sei", config.Sei);
-        return SyncLocked(
+        return WriteSpecsAndSync(
             root,
-            storePath,
-            allowPrerelease,
-            SyncMode.Normal,
-            jobs,
-            proxy,
-            progress,
-            log,
-            cancellationToken,
-            updateNames: null,
-            latestInstallable,
-            allowCritical);
+            config.Sei,
+            () => SyncLocked(
+                root,
+                storePath,
+                allowPrerelease,
+                SyncMode.Normal,
+                jobs,
+                proxy,
+                progress,
+                log,
+                cancellationToken,
+                updateNames: null,
+                latestInstallable,
+                allowCritical));
+    }
+
+    private static SyncResult WriteSpecsAndSync(
+        string root,
+        IReadOnlyList<SeiSpec> specs,
+        Func<SyncResult> sync)
+    {
+        var path = Path.Combine(root, "seiko.conf");
+        var original = File.ReadAllText(path);
+        try
+        {
+            ConfigWriter.WriteSpecs(root, "sei", specs);
+            return sync();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                File.WriteAllText(path, original, new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception restore)
+            {
+                throw new SeikoException(
+                    $"failed to restore {path} after a failed sync: {restore.Message}",
+                    "config",
+                    ex);
+            }
+
+            ExceptionDispatchInfo.Capture(ex).Throw();
+            throw;
+        }
     }
 
     private static string DefaultAddRange(NuGetVersion version)
@@ -460,21 +493,22 @@ public sealed class SeikoClient
                 new HashSet<string>(StringComparer.Ordinal));
         }
 
-        ConfigWriter.WriteSpecs(root, "sei", config.Sei);
-
-        return SyncLocked(
+        return WriteSpecsAndSync(
             root,
-            storePath,
-            allowPrerelease,
-            SyncMode.Normal,
-            jobs,
-            proxy,
-            progress,
-            log,
-            cancellationToken,
-            updateNames: null,
-            latestInstallable,
-            allowCritical);
+            config.Sei,
+            () => SyncLocked(
+                root,
+                storePath,
+                allowPrerelease,
+                SyncMode.Normal,
+                jobs,
+                proxy,
+                progress,
+                log,
+                cancellationToken,
+                updateNames: null,
+                latestInstallable,
+                allowCritical));
     }
 
     public SyncResult Update(
@@ -520,7 +554,8 @@ public sealed class SeikoClient
             targets.Add(sei);
         }
 
-        if (latest && targets.Count > 0)
+        var writeConfig = latest && targets.Count > 0;
+        if (writeConfig)
         {
             using var session = new DownloadSession(jobs, cancellationToken);
             var sources = LoadSources(config, root, proxy, session);
@@ -531,14 +566,12 @@ public sealed class SeikoClient
                     ?? throw new SeikoException($"no version of {target.Name} found in any source", "source");
                 target.Version = $"[{version}]";
             }
-
-            ConfigWriter.WriteSpecs(root, "sei", config.Sei);
         }
 
         var updateNames = targets
             .Select(spec => spec.Name)
             .ToHashSet(StringComparer.Ordinal);
-        return SyncLocked(
+        SyncResult Sync() => SyncLocked(
             root,
             storePath,
             allowPrerelease,
@@ -551,6 +584,10 @@ public sealed class SeikoClient
             updateNames,
             latestInstallable,
             allowCritical);
+
+        return writeConfig
+            ? WriteSpecsAndSync(root, config.Sei, Sync)
+            : Sync();
     }
 
     private static string? FindLatestVersion(
