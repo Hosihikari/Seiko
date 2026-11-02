@@ -190,6 +190,23 @@ public sealed class IndexVerifierTests
         Assert.DoesNotContain(result.Findings, finding => finding.Code == "internal");
     }
 
+    [Theory]
+    [InlineData("ftp://example.invalid/a.zip?token=REREVIEW_SENTINEL")]
+    [InlineData("https://?token=REREVIEW_SENTINEL")]
+    [InlineData("../a.zip?token=REREVIEW_SENTINEL")]
+    public void Verify_DoesNotEchoInvalidArtifactUrlCredentials(string url)
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].Source.Url = url;
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        var finding = Assert.Single(result.Findings, item => item.Code == "artifact-url");
+        Assert.DoesNotContain("REREVIEW_SENTINEL", finding.Message);
+    }
+
     [Fact]
     public void Verify_RejectsAdvisoryUrlsWithoutAHost()
     {

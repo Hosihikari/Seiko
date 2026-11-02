@@ -422,7 +422,7 @@ public static class IndexVerifier
         {
             context.Error(
                 "artifact-url",
-                $"sei '{name}' {entry.Version} has invalid artifact URL '{source.Url}'",
+                $"sei '{name}' {entry.Version} has invalid artifact URL '{DescribeArtifactUrl(source.Url)}'",
                 path);
             ok = false;
         }
@@ -939,6 +939,29 @@ public static class IndexVerifier
         }
 
         return url.Split('/', '\\').All(segment => segment != "..");
+    }
+
+    private static string DescribeArtifactUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return "(empty)";
+        }
+
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return uri.Scheme is "http" or "https" or "file"
+                ? Urls.Redact(uri)
+                : uri.Scheme + ":...";
+        }
+
+        if (url.Contains("://", StringComparison.Ordinal))
+        {
+            return "(invalid URL)";
+        }
+
+        var end = url.IndexOfAny(['?', '#']);
+        return end < 0 ? url : url[..end];
     }
 
     private static bool IsLocalAbsoluteArtifact(string url)
