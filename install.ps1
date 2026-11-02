@@ -97,6 +97,12 @@ $sumsUrl = "$BaseUrl/SHA256SUMS"
 $target = Join-Path $Dir "sk.exe"
 $mcpTarget = Join-Path $Dir "seiko-mcp.exe"
 
+foreach ($path in @($target, $mcpTarget)) {
+    if (Test-Path -Path $path -PathType Container) {
+        Fail "install target is a directory: $path"
+    }
+}
+
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("seiko-install-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {

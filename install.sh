@@ -144,6 +144,13 @@ fi
 TARGET="$INSTALL_DIR/sk"
 MCP_TARGET="$INSTALL_DIR/seiko-mcp"
 
+if [ -d "$TARGET" ]; then
+    die "install target is a directory: $TARGET"
+fi
+if [ -d "$MCP_TARGET" ]; then
+    die "install target is a directory: $MCP_TARGET"
+fi
+
 tmp_dir=$(mktemp -d)
 cleanup() {
     rm -rf "$tmp_dir"

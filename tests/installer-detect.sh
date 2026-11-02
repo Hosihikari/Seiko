@@ -75,4 +75,15 @@ else
   printf '%s\n' "$out" | grep -q "musl" || fail "musl arm32 rejection did not mention musl"
 fi
 
+for name in sk seiko-mcp; do
+  dir="$tmp/dir-target-$name"
+  mkdir -p "$dir/$name"
+  if out=$(PATH="$tmp/bin:$PATH" MOCK_MACHINE=x86_64 MOCK_LDD="ldd (Ubuntu GLIBC 2.35) 2.35" \
+      sh "$root/install.sh" --version v0.0.0 --base-url http://127.0.0.1:1 --dir "$dir" --dry-run 2>&1); then
+    fail "a directory $name target was accepted"
+  else
+    printf '%s\n' "$out" | grep -q "$name" || fail "directory $name rejection did not name the target"
+  fi
+done
+
 echo "installer-detect: ok"
