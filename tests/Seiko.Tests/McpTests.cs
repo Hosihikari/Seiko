@@ -41,6 +41,19 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void SyncSchema_ExposesJobsAndProxy()
+    {
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);
+        var response = server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!;
+        var tools = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject()["tools"]!.AsArray();
+        var sync = Assert.Single(tools, tool => tool!["name"]!.GetValue<string>() == "sync")!;
+        var properties = sync["inputSchema"]!["properties"]!.AsObject();
+
+        Assert.True(properties.ContainsKey("jobs"));
+        Assert.True(properties.ContainsKey("proxy"));
+    }
+
+    [Fact]
     public void SourceList_AllowsAnEmptySourceList()
     {
         using var fixture = new Fixture();
@@ -115,6 +128,20 @@ public sealed class McpTests
                 new JsonObject { ["root"] = root, ["spec"] = "hello", ["jobs"] = "4" });
             Assert.True(jobs["isError"]!.GetValue<bool>());
             Assert.Contains("jobs must be an integer", ToolText(jobs));
+
+            var syncJobs = CallTool(
+                server,
+                "sync",
+                new JsonObject { ["root"] = root, ["jobs"] = "4" });
+            Assert.True(syncJobs["isError"]!.GetValue<bool>());
+            Assert.Contains("jobs must be an integer", ToolText(syncJobs));
+
+            var syncProxy = CallTool(
+                server,
+                "sync",
+                new JsonObject { ["root"] = root, ["proxy"] = 4 });
+            Assert.True(syncProxy["isError"]!.GetValue<bool>());
+            Assert.Contains("proxy must be a string", ToolText(syncProxy));
 
             var readOnly = CallTool(
                 server,

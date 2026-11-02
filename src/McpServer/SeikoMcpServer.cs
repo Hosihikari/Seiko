@@ -504,6 +504,8 @@ public sealed class SeikoMcpServer
             StorePath(arguments),
             Bool(arguments, "pre"),
             mode,
+            jobs: Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
+            proxy: OptionalString(arguments, "proxy"),
             latestInstallable: Bool(arguments, "latestInstallable"),
             allowCritical: Bool(arguments, "allowCritical"));
         return new JsonObject
@@ -764,6 +766,8 @@ public sealed class SeikoMcpServer
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
                 ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
                 ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
+                ["jobs"] = new JsonObject { ["type"] = "integer" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
