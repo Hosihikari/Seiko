@@ -87,7 +87,7 @@ internal static class FileLink
         }
     }
 
-    private static bool TryHardLink(string source, string destination)
+    internal static bool TryHardLink(string source, string destination)
     {
         try
         {

@@ -499,6 +499,32 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recover_ReplacesAHardlinkWithoutTouchingTheSharedPayload()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var payload = Path.Combine(root, "store-payload.bin");
+        File.WriteAllText(payload, "new-store");
+        var deployed = Path.Combine(root, "file.txt");
+        File.WriteAllText(deployed, "old-root");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("file.txt");
+        transaction.WriteJournal();
+
+        File.Delete(deployed);
+        Assert.True(FileLink.TryHardLink(payload, deployed));
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.Equal("old-root", File.ReadAllText(deployed));
+        Assert.Equal("new-store", File.ReadAllText(payload));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
     public void Recover_RollsBackAnUncommittedJournal()
     {
         using var fixture = new Fixture();

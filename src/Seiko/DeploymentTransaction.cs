@@ -206,7 +206,17 @@ internal sealed class DeploymentTransaction
                     }
                 }
 
-                File.Copy(backup, destination, overwrite: true);
+                // Do not copy over an existing path: a deployed file may be a
+                // hardlink to a shared store payload, and an in-place copy
+                // would truncate the store inode. Replace the directory entry.
+                var temporary = destination + ".seiko-restore";
+                if (File.Exists(temporary))
+                {
+                    File.Delete(temporary);
+                }
+
+                File.Copy(backup, temporary, overwrite: false);
+                File.Move(temporary, destination, overwrite: true);
                 SetMode(destination, entry.UnixMode);
             }
             else if (File.Exists(destination))
