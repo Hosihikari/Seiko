@@ -947,11 +947,9 @@ static int List(string? rootOption, bool json)
     {
         foreach (var sei in lockFile.Sei)
         {
-            var selectors = sei.Artifact.Selectors is null
+            var selectors = sei.Artifact.Rid is null
                 ? null
-                : sei.Artifact.Selectors
-                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                : new Dictionary<string, string>(StringComparer.Ordinal) { ["rid"] = sei.Artifact.Rid };
             items.Add(new ListItem(sei.Name, sei.Version, sei.Source, sei.Direct, selectors));
         }
     }
@@ -971,10 +969,7 @@ static int List(string? rootOption, bool json)
     Console.WriteLine("NAME\tVERSION\tDIRECT\tSOURCE\tSELECTORS");
     foreach (var sei in lockFile.Sei)
     {
-        var selectors = sei.Artifact.Selectors is null
-            ? "-"
-            : string.Join(",", sei.Artifact.Selectors.OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                .Select(pair => $"{pair.Key}={pair.Value}"));
+        var selectors = sei.Artifact.Rid is null ? "-" : $"rid={sei.Artifact.Rid}";
         Console.WriteLine($"{sei.Name}\t{sei.Version}\t{(sei.Direct ? "yes" : "no")}\t{sei.Source}\t{selectors}");
     }
 

@@ -66,7 +66,7 @@ public sealed class ResolverValidationTests
     }
 
     [Fact]
-    public void Sync_RejectsNullSelectorValueFromSourceJson()
+    public void Sync_RejectsEmptyRidFromSourceJson()
     {
         using var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
@@ -77,13 +77,13 @@ public sealed class ResolverValidationTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"selectors":{"rid":null},"layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"rid":"","layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
 
         var error = Assert.Throws<SeikoException>(
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
         Assert.Equal("resolve", error.Code);
-        Assert.Contains("selector", error.Message);
+        Assert.Contains("empty rid", error.Message);
     }
 
     [Fact]

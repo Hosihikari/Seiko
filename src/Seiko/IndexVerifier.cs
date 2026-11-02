@@ -255,7 +255,7 @@ public static class IndexVerifier
                 continue;
             }
 
-            var selectors = new List<ArtifactEntry>();
+            var conditions = new List<ArtifactEntry>();
             foreach (var artifact in artifacts)
             {
                 if (artifact is null)
@@ -273,20 +273,26 @@ public static class IndexVerifier
                     continue;
                 }
 
-                if (selectors.Any(existing =>
-                        SelectorSemantics.EquivalentForResolution(
-                            existing.Selectors,
-                            artifact.Selectors)))
+                if (conditions.Any(existing => EquivalentConditions(existing, artifact)))
                 {
                     context.Error(
                         "artifact-ambiguous",
-                        $"sei '{name}' {entry.Version} has duplicate artifact selectors",
+                        $"sei '{name}' {entry.Version} has artifacts with equivalent resolution conditions",
                         relative);
                     continue;
                 }
 
-                selectors.Add(artifact);
-                context.Artifacts.Add(new ArtifactRef(name, entry.Version, version, dependencies, artifact, relative));
+                conditions.Add(artifact);
+                context.Artifacts.Add(new ArtifactRef(
+                    name,
+                    entry.Version,
+                    version,
+                    dependencies,
+                    entry.Prerequisites ?? [],
+                    entry.OptionalPeers ?? [],
+                    entry.Conflicts ?? [],
+                    artifact,
+                    relative));
             }
         }
     }
@@ -455,32 +461,6 @@ public static class IndexVerifier
                 $"sei '{name}' {entry.Version} has unsupported layout '{artifact.Layout}'",
                 path);
             ok = false;
-        }
-
-        if (artifact.Selectors is not null)
-        {
-            foreach (var (key, value) in artifact.Selectors)
-            {
-                if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
-                {
-                    context.Error(
-                        "artifact-selector",
-                        $"sei '{name}' {entry.Version} has an empty selector",
-                        path);
-                    ok = false;
-                    continue;
-                }
-
-                if (!key.Equals("rid", StringComparison.OrdinalIgnoreCase)
-                    && !SeiName.IsValid(value))
-                {
-                    context.Error(
-                        "artifact-selector",
-                        $"sei '{name}' {entry.Version} has invalid selector value '{value}' for '{key}'",
-                        path);
-                    ok = false;
-                }
-            }
         }
 
         var source = artifact.Source;
@@ -900,15 +880,53 @@ public static class IndexVerifier
                     $"{prefix}: sei.json dependencies do not match the index",
                     reference.Path);
             }
-            else if (!SelectorSemantics.Equal(manifest.Selectors, reference.Artifact.Selectors))
+            else if (manifest.Prerequisites is null
+                || manifest.OptionalPeers is null
+                || manifest.Conflicts is null)
             {
                 context.Error(
                     "manifest-mismatch",
-                    $"{prefix}: sei.json selectors do not match the index artifact",
+                    $"{prefix}: sei.json has a null relation list",
+                    reference.Path);
+            }
+            else if (!DependenciesEqual(manifest.Prerequisites, reference.Prerequisites)
+                || !DependenciesEqual(manifest.OptionalPeers, reference.OptionalPeers)
+                || !DependenciesEqual(manifest.Conflicts, reference.Conflicts))
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json relations do not match the index",
+                    reference.Path);
+            }
+            else if (manifest.Artifact is null)
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json has no artifact object",
                     reference.Path);
             }
             else if (!string.Equals(
-                NormalizeLayout(manifest.Layout),
+                manifest.Artifact.Rid,
+                reference.Artifact.Rid,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json rid does not match the index artifact",
+                    reference.Path);
+            }
+            else if (!DependenciesEqual(manifest.Artifact.Dependencies, reference.Artifact.Dependencies)
+                || !DependenciesEqual(manifest.Artifact.Prerequisites, reference.Artifact.Prerequisites)
+                || !DependenciesEqual(manifest.Artifact.OptionalPeers, reference.Artifact.OptionalPeers)
+                || !DependenciesEqual(manifest.Artifact.Conflicts, reference.Artifact.Conflicts))
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json artifact relations do not match the index artifact",
+                    reference.Path);
+            }
+            else if (!string.Equals(
+                NormalizeLayout(manifest.Artifact.Layout),
                 NormalizeLayout(reference.Artifact.Layout),
                 StringComparison.Ordinal))
             {
@@ -917,10 +935,17 @@ public static class IndexVerifier
                     $"{prefix}: sei.json layout does not match the index artifact",
                     reference.Path);
             }
-
-            if (manifest.Modes is not null)
+            else if (!ModesEqual(manifest.Artifact.Modes, reference.Artifact.Modes))
             {
-                foreach (var (file, text) in manifest.Modes)
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json modes do not match the index artifact",
+                    reference.Path);
+            }
+
+            if (manifest.Artifact?.Modes is not null)
+            {
+                foreach (var (file, text) in manifest.Artifact.Modes)
                 {
                     if (text is null || !FileModes.TryParse(text, out var value))
                     {
@@ -959,6 +984,22 @@ public static class IndexVerifier
             .Select(dependency => $"{dependency.Name}|{dependency.Version}")
             .ToList();
         return left.SequenceEqual(right, StringComparer.Ordinal);
+    }
+
+    private static bool EquivalentConditions(ArtifactEntry left, ArtifactEntry right)
+        => string.Equals(left.Rid ?? "", right.Rid ?? "", StringComparison.OrdinalIgnoreCase)
+            && DependenciesEqual(left.Prerequisites, right.Prerequisites ?? []);
+
+    private static bool ModesEqual(
+        IReadOnlyDictionary<string, string>? left,
+        IReadOnlyDictionary<string, string>? right)
+    {
+        var a = left ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var b = right ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        return a.Count == b.Count
+            && a.All(pair =>
+                b.TryGetValue(pair.Key, out var value)
+                && string.Equals(pair.Value, value, StringComparison.Ordinal));
     }
 
     private static string? NormalizeLayout(string? layout)
@@ -1112,6 +1153,9 @@ public static class IndexVerifier
         string Version,
         NuGetVersion ParsedVersion,
         List<SeiDependency> Dependencies,
+        List<SeiDependency> Prerequisites,
+        List<SeiDependency> OptionalPeers,
+        List<SeiDependency> Conflicts,
         ArtifactEntry Artifact,
         string Path);
 

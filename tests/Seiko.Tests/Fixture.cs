@@ -11,7 +11,6 @@ internal sealed record SpecFixture(string Name, string? Version = null);
 internal sealed class ArtifactFixture
 {
     public string? Rid { get; init; }
-    public Dictionary<string, string>? Selectors { get; init; }
     public Dictionary<string, string> Files { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, string>? Modes { get; init; }
     public List<DepFixture> Dependencies { get; init; } = [];
@@ -74,9 +73,6 @@ internal sealed class Fixture : IDisposable
                     Prerequisites = ToDependencies(version.Prerequisites),
                     OptionalPeers = ToDependencies(version.OptionalPeers),
                     Conflicts = ToDependencies(version.Conflicts),
-                    Selectors = artifact.Selectors,
-                    Layout = "root",
-                    Modes = artifact.Modes,
                     Artifact = new ArtifactManifest
                     {
                         Rid = artifact.Rid,
@@ -106,7 +102,6 @@ internal sealed class Fixture : IDisposable
                     Prerequisites = ToDependencies(artifact.Prerequisites),
                     OptionalPeers = ToDependencies(artifact.OptionalPeers),
                     Conflicts = ToDependencies(artifact.Conflicts),
-                    Selectors = artifact.Selectors,
                     Layout = "root",
                     Modes = artifact.Modes,
                     Source = new ArtifactLocation

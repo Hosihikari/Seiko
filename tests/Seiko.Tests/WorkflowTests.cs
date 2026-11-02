@@ -445,7 +445,7 @@ public sealed class WorkflowTests
                 [
                     new ArtifactFixture
                     {
-                        Selectors = new Dictionary<string, string> { ["rid"] = "linux-x64" },
+                        Rid = "linux-x64",
                         Files = { ["hello.txt"] = "two" },
                     },
                 ],

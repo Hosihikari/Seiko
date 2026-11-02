@@ -97,19 +97,11 @@ internal static class SourceValidation
                     }
                 }
 
-                if (artifact.Selectors is not null)
+                if (artifact.Rid is not null && string.IsNullOrWhiteSpace(artifact.Rid))
                 {
-                    foreach (var (key, value) in artifact.Selectors)
-                    {
-                        if (string.IsNullOrWhiteSpace(key)
-                            || value is null
-                            || string.IsNullOrWhiteSpace(value))
-                        {
-                            throw Fail(
-                                $"source '{sourceId}': artifact for {name} {entry.Version} has an empty selector",
-                                code);
-                        }
-                    }
+                    throw Fail(
+                        $"source '{sourceId}': artifact for {name} {entry.Version} has an empty rid",
+                        code);
                 }
             }
         }

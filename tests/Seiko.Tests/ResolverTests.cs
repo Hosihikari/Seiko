@@ -134,7 +134,7 @@ public sealed class ResolverTests
                 [
                     new ArtifactFixture
                     {
-                        Selectors = new Dictionary<string, string> { ["rid"] = "linux-x64" },
+                        Rid = "linux-x64",
                         Files = { ["a.txt"] = "two" },
                     },
                 ],

@@ -11,9 +11,6 @@ public sealed class SeiManifest
     public List<SeiDependency> Prerequisites { get; set; } = [];
     public List<SeiDependency> OptionalPeers { get; set; } = [];
     public List<SeiDependency> Conflicts { get; set; } = [];
-    public Dictionary<string, string>? Selectors { get; set; }
-    public string? Layout { get; set; }
-    public Dictionary<string, string>? Modes { get; set; }
     public ArtifactManifest? Artifact { get; set; }
 }
 
@@ -80,7 +77,6 @@ public sealed class ArtifactEntry
     public List<SeiDependency> Prerequisites { get; set; } = [];
     public List<SeiDependency> OptionalPeers { get; set; } = [];
     public List<SeiDependency> Conflicts { get; set; } = [];
-    public Dictionary<string, string>? Selectors { get; set; }
     public string? Layout { get; set; }
     public Dictionary<string, string>? Modes { get; set; }
     public ArtifactLocation Source { get; set; } = new();
@@ -147,7 +143,6 @@ public sealed class LockedArtifact
 {
     public string Sha256 { get; set; } = "";
     public string? Rid { get; set; }
-    public Dictionary<string, string>? Selectors { get; set; }
     public List<SeiDependency> Dependencies { get; set; } = [];
     public List<SeiDependency> Prerequisites { get; set; } = [];
     public List<SeiDependency> OptionalPeers { get; set; } = [];

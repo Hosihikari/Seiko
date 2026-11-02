@@ -75,7 +75,6 @@ public static class LockFile
                     {
                         Sha256 = (p.Artifact.Source.Sha256 ?? "").ToLowerInvariant(),
                         Rid = p.Artifact.Rid,
-                        Selectors = SortSelectors(p.Artifact.Selectors),
                         Dependencies = SortRelations(p.Artifact.Dependencies),
                         Prerequisites = SortRelations(p.Artifact.Prerequisites),
                         OptionalPeers = SortRelations(p.Artifact.OptionalPeers),
@@ -97,15 +96,4 @@ public static class LockFile
             .Select(relation => new SeiDependency { Name = relation.Name, Version = relation.Version })
             .ToList();
 
-    private static Dictionary<string, string>? SortSelectors(Dictionary<string, string>? selectors)
-    {
-        if (selectors is null || selectors.Count == 0)
-        {
-            return null;
-        }
-
-        return selectors
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-    }
 }

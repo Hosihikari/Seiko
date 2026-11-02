@@ -375,34 +375,6 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
-    public void Verify_RejectsResolutionEquivalentRidSelectors()
-    {
-        using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Selectors = new Dictionary<string, string> { ["rid"] = "win-x64" },
-                    Files = { ["a.txt"] = "a" },
-                },
-                new ArtifactFixture
-                {
-                    Selectors = new Dictionary<string, string> { ["RID"] = "WIN-X64" },
-                    Files = { ["b.txt"] = "b" },
-                },
-            ],
-        });
-        fixture.WriteConfig("win-x64");
-
-        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
-
-        Assert.Contains(result.Findings, finding => finding.Code == "artifact-ambiguous");
-    }
-
-    [Fact]
     public void Verify_RejectsPrivilegedModes()
     {
         using var fixture = new Fixture();

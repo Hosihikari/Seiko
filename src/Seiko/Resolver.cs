@@ -488,13 +488,6 @@ public sealed class Resolver
             return -1;
         }
 
-        if (artifact.Selectors is not null
-            && artifact.Selectors.TryGetValue("rid", out var selectorRid)
-            && !selectorRid.Equals(rid, StringComparison.OrdinalIgnoreCase))
-        {
-            return -1;
-        }
-
         var score = 0;
         foreach (var prerequisite in artifact.Prerequisites ?? [])
         {

@@ -220,7 +220,7 @@ public sealed class SeikoMcpServer
                     ["version"] = item.Version,
                     ["source"] = item.Source,
                     ["direct"] = item.Direct,
-                    ["selectors"] = SelectorsNode(item.Artifact.Selectors),
+                    ["selectors"] = RidNode(item.Artifact.Rid),
                 });
             }
         }
@@ -696,18 +696,17 @@ public sealed class SeikoMcpServer
         return result;
     }
 
-    private static JsonObject? SelectorsNode(Dictionary<string, string>? selectors)
+    private static JsonObject? RidNode(string? rid)
     {
-        if (selectors is null || selectors.Count == 0)
+        if (rid is null)
         {
             return null;
         }
 
-        var node = new JsonObject();
-        foreach (var (key, value) in selectors.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        var node = new JsonObject
         {
-            node[key] = value;
-        }
+            ["rid"] = rid,
+        };
 
         return node;
     }

@@ -244,7 +244,7 @@ public sealed class DeployLinkTests
         var manifest = JsonSerializer.Deserialize(
             File.ReadAllBytes(manifestPath),
             SeikoJsonContext.Default.SeiManifest)!;
-        manifest.Modes!["hello.txt"] = "0777";
+        manifest.Artifact!.Modes!["hello.txt"] = "0777";
         File.WriteAllBytes(
             manifestPath,
             JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
@@ -254,7 +254,7 @@ public sealed class DeployLinkTests
         var restored = JsonSerializer.Deserialize(
             File.ReadAllBytes(manifestPath),
             SeikoJsonContext.Default.SeiManifest)!;
-        Assert.Equal("0644", restored.Modes!["hello.txt"]);
+        Assert.Equal("0644", restored.Artifact!.Modes!["hello.txt"]);
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
     }
 

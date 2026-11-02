@@ -71,9 +71,7 @@ public static class LockReplay
 
             var entry = matches[0];
 
-            var artifact = entry.Artifacts.FirstOrDefault(a =>
-                    string.Equals(a.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                    && SelectorSemantics.Equal(a.Selectors, locked.Artifact.Selectors))
+            var artifact = MatchArtifact(entry, locked)
                 ?? throw Fail(
                     $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'");
 
@@ -107,6 +105,27 @@ public static class LockReplay
         }
 
         return result;
+    }
+
+    private static ArtifactEntry? MatchArtifact(SeiVersionEntry entry, LockedSei locked)
+    {
+        var candidates = entry.Artifacts
+            .Where(artifact =>
+                string.Equals(artifact.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(artifact.Rid, locked.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
+                && DependenciesEqual(artifact.Dependencies, locked.Artifact.Dependencies)
+                && DependenciesEqual(artifact.Prerequisites, locked.Artifact.Prerequisites)
+                && DependenciesEqual(artifact.OptionalPeers, locked.Artifact.OptionalPeers)
+                && DependenciesEqual(artifact.Conflicts, locked.Artifact.Conflicts))
+            .ToList();
+
+        if (candidates.Count > 1)
+        {
+            throw Fail(
+                $"--frozen: artifact for {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'");
+        }
+
+        return candidates.Count == 1 ? candidates[0] : null;
     }
 
     private static void ValidateGraph(SeikoLock lockFile)
@@ -265,8 +284,7 @@ public static class LockReplay
                 || !string.Equals(a.Source, b.Source, StringComparison.Ordinal)
                 || a.Direct != b.Direct
                 || !string.Equals(a.Artifact.Sha256, b.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(a.Artifact.Rid, b.Artifact.Rid, StringComparison.Ordinal)
-                || !SelectorSemantics.Equal(a.Artifact.Selectors, b.Artifact.Selectors)
+                || !string.Equals(a.Artifact.Rid, b.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
                 || !DependenciesEqual(a.Dependencies, b.Dependencies)
                 || !DependenciesEqual(a.Prerequisites, b.Prerequisites)
                 || !DependenciesEqual(a.OptionalPeers, b.OptionalPeers)

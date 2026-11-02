@@ -408,10 +408,70 @@ public sealed class Store
             throw new SeikoException($"{sei.Name}: sei.json dependencies do not match the index", "io");
         }
 
-        if (!SelectorSemantics.Equal(manifest.Selectors, sei.Artifact.Selectors))
+        if (!RelationsEqual(manifest.Prerequisites, sei.Entry.Prerequisites)
+            || !RelationsEqual(manifest.OptionalPeers, sei.Entry.OptionalPeers)
+            || !RelationsEqual(manifest.Conflicts, sei.Entry.Conflicts))
         {
-            throw new SeikoException($"{sei.Name}: sei.json selectors do not match the index artifact", "io");
+            throw new SeikoException($"{sei.Name}: sei.json relations do not match the index", "io");
         }
+
+        if (manifest.Artifact is null)
+        {
+            throw new SeikoException($"{sei.Name}: sei.json has no artifact object", "io");
+        }
+
+        if (!string.Equals(manifest.Artifact.Rid, sei.Artifact.Rid, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SeikoException($"{sei.Name}: sei.json rid does not match the index artifact", "io");
+        }
+
+        if (!string.Equals(
+            NormalizeLayout(manifest.Artifact.Layout),
+            NormalizeLayout(sei.Artifact.Layout),
+            StringComparison.Ordinal))
+        {
+            throw new SeikoException($"{sei.Name}: sei.json layout does not match the index artifact", "io");
+        }
+
+        if (!RelationsEqual(manifest.Artifact.Dependencies, sei.Artifact.Dependencies)
+            || !RelationsEqual(manifest.Artifact.Prerequisites, sei.Artifact.Prerequisites)
+            || !RelationsEqual(manifest.Artifact.OptionalPeers, sei.Artifact.OptionalPeers)
+            || !RelationsEqual(manifest.Artifact.Conflicts, sei.Artifact.Conflicts))
+        {
+            throw new SeikoException($"{sei.Name}: sei.json artifact relations do not match the index artifact", "io");
+        }
+
+        if (!ModesEqual(manifest.Artifact.Modes, sei.Artifact.Modes))
+        {
+            throw new SeikoException($"{sei.Name}: sei.json modes do not match the index artifact", "io");
+        }
+    }
+
+    private static string NormalizeLayout(string? layout)
+        => string.IsNullOrEmpty(layout) ? "root" : layout;
+
+    private static bool RelationsEqual(
+        IReadOnlyList<SeiDependency>? left,
+        IReadOnlyList<SeiDependency>? right)
+    {
+        var a = (left ?? []).OrderBy(item => item.Name, StringComparer.Ordinal).ToList();
+        var b = (right ?? []).OrderBy(item => item.Name, StringComparer.Ordinal).ToList();
+        return a.Count == b.Count
+            && a.Zip(b).All(pair =>
+                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
+    }
+
+    private static bool ModesEqual(
+        IReadOnlyDictionary<string, string>? left,
+        IReadOnlyDictionary<string, string>? right)
+    {
+        var a = left ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var b = right ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        return a.Count == b.Count
+            && a.All(pair =>
+                b.TryGetValue(pair.Key, out var value)
+                && string.Equals(pair.Value, value, StringComparison.Ordinal));
     }
 
 }

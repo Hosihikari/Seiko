@@ -313,7 +313,7 @@ public static class Deployer
                     }
 
                     var existingMode = GetModeText(existing.Modes, relative);
-                    var incomingMode = GetModeText(item.Manifest.Modes, relative);
+                    var incomingMode = GetModeText(item.Manifest.Artifact?.Modes, relative);
                     if (existingMode is not null && incomingMode is not null
                         && ParseModeValue(relative, existingMode) != ParseModeValue(relative, incomingMode))
                     {
@@ -342,7 +342,7 @@ public static class Deployer
                     StoreDirectory = item.Directory,
                     Sha256 = hash,
                     Owners = [item.Name],
-                    Modes = item.Manifest.Modes,
+                    Modes = item.Manifest.Artifact?.Modes,
                 };
             }
         }
