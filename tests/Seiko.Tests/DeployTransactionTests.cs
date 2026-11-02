@@ -763,6 +763,62 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recover_RejectsAnUnmarkedNextGeneration()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var state = new LocalState { Generation = 1, Files = [] };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "state.json"),
+            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.LocalState));
+        var generation = Path.Combine(stateDirectory, "generations", "2");
+        Directory.CreateDirectory(generation);
+        File.WriteAllText(Path.Combine(generation, "keep.txt"), "keep");
+        var journal = new DeploymentJournal
+        {
+            NewGenerationPath = ".seiko/generations/2",
+            Entries = [],
+        };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "transaction.json"),
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Contains("generation directory", error.Message);
+        Assert.True(Directory.Exists(generation));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(generation, "keep.txt")));
+    }
+
+    [Fact]
+    public void Recover_RejectsAnUnmarkedTemporaryFile()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var temporary = Path.Combine(root, "victim.txt.seiko-tmp-" + new string('a', 32));
+        File.WriteAllText(temporary, "keep");
+        var journal = new DeploymentJournal
+        {
+            Entries = [new DeploymentJournalEntry { Path = "victim.txt", Existed = true }],
+            TemporaryPaths = ["victim.txt.seiko-tmp-" + new string('a', 32)],
+        };
+        File.WriteAllBytes(
+            Path.Combine(stateDirectory, "transaction.json"),
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+
+        var error = Assert.Throws<SeikoException>(
+            () => DeploymentTransaction.Recover(root, stateDirectory));
+
+        Assert.Contains("not owned", error.Message);
+        Assert.Equal("keep", File.ReadAllText(temporary));
+    }
+
+    [Fact]
     public void Recover_RejectsUnrelatedTemporaryPathsBeforeDeleting()
     {
         using var fixture = new Fixture();

@@ -82,7 +82,7 @@ internal sealed class DeploymentTransaction
         }
         else
         {
-            WriteCreatedMarker(normalized, sha256);
+            WriteCreatedMarker(_ownershipDirectory, "entry", normalized, sha256);
         }
 
         _entries[normalized] = entry;
@@ -96,6 +96,7 @@ internal sealed class DeploymentTransaction
         if (!_journal.TemporaryPaths.Contains(normalized, StringComparer.Ordinal))
         {
             _journal.TemporaryPaths.Add(normalized);
+            WriteCreatedMarker(_ownershipDirectory, "temporary", normalized, null);
         }
     }
 
@@ -104,6 +105,7 @@ internal sealed class DeploymentTransaction
         var normalized = Normalize(relative);
         PathSafety.EnsureNoLinks(_root, normalized);
         _journal.NewGenerationPath = normalized;
+        WriteCreatedMarker(_ownershipDirectory, "generation", normalized, null);
     }
 
     public void WriteJournal()
@@ -228,7 +230,10 @@ internal sealed class DeploymentTransaction
         var wasCommitted = journal.Committed;
         journal.Committed = false;
         journal.TemporaryPaths = [];
-        var restoreTemporaries = PlanRestoreTemporaries(rootFull, journal);
+        var restoreTemporaries = PlanRestoreTemporaries(
+            rootFull,
+            journal,
+            ownershipDirectory);
         if (restoreTemporaries.Count > 0 || journal.Entries.Count > 0 || wasCommitted)
         {
             WriteJournalFile(journalPath, journal);
@@ -305,7 +310,7 @@ internal sealed class DeploymentTransaction
         DeploymentJournalEntry entry,
         string ownershipDirectory)
     {
-        if (!HasCreatedMarker(ownershipDirectory, relative, entry.Sha256))
+        if (!HasCreatedMarker(ownershipDirectory, "entry", relative, entry.Sha256))
         {
             return false;
         }
@@ -314,33 +319,39 @@ internal sealed class DeploymentTransaction
             || MatchesCreatedDigest(Resolve(root, relative), entry.Sha256);
     }
 
-    private void WriteCreatedMarker(string relative, string? sha256)
-    {
-        var marker = MarkerPath(_ownershipDirectory, relative);
-        Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
-        File.WriteAllText(marker, $"{relative}\n{sha256 ?? ""}\n");
-    }
-
-    private static string MarkerPath(string ownershipDirectory, string relative)
-        => Path.Combine(
-            ownershipDirectory,
-            Hashing.Sha256Bytes(Encoding.UTF8.GetBytes(relative)) + ".created");
-
-    private static bool HasCreatedMarker(
+    private static void WriteCreatedMarker(
         string ownershipDirectory,
+        string kind,
         string relative,
         string? sha256)
     {
-        var marker = MarkerPath(ownershipDirectory, relative);
+        var marker = MarkerPath(ownershipDirectory, kind, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+        File.WriteAllText(marker, $"{kind}\n{relative}\n{sha256 ?? ""}\n");
+    }
+
+    private static string MarkerPath(string ownershipDirectory, string kind, string relative)
+        => Path.Combine(
+            ownershipDirectory,
+            Hashing.Sha256Bytes(Encoding.UTF8.GetBytes($"{kind}\n{relative}")) + ".created");
+
+    private static bool HasCreatedMarker(
+        string ownershipDirectory,
+        string kind,
+        string relative,
+        string? sha256)
+    {
+        var marker = MarkerPath(ownershipDirectory, kind, relative);
         if (!File.Exists(marker) || PathSafety.IsLink(marker))
         {
             return false;
         }
 
         var lines = File.ReadAllText(marker).Split('\n');
-        return lines.Length >= 2
-            && string.Equals(lines[0], relative, StringComparison.Ordinal)
-            && string.Equals(lines[1], sha256 ?? "", StringComparison.Ordinal);
+        return lines.Length >= 3
+            && string.Equals(lines[0], kind, StringComparison.Ordinal)
+            && string.Equals(lines[1], relative, StringComparison.Ordinal)
+            && string.Equals(lines[2], sha256 ?? "", StringComparison.Ordinal);
     }
 
     private static bool MatchesCreatedDigest(string path, string expected)
@@ -430,7 +441,8 @@ internal sealed class DeploymentTransaction
                     "deploy");
             }
 
-            if (!entry.Existed && !HasCreatedMarker(ownershipDirectory, relative, entry.Sha256))
+            if (!entry.Existed
+                && !HasCreatedMarker(ownershipDirectory, "entry", relative, entry.Sha256))
             {
                 throw new SeikoException(
                     $"rollback path {relative} is not a file created by this transaction",
@@ -447,6 +459,13 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"invalid deployment transaction temporary path: {relative}",
+                    "deploy");
+            }
+
+            if (!HasCreatedMarker(ownershipDirectory, "temporary", relative, null))
+            {
+                throw new SeikoException(
+                    $"rollback temporary {relative} is not owned by this transaction",
                     "deploy");
             }
         }
@@ -472,6 +491,13 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"invalid deployment transaction generation path: {relative}",
+                    "deploy");
+            }
+
+            if (!HasCreatedMarker(ownershipDirectory, "generation", relative, null))
+            {
+                throw new SeikoException(
+                    $"rollback generation directory {relative} is not owned by this transaction",
                     "deploy");
             }
         }
@@ -519,7 +545,8 @@ internal sealed class DeploymentTransaction
 
     private static Dictionary<string, string> PlanRestoreTemporaries(
         string root,
-        DeploymentJournal journal)
+        DeploymentJournal journal,
+        string ownershipDirectory)
     {
         var temporaries = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in journal.Entries)
@@ -538,6 +565,7 @@ internal sealed class DeploymentTransaction
             var relativeTemporary = RestoreTemporaryName(root, relative);
             temporaries[relative] = relativeTemporary;
             journal.TemporaryPaths!.Add(relativeTemporary);
+            WriteCreatedMarker(ownershipDirectory, "temporary", relativeTemporary, null);
         }
 
         return temporaries;
