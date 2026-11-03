@@ -134,9 +134,10 @@ case "$(uname -s)" in
     printf '. "$HOME/.bashrc"\n' > "$bash_source_home/.bash_profile"
     install_special "$bash_source_home" /bin/bash
     [ -f "$bash_source_home/.bashrc" ] || fail "installer did not update sourced .bashrc"
-    grep -Fq "$special" "$bash_source_home/.bashrc" \
-      || fail "sourced .bashrc did not receive PATH"
-    if grep -Fq "$special" "$bash_source_home/.bash_profile"; then
+    got=$(HOME="$bash_source_home" PATH="/usr/bin:/bin" bash -c \
+      '. "$HOME/.bash_profile"; printf "%s" "${PATH%%:*}"')
+    [ "$got" = "$special" ] || fail "sourced .bashrc did not receive PATH: $got"
+    if grep -Fq "export PATH=" "$bash_source_home/.bash_profile"; then
       fail "installer wrote PATH to .bash_profile instead of sourced .bashrc"
     fi
 
@@ -144,8 +145,9 @@ case "$(uname -s)" in
     mkdir -p "$bash_login_home"
     printf '# login profile\n' > "$bash_login_home/.bash_login"
     install_special "$bash_login_home" /bin/bash
-    grep -Fq "$special" "$bash_login_home/.bash_login" \
-      || fail "installer did not update .bash_login"
+    got=$(HOME="$bash_login_home" PATH="/usr/bin:/bin" bash -c \
+      '. "$HOME/.bash_login"; printf "%s" "${PATH%%:*}"')
+    [ "$got" = "$special" ] || fail "installer did not update .bash_login: $got"
 
     fish_home="$tmp/home-fish"
     install_special "$fish_home" /usr/bin/fish
