@@ -21,6 +21,7 @@ public sealed class McpTests
         Assert.Contains("cache_verify", names);
         Assert.Contains("index_verify", names);
         Assert.Contains("doctor", names);
+        Assert.Contains("check", names);
         Assert.DoesNotContain("sync", names);
         Assert.DoesNotContain("add", names);
         Assert.DoesNotContain("source_add", names);
@@ -51,7 +52,7 @@ public sealed class McpTests
         string[] expectedRead =
         [
             "list", "search", "info", "lock", "source_list", "config_get",
-            "cache_status", "cache_verify", "why", "outdated", "index_verify", "doctor",
+            "cache_status", "cache_verify", "why", "outdated", "index_verify", "doctor", "check",
         ];
         string[] expectedWrite =
         [
@@ -169,6 +170,41 @@ public sealed class McpTests
         Assert.False(result["isError"]!.GetValue<bool>());
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
         Assert.Contains("hello", File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")));
+    }
+
+    [Fact]
+    public void AuditLog_RecordsEachCall()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var audit = Path.Combine(fixture.Root, "audit", "calls.jsonl");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false, auditLog: audit);
+
+        CallTool(server, "check", new JsonObject { ["root"] = fixture.Root });
+        CallTool(server, "nope", new JsonObject());
+
+        var lines = File.ReadAllLines(audit);
+        Assert.Equal(2, lines.Length);
+        var first = JsonNode.Parse(lines[0])!.AsObject();
+        Assert.Equal("check", first["tool"]!.GetValue<string>());
+        Assert.Equal("ok", first["outcome"]!.GetValue<string>());
+        var second = JsonNode.Parse(lines[1])!.AsObject();
+        Assert.Equal("error", second["outcome"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void DoctorAndCheckAreAvailableWithoutMutations()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
+
+        foreach (var tool in new[] { "doctor", "check" })
+        {
+            var result = CallTool(server, tool, new JsonObject { ["root"] = fixture.Root });
+            Assert.False(result["isError"]!.GetValue<bool>());
+            Assert.True(JsonNode.Parse(ToolText(result))!.AsObject().ContainsKey("findings"));
+        }
     }
 
     [Fact]

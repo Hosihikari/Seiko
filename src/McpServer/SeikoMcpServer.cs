@@ -24,14 +24,17 @@ public sealed class SeikoMcpServer
     private readonly IReadOnlyList<string> _allowedStores;
     private readonly string _defaultStore;
     private readonly SeikoClient _client = new();
+    private readonly string? _auditLog;
 
     public SeikoMcpServer(
         string defaultRoot,
         bool allowMutations,
         IReadOnlyList<string>? allowedRoots = null,
         IReadOnlyList<string>? allowedStores = null,
-        string? defaultStore = null)
+        string? defaultStore = null,
+        string? auditLog = null)
     {
+        _auditLog = auditLog;
         _defaultRoot = Path.GetFullPath(defaultRoot);
         _allowMutations = allowMutations;
         _allowedRoots = (allowedRoots ?? [])
@@ -143,7 +146,8 @@ public sealed class SeikoMcpServer
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
             Tool("index_verify", "Validate a static index directory.", IndexVerifySchema()),
-            Tool("doctor", "Check the lock, store, deployment, and partial downloads.", DoctorSchema()));
+            Tool("doctor", "Check the lock, store, deployment, and partial downloads.", DoctorSchema()),
+            Tool("check", "Read-only doctor without cleaning.", RootSchema(required: true)));
 
         if (_allowMutations)
         {
@@ -186,7 +190,8 @@ public sealed class SeikoMcpServer
                 "why" => Why(arguments),
                 "outdated" => Outdated(arguments),
                 "index_verify" => IndexVerify(arguments),
-                "doctor" => RequireMutations(() => Doctor(arguments)),
+                "doctor" => Doctor(arguments),
+                "check" => Check(arguments),
                 "add" => RequireMutations(() => Add(arguments)),
                 "remove" => RequireMutations(() => Remove(arguments)),
                 "update" => RequireMutations(() => Update(arguments)),
@@ -199,15 +204,51 @@ public sealed class SeikoMcpServer
                 "init" => RequireMutations(() => Init(arguments)),
                 _ => throw new SeikoException($"unknown tool '{name}'"),
             };
+            Audit("ok", name, arguments, text);
             return ToolResult(text);
         }
         catch (SeikoException ex)
         {
+            Audit("error", name, arguments, ex.Message);
             return ToolError(ex.Message);
         }
         catch (Exception ex)
         {
+            Audit("error", name, arguments, ex.Message);
             return ToolError(ex.Message);
+        }
+    }
+
+    // One line per call. Arguments never contain credentials: the token is
+    // derived from the environment and never appears in a tool request.
+    private void Audit(string outcome, string tool, JsonObject arguments, string text)
+    {
+        if (_auditLog is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var entry = new JsonObject
+            {
+                ["time"] = DateTimeOffset.UtcNow.ToString("O"),
+                ["tool"] = tool,
+                ["outcome"] = outcome,
+                ["arguments"] = arguments.DeepClone(),
+                ["result"] = text.Length > 4096 ? text[..4096] : text,
+            };
+            var directory = Path.GetDirectoryName(Path.GetFullPath(_auditLog));
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.AppendAllText(_auditLog, entry.ToJsonString() + "\n");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // An audit failure must not fail the call itself.
         }
     }
 
@@ -711,10 +752,14 @@ public sealed class SeikoMcpServer
         return new JsonObject { ["created"] = path }.ToJsonString();
     }
 
-    private string Doctor(JsonObject arguments)
+    private string Check(JsonObject arguments) => RunDoctor(arguments, clean: false);
+
+    private string Doctor(JsonObject arguments) => RunDoctor(arguments, Bool(arguments, "clean"));
+
+    private string RunDoctor(JsonObject arguments, bool clean)
     {
         var root = Root(arguments, required: true);
-        var result = new Doctor().Run(root, StorePath(arguments), Bool(arguments, "clean"));
+        var result = new Doctor().Run(root, StorePath(arguments), clean);
         var findings = new JsonArray();
         foreach (var finding in result.Findings)
         {

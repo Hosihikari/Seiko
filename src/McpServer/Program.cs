@@ -4,6 +4,7 @@ var root = Directory.GetCurrentDirectory();
 var allowMutations = false;
 var allowedRoots = new List<string>();
 var allowedStores = new List<string>();
+string? auditLog = null;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -39,6 +40,15 @@ for (var i = 0; i < args.Length; i++)
         case "--allow-mutations":
             allowMutations = true;
             break;
+        case "--audit-log":
+            if (i + 1 >= args.Length)
+            {
+                Console.Error.WriteLine("seiko-mcp: --audit-log requires a value");
+                return 2;
+            }
+
+            auditLog = args[++i];
+            break;
         case "-h":
         case "--help":
             PrintHelp();
@@ -53,7 +63,7 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-var server = new SeikoMcpServer(root, allowMutations, allowedRoots, allowedStores);
+var server = new SeikoMcpServer(root, allowMutations, allowedRoots, allowedStores, auditLog: auditLog);
 while (Console.ReadLine() is { } line)
 {
     if (string.IsNullOrWhiteSpace(line))
@@ -83,6 +93,7 @@ static void PrintHelp()
           --allow-mutations      Register mutating tools; each mutation still requires an explicit root
           --allowed-root <path>  Restrict mutation roots to this directory (repeatable)
           --allowed-store <path> Restrict mutation stores to this directory (repeatable)
+          --audit-log <path>     Append one JSON line per tool call (no credentials)
           -h, --help         Show this help
           -V, --version      Show version information
         """);
