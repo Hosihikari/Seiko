@@ -26,7 +26,14 @@ public sealed record OutdatedSei(
     string Current,
     string? LatestInRange,
     string Latest,
-    string? LatestInstallable);
+    string? LatestInstallable,
+    IReadOnlyList<OutdatedBlocker> Blockers);
+
+public sealed record OutdatedBlocker(
+    string Relation,
+    string Target,
+    string? Range,
+    string Source);
 
 public sealed record CacheStatusInfo(
     int Artifacts,
@@ -252,6 +259,47 @@ public sealed class SeikoClient
         };
     }
 
+    private static void Describe(ResolvedSei sei, List<PreviewDiagnostic> diagnostics)
+    {
+        var rid = sei.Artifact.Rid ?? "*";
+        diagnostics.Add(new PreviewDiagnostic(
+            sei.Name,
+            "artifact",
+            $"selected {sei.Artifact.Source.Sha256} from source '{sei.Source.Id}' (rid {rid})"));
+
+        foreach (var dependency in sei.Entry.Dependencies)
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "dependency",
+                $"requires {dependency.Name} {dependency.Version ?? "*"} (version scope)"));
+        }
+
+        foreach (var dependency in sei.Artifact.Dependencies ?? [])
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "artifact-dependency",
+                $"requires {dependency.Name} {dependency.Version ?? "*"} (artifact scope)"));
+        }
+
+        foreach (var prerequisite in sei.Artifact.Prerequisites ?? [])
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "artifact-prerequisite",
+                $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this artifact"));
+        }
+
+        foreach (var conflict in sei.Entry.Conflicts)
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "conflict",
+                $"excludes {conflict.Name} {conflict.Version ?? "*"}"));
+        }
+    }
+
     private static PreviewResult Preview(
         SeikoLock? existing,
         SeikoLock proposed,
@@ -317,7 +365,18 @@ public sealed class SeikoClient
                 $"{sei.Name} {highest.Version.ToNormalizedString()} is available; the graph keeps {sei.Version}"));
         }
 
-        return new PreviewResult { Changes = changes, Blocked = blocked };
+        var diagnostics = new List<PreviewDiagnostic>();
+        foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            Describe(sei, diagnostics);
+        }
+
+        return new PreviewResult
+        {
+            Changes = changes,
+            Blocked = blocked,
+            Diagnostics = diagnostics,
+        };
     }
 
     private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(
@@ -1868,12 +1927,42 @@ public sealed class SeikoClient
             {
                 if (latest is not null)
                 {
+                    var blockers = new List<OutdatedBlocker>();
+                    if (!string.IsNullOrWhiteSpace(locked.Artifact.Rid)
+                        && !string.Equals(locked.Artifact.Rid, rid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        blockers.Add(new OutdatedBlocker(
+                            "rid",
+                            locked.Artifact.Rid!,
+                            null,
+                            locked.Source));
+                    }
+
+                    foreach (var dependency in locked.Dependencies)
+                    {
+                        blockers.Add(new OutdatedBlocker(
+                            "dependency",
+                            dependency.Name,
+                            dependency.Version,
+                            locked.Source));
+                    }
+
+                    foreach (var conflict in locked.Conflicts)
+                    {
+                        blockers.Add(new OutdatedBlocker(
+                            "conflict",
+                            conflict.Name,
+                            conflict.Version,
+                            locked.Source));
+                    }
+
                     result.Add(new OutdatedSei(
                         locked.Name,
                         locked.Version,
                         latestInRange?.ToNormalizedString(),
                         latest.ToNormalizedString(),
-                        latestInstallable?.ToNormalizedString()));
+                        latestInstallable?.ToNormalizedString(),
+                        blockers));
                 }
             }
         }

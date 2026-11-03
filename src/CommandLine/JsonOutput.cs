@@ -16,7 +16,8 @@ public sealed record PreviewData(
     List<PlannedChange> Changes,
     List<PreviewBlock> Blocked,
     List<string> Warnings,
-    bool Downloaded);
+    bool Downloaded,
+    List<PreviewDiagnostic>? Diagnostics);
 
 public sealed record PreviewEnvelope(int SchemaVersion, string Command, PreviewData Data);
 
@@ -87,6 +88,7 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(PreviewData))]
 [JsonSerializable(typeof(PlannedChange))]
 [JsonSerializable(typeof(PreviewBlock))]
+[JsonSerializable(typeof(PreviewDiagnostic))]
 [JsonSerializable(typeof(List<PlannedChange>))]
 [JsonSerializable(typeof(List<PreviewBlock>))]
 [JsonSerializable(typeof(RollbackEnvelope))]

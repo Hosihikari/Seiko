@@ -26,10 +26,16 @@ var offlineOption = new Option<bool>("--offline")
     Description = "Use only locked, stored, and cached metadata; never touch the network.",
     Recursive = true,
 };
+var diagnosticsOption = new Option<bool>("--diagnostics")
+{
+    Description = "Show relation and constraint details.",
+    Recursive = true,
+};
 rootCommand.Add(jsonOption);
 rootCommand.Add(verboseOption);
 rootCommand.Add(quietOption);
 rootCommand.Add(offlineOption);
+rootCommand.Add(diagnosticsOption);
 
 var init = new Command("init", "Write a seiko.conf template.");
 var initRoot = RootOption();
@@ -87,6 +93,7 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncAdopt),
         parseResult.GetValue(syncForce),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
@@ -146,6 +153,7 @@ add.SetAction(parseResult => Run(
         parseResult.GetValue(addAdopt),
         parseResult.GetValue(addForce),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var remove = new Command("remove", "Remove a direct sei declaration and sync.");
@@ -193,6 +201,7 @@ remove.SetAction(parseResult => Run(
         parseResult.GetValue(removeAdopt),
         parseResult.GetValue(removeForce),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var update = new Command("update", "Update direct declarations and sync.");
@@ -247,6 +256,7 @@ update.SetAction(parseResult => Run(
         parseResult.GetValue(updateAdopt),
         parseResult.GetValue(updateForce),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var list = new Command("list", "List installed sei from the lock.");
@@ -275,6 +285,7 @@ rollback.SetAction(parseResult => Run(
         parseResult.GetValue(rollbackTo),
         parseResult.GetValue(rollbackProxy),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var search = new Command("search", "Search sei names in the configured indexes.");
@@ -292,6 +303,7 @@ search.SetAction(parseResult => Run(
         parseResult.GetValue(searchTerm)!,
         parseResult.GetValue(searchProxy),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var info = new Command("info", "Show versions, dependencies, and artifact counts.");
@@ -309,6 +321,7 @@ info.SetAction(parseResult => Run(
         parseResult.GetValue(infoName)!,
         parseResult.GetValue(infoProxy),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var doctor = new Command("doctor", "Check the lock, store, deployment, and partial downloads.");
@@ -355,6 +368,7 @@ outdated.SetAction(parseResult => Run(
         parseResult.GetValue(outdatedProxy),
         parseResult.GetValue(outdatedPre),
         IsOffline(parseResult),
+        IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
 var source = new Command("source", "Manage configured sources.");
@@ -555,6 +569,8 @@ static bool IsJson(ParseResult parseResult) => parseResult.GetValue<bool>("--jso
 
 static bool IsOffline(ParseResult parseResult) => parseResult.GetValue<bool>("--offline");
 
+static bool IsDiagnostics(ParseResult parseResult) => parseResult.GetValue<bool>("--diagnostics");
+
 static int Run(string command, bool json, Func<int> action)
 {
     try
@@ -658,6 +674,7 @@ static int Sync(
     bool adopt,
     bool force,
     bool offline,
+    bool diagnostics,
     bool json)
 {
     if (frozen && locked)
@@ -708,7 +725,7 @@ static int Sync(
 
     if (dryRun)
     {
-        return PrintPreview("sync", result.Preview!, json);
+        return PrintPreview("sync", result.Preview!, json, diagnostics);
     }
 
     if (json)
@@ -727,7 +744,7 @@ static int Sync(
     return 0;
 }
 
-static int PrintPreview(string command, PreviewResult preview, bool json)
+static int PrintPreview(string command, PreviewResult preview, bool json, bool diagnostics)
 {
     if (json)
     {
@@ -737,7 +754,8 @@ static int PrintPreview(string command, PreviewResult preview, bool json)
                 preview.Changes.ToList(),
                 preview.Blocked.ToList(),
                 [],
-                false)));
+                false,
+                diagnostics ? preview.Diagnostics.ToList() : null)));
         return 0;
     }
 
@@ -771,11 +789,13 @@ static int Add(
     bool adopt,
     bool force,
     bool offline,
+    bool diagnostics,
     bool json)
     => RunMutation(
         "add",
         json,
         dryRun,
+        diagnostics,
         (progress, log) => new SeikoClient().AddMany(
             rootOption ?? FindRoot(),
             specifications,
@@ -806,11 +826,13 @@ static int Remove(
     bool adopt,
     bool force,
     bool offline,
+    bool diagnostics,
     bool json)
     => RunMutation(
         "remove",
         json,
         dryRun,
+        diagnostics,
         (progress, log) => new SeikoClient().Remove(
             rootOption ?? FindRoot(),
             name,
@@ -838,11 +860,13 @@ static int Update(
     bool adopt,
     bool force,
     bool offline,
+    bool diagnostics,
     bool json)
     => RunMutation(
         "update",
         json,
         dryRun,
+        diagnostics,
         (progress, log) => new SeikoClient().Update(
             rootOption ?? FindRoot(),
             name,
@@ -886,7 +910,7 @@ static int Why(string? rootOption, string name, bool json)
     return 0;
 }
 
-static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, bool json)
+static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, bool diagnostics, bool json)
 {
     var root = rootOption ?? FindRoot();
     var items = new SeikoClient().Outdated(root, proxy, pre, offline);
@@ -906,6 +930,10 @@ static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, b
     foreach (var item in items)
     {
         Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}	{item.LatestInstallable ?? "-"}");
+        foreach (var blocker in item.Blockers)
+        {
+            Console.WriteLine($"  blocked by {blocker.Relation} {blocker.Target} {blocker.Range ?? ""} ({blocker.Source})");
+        }
     }
 
     return 0;
@@ -1047,6 +1075,7 @@ static int RunMutation(
     string command,
     bool json,
     bool dryRun,
+    bool diagnostics,
     Func<IProgress<SyncProgress>?, Action<string>, SyncResult> action)
 {
     var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
@@ -1063,7 +1092,7 @@ static int RunMutation(
 
     if (dryRun)
     {
-        return PrintPreview(command, result.Preview!, json);
+        return PrintPreview(command, result.Preview!, json, diagnostics);
     }
 
     if (json)
@@ -1136,7 +1165,7 @@ static int List(string? rootOption, bool json)
     return 0;
 }
 
-static int Search(string? rootOption, string term, string? proxy, bool offline, bool json)
+static int Search(string? rootOption, string term, string? proxy, bool offline, bool diagnostics, bool json)
 {
     var root = rootOption ?? FindRoot();
     var results = new SeikoClient().Search(root, term, proxy, offline);
@@ -1155,7 +1184,7 @@ static int Search(string? rootOption, string term, string? proxy, bool offline, 
     return 0;
 }
 
-static int Info(string? rootOption, string name, string? proxy, bool offline, bool json)
+static int Info(string? rootOption, string name, string? proxy, bool offline, bool diagnostics, bool json)
 {
     var root = rootOption ?? FindRoot();
     var info = new SeikoClient().Info(root, name, proxy, offline);
@@ -1215,6 +1244,7 @@ static int Rollback(
     int? toGeneration,
     string? proxy,
     bool offline,
+    bool diagnostics,
     bool json)
 {
     if (toGeneration is < 1)

@@ -554,10 +554,22 @@ public sealed class SeikoMcpServer
             });
         }
 
+        var diagnostics = new JsonArray();
+        foreach (var diagnostic in preview.Diagnostics)
+        {
+            diagnostics.Add((JsonNode)new JsonObject
+            {
+                ["name"] = diagnostic.Name,
+                ["kind"] = diagnostic.Kind,
+                ["message"] = diagnostic.Message,
+            });
+        }
+
         return new JsonObject
         {
             ["changes"] = changes,
             ["blocked"] = blocked,
+            ["diagnostics"] = diagnostics,
             ["downloaded"] = false,
         }.ToJsonString();
     }
