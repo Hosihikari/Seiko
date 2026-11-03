@@ -19,6 +19,7 @@ public sealed class McpTests
         Assert.Contains("config_get", names);
         Assert.Contains("cache_status", names);
         Assert.Contains("cache_verify", names);
+        Assert.Contains("index_verify", names);
         Assert.DoesNotContain("sync", names);
         Assert.DoesNotContain("add", names);
         Assert.DoesNotContain("source_add", names);
@@ -144,6 +145,23 @@ public sealed class McpTests
         Assert.False(result["isError"]!.GetValue<bool>());
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
         Assert.Contains("hello", File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")));
+    }
+
+    [Fact]
+    public void IndexVerifyTool_ReportsFindings()
+    {
+        using var fixture = new Fixture();
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
+
+        var result = CallTool(
+            server,
+            "index_verify",
+            new JsonObject { ["path"] = Path.Combine(fixture.SourceDirectory, "missing") });
+
+        Assert.False(result["isError"]!.GetValue<bool>());
+        var data = JsonNode.Parse(ToolText(result))!.AsObject();
+        Assert.Equal(1, data["errors"]!.GetValue<int>());
+        Assert.True(data["failed"]!.GetValue<bool>());
     }
 
     [Fact]

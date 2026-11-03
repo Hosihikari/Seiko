@@ -141,7 +141,8 @@ public sealed class SeikoMcpServer
             Tool("cache_status", "Show store artifact and partial counts.", StoreSchema()),
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
-            Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()));
+            Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
+            Tool("index_verify", "Validate a static index directory.", IndexVerifySchema()));
 
         if (_allowMutations)
         {
@@ -182,6 +183,7 @@ public sealed class SeikoMcpServer
                 "cache_verify" => CacheVerify(arguments),
                 "why" => Why(arguments),
                 "outdated" => Outdated(arguments),
+                "index_verify" => IndexVerify(arguments),
                 "add" => RequireMutations(() => Add(arguments)),
                 "remove" => RequireMutations(() => Remove(arguments)),
                 "update" => RequireMutations(() => Update(arguments)),
@@ -630,6 +632,40 @@ public sealed class SeikoMcpServer
             ["files"] = result.FilesDeployed,
             ["mode"] = mode.ToString(),
             ["warnings"] = WarningsNode(result),
+        }.ToJsonString();
+    }
+
+    private string IndexVerify(JsonObject arguments)
+    {
+        var path = OptionalString(arguments, "path");
+        var strict = Bool(arguments, "strict");
+        var result = IndexVerifier.Verify(
+            path ?? Directory.GetCurrentDirectory(),
+            Bool(arguments, "checkArtifacts"),
+            OptionalString(arguments, "proxy"));
+        var findings = new JsonArray();
+        foreach (var finding in result.Findings)
+        {
+            findings.Add((JsonNode)new JsonObject
+            {
+                ["severity"] = finding.Severity,
+                ["code"] = finding.Code,
+                ["message"] = finding.Message,
+                ["path"] = finding.Path,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["root"] = result.Root,
+            ["sei"] = result.Sei,
+            ["versions"] = result.Versions,
+            ["artifacts"] = result.Artifacts,
+            ["checkedArtifacts"] = result.CheckedArtifacts,
+            ["findings"] = findings,
+            ["errors"] = result.Errors,
+            ["warnings"] = result.Warnings,
+            ["failed"] = result.Errors > 0 || (strict && result.Warnings > 0),
         }.ToJsonString();
     }
 
@@ -1103,6 +1139,20 @@ public sealed class SeikoMcpServer
                 JsonValue.Create(requireSpec ? "spec" : "name")),
         };
     }
+
+    private static JsonObject IndexVerifySchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["path"] = new JsonObject { ["type"] = "string" },
+                ["checkArtifacts"] = new JsonObject { ["type"] = "boolean" },
+                ["strict"] = new JsonObject { ["type"] = "boolean" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(),
+        };
 
     private static JsonObject RollbackSchema()
         => new()
