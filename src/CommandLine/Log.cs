@@ -13,6 +13,14 @@ internal static class Log
         }
     }
 
+    public static void Root(string path)
+    {
+        if (!Quiet)
+        {
+            Console.Error.WriteLine($"sk: root {path}");
+        }
+    }
+
     public static void Warning(string message)
     {
         if (!Quiet)

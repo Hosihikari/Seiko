@@ -682,7 +682,7 @@ static int Sync(
         throw new SeikoException("--frozen and --locked are mutually exclusive", "usage");
     }
 
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
     var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
     SyncResult result;
@@ -798,7 +798,7 @@ static int Add(
         dryRun,
         diagnostics,
         (progress, log) => new SeikoClient().AddMany(
-            rootOption ?? FindRoot(),
+            ResolveRoot(rootOption),
             specifications,
             remove,
             store,
@@ -835,7 +835,7 @@ static int Remove(
         dryRun,
         diagnostics,
         (progress, log) => new SeikoClient().Remove(
-            rootOption ?? FindRoot(),
+            ResolveRoot(rootOption),
             name,
             store,
             pre,
@@ -869,7 +869,7 @@ static int Update(
         dryRun,
         diagnostics,
         (progress, log) => new SeikoClient().Update(
-            rootOption ?? FindRoot(),
+            ResolveRoot(rootOption),
             name,
             latest,
             store,
@@ -887,7 +887,7 @@ static int Update(
 
 static int Why(string? rootOption, string name, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var chains = new SeikoClient().Why(root, name);
     if (json)
     {
@@ -913,7 +913,7 @@ static int Why(string? rootOption, string name, bool json)
 
 static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, bool diagnostics, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var items = new SeikoClient().Outdated(root, proxy, pre, offline);
     if (json)
     {
@@ -942,7 +942,7 @@ static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, b
 
 static int SourceListCommand(string? rootOption, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var sources = new SeikoClient().ListSources(root);
     PrintSources("source_list", sources, json);
     return 0;
@@ -955,7 +955,7 @@ static int SourceAddCommand(
     string[]? tokenHosts,
     bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var sources = new SeikoClient().SourceAdd(root, id, index, tokenHosts);
     PrintSources("source_add", sources, json);
     return 0;
@@ -963,7 +963,7 @@ static int SourceAddCommand(
 
 static int SourceRemoveCommand(string? rootOption, string id, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var sources = new SeikoClient().SourceRemove(root, id);
     PrintSources("source_remove", sources, json);
     return 0;
@@ -990,7 +990,7 @@ static void PrintSources(string command, IReadOnlyList<SourceConfig> sources, bo
 
 static int ConfigGetCommand(string? rootOption, string key, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var value = new SeikoClient().ConfigGet(root, key);
     PrintConfig("config_get", key, value, json);
     return 0;
@@ -998,7 +998,7 @@ static int ConfigGetCommand(string? rootOption, string key, bool json)
 
 static int ConfigSetCommand(string? rootOption, string key, string value, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var stored = new SeikoClient().ConfigSet(root, key, value);
     PrintConfig("config_set", key, stored, json);
     return 0;
@@ -1060,7 +1060,7 @@ static int CacheVerifyCommand(string? store, bool json)
 
 static int CacheCleanCommand(string? rootOption, string? store, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var result = new SeikoClient().CacheClean(root, store);
     if (json)
     {
@@ -1139,7 +1139,7 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
 
 static int List(string? rootOption, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var lockFile = new SeikoClient().ReadLock(root);
     var items = new List<ListItem>();
     if (lockFile is not null)
@@ -1177,7 +1177,7 @@ static int List(string? rootOption, bool json)
 
 static int Search(string? rootOption, string term, string? proxy, bool offline, bool diagnostics, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var results = new SeikoClient().Search(root, term, proxy, offline);
     if (json)
     {
@@ -1196,7 +1196,7 @@ static int Search(string? rootOption, string term, string? proxy, bool offline, 
 
 static int Info(string? rootOption, string name, string? proxy, bool offline, bool diagnostics, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var info = new SeikoClient().Info(root, name, proxy, offline);
     if (json)
     {
@@ -1262,7 +1262,7 @@ static int Rollback(
         throw new SeikoException("--to requires a positive generation number", "usage");
     }
 
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var result = new SeikoClient().Rollback(root, store, toGeneration, proxy, offline);
     if (json)
     {
@@ -1351,7 +1351,7 @@ static int IndexVerifyCommand(
 
 static int RunDoctor(string? rootOption, string? store, bool clean, bool json)
 {
-    var root = rootOption ?? FindRoot();
+    var root = ResolveRoot(rootOption);
     var result = new Doctor().Run(root, store, clean);
     var hasError = result.Findings.Any(finding => finding.Severity == "error");
     if (json)
@@ -1377,6 +1377,13 @@ static int RunDoctor(string? rootOption, string? store, bool clean, bool json)
     }
 
     return hasError ? 1 : 0;
+}
+
+static string ResolveRoot(string? rootOption)
+{
+    var root = rootOption is null ? FindRoot() : Path.GetFullPath(rootOption);
+    Log.Root(root);
+    return root;
 }
 
 static string FindRoot()
