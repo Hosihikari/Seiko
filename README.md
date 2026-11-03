@@ -54,7 +54,7 @@ Current slice:
 - Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`. Index metadata is cached under `<store>/.metadata` for offline use, and every selected version is cross-checked against other sources for conflicting digests of artifacts with equal conditions.
 - `sk source add|remove|list` — manage sources (repeatable `--token-host`); `sk config get|set rid` — read or write the platform override.
 - `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's current lock or its retained rollback generations. Sync and rollback re-download artifacts whose digest metadata or payload is missing or corrupt.
-- `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads, and reports an unfinished transaction as an error. The MCP `check` tool is its read-only form.
+- `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads, and reports an unfinished transaction as an error; `sk check` is its read-only form.
 - `sk completion bash|zsh|fish|powershell` — prints a completion script that calls `sk "[suggest]"`.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code. Exit codes are 0 success, 1 domain error, 2 usage error; a dry-run with blockers still exits 0.
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.

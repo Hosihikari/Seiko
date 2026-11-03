@@ -54,7 +54,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 - 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。索引元数据缓存在 `<store>/.metadata` 供离线使用；每个选定版本都会与其他源中适用条件相同的构件交叉核对摘要。
 - `sk source add|remove|list`：管理源（可重复的 `--token-host`）；`sk config get|set rid`：读写平台覆盖。
 - `sk cache status|verify|clean`：查看存储、校验构件，或清理所有已注册安装根当前锁与保留的回滚代都未引用的构件。同步与回滚会重新下载摘要元数据或载荷缺失、损坏的构件。
-- `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`，并把未完成事务报告为 error。MCP 的 `check` 工具是它的只读形式。
+- `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`，并把未完成事务报告为 error。`sk check` 是它的只读形式。
 - `--json`：输出 `{schemaVersion, command, data}` 信封；错误也使用同一信封并带错误码。退出码 0 成功、1 领域错误、2 用法错误；带阻塞项的 dry-run 仍退出 0。
 - `-v/--verbose` 输出调试日志与展开堆栈；`-q/--quiet` 静默进度与日志输出。进度条只在交互式 stdout 显示。
 - `seiko-mcp`：stdio 上的 MCP server，与 CLI 能力对等；默认只读，`--allow-mutations` 才开放变更工具（`sync`、`rollback`、`add`、`remove`、`update`、源/配置/缓存修改）。变更工具接受 `dryRun`、`offline`、`adopt`、`force`。`--allowed-root` 与 `--allowed-store` 可选限制变更路径；`--audit-log <path>` 每次调用追加一行不含凭据的 JSON。

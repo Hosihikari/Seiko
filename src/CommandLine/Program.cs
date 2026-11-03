@@ -335,9 +335,26 @@ doctor.SetAction(parseResult => Run(
     "doctor",
     IsJson(parseResult),
     () => RunDoctor(
+        "doctor",
         parseResult.GetValue(doctorRoot),
         parseResult.GetValue(doctorStore),
         parseResult.GetValue(doctorClean),
+        IsJson(parseResult))));
+
+// `check` is the read-only terminal summary of doctor; it never deletes .part.
+var check = new Command("check", "Check the lock, store, deployment, and partial downloads.");
+var checkRoot = RootOption();
+var checkStore = StoreOption();
+check.Add(checkRoot);
+check.Add(checkStore);
+check.SetAction(parseResult => Run(
+    "check",
+    IsJson(parseResult),
+    () => RunDoctor(
+        "check",
+        parseResult.GetValue(checkRoot),
+        parseResult.GetValue(checkStore),
+        clean: false,
         IsJson(parseResult))));
 
 var why = new Command("why", "Explain why a sei is in the dependency graph.");
@@ -545,6 +562,7 @@ rootCommand.Add(rollback);
 rootCommand.Add(search);
 rootCommand.Add(info);
 rootCommand.Add(doctor);
+rootCommand.Add(check);
 rootCommand.Add(source);
 rootCommand.Add(config);
 rootCommand.Add(cache);
@@ -1342,14 +1360,14 @@ static int IndexVerifyCommand(
     return failed ? 1 : 0;
 }
 
-static int RunDoctor(string? rootOption, string? store, bool clean, bool json)
+static int RunDoctor(string command, string? rootOption, string? store, bool clean, bool json)
 {
     var root = ResolveRoot(rootOption);
     var result = new Doctor().Run(root, store, clean);
     var hasError = result.Findings.Any(finding => finding.Severity == "error");
     if (json)
     {
-        WriteJson(CliJsonContext.Default.DoctorEnvelope, new DoctorEnvelope(1, "doctor", result));
+        WriteJson(CliJsonContext.Default.DoctorEnvelope, new DoctorEnvelope(1, command, result));
         return hasError ? 1 : 0;
     }
 
