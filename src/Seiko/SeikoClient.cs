@@ -1576,6 +1576,27 @@ public sealed class SeikoClient
                 "io");
         }
 
+        var adoptedSnapshots = new Dictionary<string, string>(StringComparer.Ordinal);
+        var snapshotStatePath = Path.Combine(stateDirectory, "generations", target.ToString(), "state.json");
+        if (File.Exists(snapshotStatePath))
+        {
+            var snapshotState = JsonSerializer.Deserialize(
+                File.ReadAllBytes(snapshotStatePath),
+                SeikoJsonContext.Default.LocalState);
+            foreach (var (relative, record) in snapshotState?.Files ?? [])
+            {
+                if (record?.Adopted == true)
+                {
+                    adoptedSnapshots[relative] = Path.Combine(
+                        stateDirectory,
+                        "generations",
+                        target.ToString(),
+                        "adopted",
+                        relative);
+                }
+            }
+        }
+
         var store = new Store(storePath);
         var sei = new List<DeployedSei>();
         var needsFetch = false;
@@ -1645,7 +1666,8 @@ public sealed class SeikoClient
             snapshotLock,
             generationOverride: target,
             writeLock: true,
-            restoreConfig: snapshotConfig);
+            restoreConfig: snapshotConfig,
+            adoptedSnapshots: adoptedSnapshots);
 
         return new RollbackResult
         {

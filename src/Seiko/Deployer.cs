@@ -31,7 +31,8 @@ public static class Deployer
         bool writeLock = false,
         byte[]? restoreConfig = null,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        IReadOnlyDictionary<string, string>? adoptedSnapshots = null)
         => DeployCore(
             root,
             sei,
@@ -42,7 +43,8 @@ public static class Deployer
             restoreConfig,
             transaction: null,
             adopt,
-            force);
+            force,
+            adoptedSnapshots);
 
     internal static DeployResult DeployInTransaction(
         string root,
@@ -54,7 +56,8 @@ public static class Deployer
         bool writeLock = false,
         byte[]? restoreConfig = null,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        IReadOnlyDictionary<string, string>? adoptedSnapshots = null)
         => DeployCore(
             root,
             sei,
@@ -65,7 +68,8 @@ public static class Deployer
             restoreConfig,
             transaction,
             adopt,
-            force);
+            force,
+            adoptedSnapshots);
 
     private static DeployResult DeployCore(
         string root,
@@ -77,7 +81,8 @@ public static class Deployer
         byte[]? restoreConfig,
         DeploymentTransaction? transaction,
         bool adopt,
-        bool force)
+        bool force,
+        IReadOnlyDictionary<string, string>? adoptedSnapshots)
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
@@ -89,6 +94,39 @@ public static class Deployer
 
         var configSnapshot = restoreConfig ?? File.ReadAllBytes(configPath);
         var desired = BuildDesired(sei);
+
+        // A rollback restores the target generation's adopted content, which
+        // only exists as a per-file snapshot: the store holds package bytes.
+        var adoptedFrom = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (adoptedSnapshots is not null)
+        {
+            foreach (var (relative, snapshot) in adoptedSnapshots)
+            {
+                if (!desired.TryGetValue(relative, out var entry))
+                {
+                    continue;
+                }
+
+                if (!File.Exists(snapshot))
+                {
+                    throw new SeikoException(
+                        $"generation snapshot for adopted file {relative} is missing",
+                        "deploy");
+                }
+
+                desired[relative] = new DesiredFile
+                {
+                    SourcePath = snapshot,
+                    StoreDirectory = stateDirectory,
+                    Sha256 = Hashing.Sha256File(snapshot),
+                    Owners = entry.Owners,
+                    Modes = entry.Modes,
+                    SnapshotSource = true,
+                };
+                adoptedFrom[relative] = snapshot;
+            }
+        }
+
         var statePath = Path.Combine(stateDirectory, "state.json");
         var state = File.Exists(statePath)
             ? JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState) ?? new LocalState()
@@ -145,8 +183,9 @@ public static class Deployer
 
             // Adopted content is user state: keep it on disk and drop only the
             // ownership record. force still deletes; an untouched file is
-            // cleaned up as before.
-            if (!force && (record.Adopted || adopt))
+            // cleaned up as before. A rollback reproduces the target
+            // generation, so a file adopted only in newer generations goes.
+            if (!force && adoptedSnapshots is null && (record.Adopted || adopt))
             {
                 continue;
             }
@@ -180,7 +219,11 @@ public static class Deployer
                         "deploy");
                 }
 
+                // On a rollback the target generation decides: a desired file
+                // it recorded as adopted is served from its snapshot, every
+                // other desired file is restored from the store.
                 var keepExisting = !force
+                    && adoptedSnapshots is null
                     && (adopt || (managedHere && previous!.Adopted));
                 if (keepExisting)
                 {
@@ -236,11 +279,22 @@ public static class Deployer
                     Sha256 = adoptedHashes.TryGetValue(pair.Key, out var kept)
                         ? kept
                         : pair.Value.Sha256,
-                    Adopted = adoptedHashes.ContainsKey(pair.Key),
+                    Adopted = adoptedHashes.ContainsKey(pair.Key) || adoptedFrom.ContainsKey(pair.Key),
                 },
                 StringComparer.Ordinal),
         };
         var generationDirectory = Path.Combine(stateDirectory, "generations", newState.Generation.ToString());
+        var adoptedSources = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var relative in adoptedHashes.Keys)
+        {
+            adoptedSources[relative] = Native(root, relative);
+        }
+
+        foreach (var (relative, snapshot) in adoptedFrom)
+        {
+            adoptedSources[relative] = snapshot;
+        }
+
         var installedPaths = sei
             .Select(item => Path.Combine(stateDirectory, "installed", item.Name, item.Version, "sei.json"))
             .ToList();
@@ -290,6 +344,28 @@ public static class Deployer
                 transaction.SetNewGeneration(Relative(root, generationDirectory));
             }
 
+            // Adopted bytes are copied into the generation snapshot; register
+            // every target before the journal so a failure restores them.
+            var adoptedDirectory = Path.Combine(generationDirectory, "adopted");
+            foreach (var existing in Directory.Exists(adoptedDirectory)
+                ? Directory.EnumerateFiles(adoptedDirectory, "*", SearchOption.AllDirectories)
+                : [])
+            {
+                transaction.WillChange(Relative(root, existing));
+            }
+
+            var adoptedTargets = adoptedSnapshots is null
+                ? adoptedHashes.Keys
+                : adoptedHashes.Keys.Concat(adoptedFrom.Keys);
+            foreach (var relative in adoptedTargets)
+            {
+                var path = Relative(root, Path.Combine(adoptedDirectory, relative));
+                if (!File.Exists(Native(root, path)))
+                {
+                    transaction.WillChange(path);
+                }
+            }
+
             foreach (var relative in modeChanges)
             {
                 transaction.WillChange(relative);
@@ -336,7 +412,8 @@ public static class Deployer
                     FileLink.Create(
                         mutation.File.SourcePath,
                         temp,
-                        allowHardlink: !modes.ContainsKey(mutation.RelativePath));
+                        allowHardlink: !mutation.File.SnapshotSource
+                            && !modes.ContainsKey(mutation.RelativePath));
                     File.Move(temp, destination, overwrite: true);
                 }
                 finally
@@ -364,7 +441,7 @@ public static class Deployer
             }
 
             WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
-            WriteGeneration(stateDirectory, newState, lockFile, configSnapshot);
+            WriteGeneration(stateDirectory, newState, lockFile, configSnapshot, adoptedSources);
             WriteInstalledManifests(installedPaths, sei);
             if (writeLock)
             {
@@ -651,7 +728,8 @@ public static class Deployer
         string stateDirectory,
         LocalState state,
         SeikoLock lockFile,
-        byte[] config)
+        byte[] config,
+        IReadOnlyDictionary<string, string>? adoptedFiles = null)
     {
         var directory = Path.Combine(stateDirectory, "generations", state.Generation.ToString());
         Directory.CreateDirectory(directory);
@@ -660,6 +738,35 @@ public static class Deployer
             JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState));
         LockFile.Write(Path.Combine(directory, "lock.json"), lockFile);
         WriteAtomic(Path.Combine(directory, "seiko.conf"), config);
+
+        // Adopted files are the only deployed bytes the store cannot supply,
+        // so the snapshot must carry them for a later rollback. Stage them
+        // first: a rollback reads its sources from the target generation's own
+        // adopted directory, which is replaced here.
+        var adoptedDirectory = Path.Combine(directory, "adopted");
+        var staging = Path.Combine(directory, ".adopted-staging-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(staging);
+        try
+        {
+            foreach (var (relative, source) in adoptedFiles ?? new Dictionary<string, string>())
+            {
+                var destination = RootedPath.Resolve(staging, RelativePath.Parse(relative));
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                ReadableFile.Copy(source, destination, overwrite: true);
+            }
+        }
+        catch
+        {
+            Directory.Delete(staging, recursive: true);
+            throw;
+        }
+
+        if (Directory.Exists(adoptedDirectory))
+        {
+            Directory.Delete(adoptedDirectory, recursive: true);
+        }
+
+        Directory.Move(staging, adoptedDirectory);
     }
 
     private static void PruneGenerations(string stateDirectory, int generation)
@@ -840,5 +947,9 @@ public static class Deployer
         public required string Sha256 { get; init; }
         public required List<string> Owners { get; init; }
         public Dictionary<string, string>? Modes { get; set; }
+
+        // Generation snapshots must stay intact for a later rollback, so an
+        // adopted file is copied rather than hardlinked.
+        public bool SnapshotSource { get; init; }
     }
 }
