@@ -42,13 +42,24 @@ public sealed record InitEnvelope(int SchemaVersion, string Command, InitData Da
 
 public sealed record SearchEnvelope(int SchemaVersion, string Command, List<SeiSummary> Data);
 
+public sealed record InfoArtifact(
+    string? Rid,
+    List<SeiDependency> Dependencies,
+    List<SeiDependency> Prerequisites,
+    List<SeiDependency> OptionalPeers,
+    List<SeiDependency> Conflicts);
+
 public sealed record InfoVersion(
     string Version,
     bool Yanked,
     string? Deprecated,
     AdvisoryInfo? Advisory,
     int Artifacts,
-    List<SeiDependency> Dependencies);
+    List<SeiDependency> Dependencies,
+    List<SeiDependency> Prerequisites,
+    List<SeiDependency> OptionalPeers,
+    List<SeiDependency> Conflicts,
+    List<InfoArtifact> ArtifactDetails);
 
 public sealed record InfoData(
     string Name,
@@ -59,7 +70,7 @@ public sealed record InfoData(
 
 public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
 
-public sealed record WhyData(string Name, List<List<string>> Chains);
+public sealed record WhyData(string Name, List<List<WhyLink>> Chains);
 
 public sealed record WhyEnvelope(int SchemaVersion, string Command, WhyData Data);
 
@@ -101,6 +112,7 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(SearchEnvelope))]
 [JsonSerializable(typeof(InfoEnvelope))]
 [JsonSerializable(typeof(WhyEnvelope))]
+[JsonSerializable(typeof(WhyLink))]
 [JsonSerializable(typeof(OutdatedEnvelope))]
 [JsonSerializable(typeof(OutdatedSei))]
 [JsonSerializable(typeof(SourceEnvelope))]
@@ -120,6 +132,7 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(ErrorEnvelope))]
 [JsonSerializable(typeof(InfoData))]
 [JsonSerializable(typeof(InfoVersion))]
+[JsonSerializable(typeof(InfoArtifact))]
 [JsonSerializable(typeof(SeiDependency))]
 [JsonSerializable(typeof(SeiSummary))]
 [JsonSerializable(typeof(DoctorResult))]

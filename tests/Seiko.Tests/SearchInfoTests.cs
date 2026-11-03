@@ -48,6 +48,37 @@ public sealed class SearchInfoTests
     }
 
     [Fact]
+    public void Info_ShowsEveryRelationAndArtifactCondition()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("helper", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Prerequisites = [new DepFixture("helper", "*")],
+            Conflicts = [new DepFixture("other", "[2.0.0]")],
+            Artifacts =
+            [
+                new ArtifactFixture { Rid = "win-x64", OptionalPeers = [new DepFixture("peer", "*")] },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var info = new SeikoClient().Info(fixture.Root, "hello");
+
+        var version = Assert.Single(info.Versions);
+        Assert.Equal("helper", Assert.Single(version.Prerequisites).Name);
+        Assert.Equal("other", Assert.Single(version.Conflicts).Name);
+        var artifact = Assert.Single(version.Artifacts);
+        Assert.Equal("win-x64", artifact.Rid);
+        Assert.Equal("peer", Assert.Single(artifact.OptionalPeers).Name);
+    }
+
+    [Fact]
     public void Info_ThrowsWhenMissing()
     {
         using var fixture = new Fixture();

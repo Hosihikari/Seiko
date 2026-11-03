@@ -929,7 +929,7 @@ static int Update(
 static int Why(string? rootOption, string name, bool json)
 {
     var root = ResolveRoot(rootOption);
-    var chains = new SeikoClient().Why(root, name);
+    var chains = new SeikoClient().WhyDetailed(root, name);
     if (json)
     {
         WriteJson(
@@ -946,7 +946,9 @@ static int Why(string? rootOption, string name, bool json)
 
     foreach (var chain in chains)
     {
-        Console.WriteLine(string.Join(" -> ", chain));
+        Console.WriteLine(string.Join(
+            " -> ",
+            chain.Select(link => link.Kind == "direct" ? link.Name : $"{link.Name} ({link.Kind})")));
     }
 
     return 0;
@@ -1253,7 +1255,18 @@ static int Info(string? rootOption, string name, string? proxy, bool offline, bo
                     version.Deprecated,
                     version.Advisory,
                     version.ArtifactCount,
-                    version.Dependencies.ToList()))
+                    version.Dependencies.ToList(),
+                    version.Prerequisites.ToList(),
+                    version.OptionalPeers.ToList(),
+                    version.Conflicts.ToList(),
+                    version.Artifacts
+                        .Select(artifact => new InfoArtifact(
+                            artifact.Rid,
+                            artifact.Dependencies.ToList(),
+                            artifact.Prerequisites.ToList(),
+                            artifact.OptionalPeers.ToList(),
+                            artifact.Conflicts.ToList()))
+                        .ToList()))
                 .ToList());
         WriteJson(CliJsonContext.Default.InfoEnvelope, new InfoEnvelope(1, "info", data));
         return 0;
@@ -1284,9 +1297,35 @@ static int Info(string? rootOption, string name, string? proxy, bool offline, bo
         }
 
         Console.WriteLine($"  {version.Version}{flags}  deps={version.Dependencies.Count} artifacts={version.ArtifactCount}");
+        WriteRelations(version.Dependencies, "dependency");
+        WriteRelations(version.Prerequisites, "prerequisite");
+        WriteRelations(version.OptionalPeers, "optional peer");
+        WriteRelations(version.Conflicts, "conflict");
+        foreach (var artifact in version.Artifacts)
+        {
+            Console.WriteLine($"    artifact rid={artifact.Rid ?? "*"}");
+            WriteRelations(artifact.Dependencies, "dependency", 6);
+            WriteRelations(artifact.Prerequisites, "prerequisite", 6);
+            WriteRelations(artifact.OptionalPeers, "optional peer", 6);
+            WriteRelations(artifact.Conflicts, "conflict", 6);
+        }
     }
 
     return 0;
+}
+
+static void WriteRelations(IReadOnlyList<SeiDependency> relations, string kind, int indent = 4)
+{
+    if (relations.Count == 0)
+    {
+        return;
+    }
+
+    var pad = new string(' ', indent);
+    foreach (var relation in relations)
+    {
+        Console.WriteLine($"{pad}{kind}: {relation.Name} {relation.Version ?? "*"}");
+    }
 }
 
 static int Rollback(

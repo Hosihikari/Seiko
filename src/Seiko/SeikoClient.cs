@@ -1762,7 +1762,18 @@ public sealed class SeikoClient
                     entry.Deprecated,
                     entry.Advisory,
                     entry.Dependencies,
-                    entry.Artifacts.Count))
+                    entry.Prerequisites,
+                    entry.OptionalPeers,
+                    entry.Conflicts,
+                    (entry.Artifacts ?? [])
+                        .Where(artifact => artifact is not null)
+                        .Select(artifact => new SeiArtifactInfo(
+                            artifact.Rid,
+                            artifact.Dependencies ?? [],
+                            artifact.Prerequisites ?? [],
+                            artifact.OptionalPeers ?? [],
+                            artifact.Conflicts ?? []))
+                        .ToList()))
                 .ToList();
             return new SeiInfo(name, source.Id, sei.Unlisted, sei.Deprecated, versions);
         }
@@ -1771,6 +1782,14 @@ public sealed class SeikoClient
     }
 
     public IReadOnlyList<IReadOnlyList<string>> Why(string root, string name)
+        => WhyDetailed(root, name)
+            .Select(chain => (IReadOnlyList<string>)chain.Select(link => link.Name).ToList())
+            .ToList();
+
+    // A chain link records how the edge was declared: direct declarations,
+    // plain dependencies, prerequisites and optional peers all keep a target
+    // present or explain why it is required.
+    public IReadOnlyList<IReadOnlyList<WhyLink>> WhyDetailed(string root, string name)
     {
         root = Path.GetFullPath(root);
         var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
@@ -1781,29 +1800,29 @@ public sealed class SeikoClient
             throw new SeikoException($"sei '{name}' is not in the lock", "resolve");
         }
 
-        var chains = new List<IReadOnlyList<string>>();
+        var chains = new List<IReadOnlyList<WhyLink>>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var direct in lockFile.Sei.Where(sei => sei.Direct).OrderBy(sei => sei.Name, StringComparer.Ordinal))
         {
-            var path = new List<string>();
+            var path = new List<WhyLink>();
             var pending = new Stack<WhyFrame>();
-            pending.Push(new WhyFrame(direct.Name));
+            pending.Push(new WhyFrame(direct.Name, "direct"));
             while (pending.Count > 0)
             {
                 var frame = pending.Peek();
                 if (!frame.Entered)
                 {
                     frame.Entered = true;
-                    if (path.Contains(frame.Name, StringComparer.Ordinal))
+                    if (path.Any(link => string.Equals(link.Name, frame.Name, StringComparison.Ordinal)))
                     {
                         pending.Pop();
                         continue;
                     }
 
-                    path.Add(frame.Name);
+                    path.Add(new WhyLink(frame.Name, frame.Kind));
                     if (string.Equals(frame.Name, name, StringComparison.Ordinal))
                     {
-                        var key = string.Join("\0", path);
+                        var key = string.Join("\0", path.Select(link => $"{link.Kind}:{link.Name}"));
                         if (seen.Add(key))
                         {
                             chains.Add(path.ToList());
@@ -1821,15 +1840,13 @@ public sealed class SeikoClient
                         continue;
                     }
 
-                    frame.Dependencies = locked.Dependencies
-                        .OrderBy(dependency => dependency.Name, StringComparer.Ordinal)
-                        .ToList();
+                    frame.Edges = Edges(locked);
                 }
 
-                if (frame.Dependencies is not null && frame.Index < frame.Dependencies.Count)
+                if (frame.Edges is not null && frame.Index < frame.Edges.Count)
                 {
-                    var dependency = frame.Dependencies[frame.Index++];
-                    pending.Push(new WhyFrame(dependency.Name));
+                    var (dependency, kind) = frame.Edges[frame.Index++];
+                    pending.Push(new WhyFrame(dependency.Name, kind));
                     continue;
                 }
 
@@ -1846,15 +1863,28 @@ public sealed class SeikoClient
         return chains;
     }
 
+    // Dependencies first (they are the only kind that adds a target), then the
+    // kinds that merely constrain an already present one.
+    private static List<(SeiDependency Edge, string Kind)> Edges(LockedSei locked)
+        => locked.Dependencies.Select(edge => (edge, "dependency"))
+            .Concat(locked.Artifact.Dependencies.Select(edge => (edge, "artifact dependency")))
+            .Concat(locked.Prerequisites.Select(edge => (edge, "prerequisite")))
+            .Concat(locked.Artifact.Prerequisites.Select(edge => (edge, "artifact prerequisite")))
+            .Concat(locked.OptionalPeers.Select(edge => (edge, "optional peer")))
+            .Concat(locked.Artifact.OptionalPeers.Select(edge => (edge, "artifact optional peer")))
+            .ToList();
+
     private sealed class WhyFrame
     {
-        public WhyFrame(string name)
+        public WhyFrame(string name, string kind)
         {
             Name = name;
+            Kind = kind;
         }
 
         public string Name { get; }
-        public List<SeiDependency>? Dependencies { get; set; }
+        public string Kind { get; }
+        public List<(SeiDependency Edge, string Kind)>? Edges { get; set; }
         public int Index { get; set; }
         public bool Entered { get; set; }
     }

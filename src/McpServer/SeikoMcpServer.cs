@@ -381,6 +381,10 @@ public sealed class SeikoMcpServer
                     },
                 ["artifacts"] = version.ArtifactCount,
                 ["dependencies"] = DependenciesNode(version.Dependencies),
+                ["prerequisites"] = DependenciesNode(version.Prerequisites),
+                ["optionalPeers"] = DependenciesNode(version.OptionalPeers),
+                ["conflicts"] = DependenciesNode(version.Conflicts),
+                ["artifactDetails"] = ArtifactDetailsNode(version.Artifacts),
             });
         }
 
@@ -515,12 +519,16 @@ public sealed class SeikoMcpServer
         var name = RequiredString(arguments, "name");
         var root = Root(arguments, required: false);
         var chains = new JsonArray();
-        foreach (var chain in _client.Why(root, name))
+        foreach (var chain in _client.WhyDetailed(root, name))
         {
             var path = new JsonArray();
-            foreach (var part in chain)
+            foreach (var link in chain)
             {
-                path.Add((JsonNode)part);
+                path.Add((JsonNode)new JsonObject
+                {
+                    ["name"] = link.Name,
+                    ["kind"] = link.Kind,
+                });
             }
 
             chains.Add((JsonNode)path);
@@ -1027,6 +1035,24 @@ public sealed class SeikoMcpServer
             {
                 ["name"] = dependency.Name,
                 ["version"] = dependency.Version,
+            });
+        }
+
+        return array;
+    }
+
+    private static JsonArray ArtifactDetailsNode(IReadOnlyList<SeiArtifactInfo> artifacts)
+    {
+        var array = new JsonArray();
+        foreach (var artifact in artifacts)
+        {
+            array.Add((JsonNode)new JsonObject
+            {
+                ["rid"] = artifact.Rid,
+                ["dependencies"] = DependenciesNode(artifact.Dependencies),
+                ["prerequisites"] = DependenciesNode(artifact.Prerequisites),
+                ["optionalPeers"] = DependenciesNode(artifact.OptionalPeers),
+                ["conflicts"] = DependenciesNode(artifact.Conflicts),
             });
         }
 

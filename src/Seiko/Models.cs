@@ -202,13 +202,29 @@ public sealed class PartialArtifactState
 
 public sealed record SeiSummary(string Name, string Version, string Source);
 
+// A link of a `why` chain; the kind names the relation that made the edge.
+public sealed record WhyLink(string Name, string Kind);
+
+public sealed record SeiArtifactInfo(
+    string? Rid,
+    IReadOnlyList<SeiDependency> Dependencies,
+    IReadOnlyList<SeiDependency> Prerequisites,
+    IReadOnlyList<SeiDependency> OptionalPeers,
+    IReadOnlyList<SeiDependency> Conflicts);
+
 public sealed record SeiVersionInfo(
     string Version,
     bool Yanked,
     string? Deprecated,
     AdvisoryInfo? Advisory,
     IReadOnlyList<SeiDependency> Dependencies,
-    int ArtifactCount);
+    IReadOnlyList<SeiDependency> Prerequisites,
+    IReadOnlyList<SeiDependency> OptionalPeers,
+    IReadOnlyList<SeiDependency> Conflicts,
+    IReadOnlyList<SeiArtifactInfo> Artifacts)
+{
+    public int ArtifactCount => Artifacts.Count;
+}
 
 public sealed record SeiInfo(
     string Name,

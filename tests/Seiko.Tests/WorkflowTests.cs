@@ -29,6 +29,34 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Why_ExplainsAPrerequisiteEdge()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Prerequisites = [new DepFixture("hello", "*")],
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var chains = new SeikoClient().WhyDetailed(fixture.Root, "hello");
+
+        var chain = Assert.Single(chains, chain => chain.Count > 1);
+        Assert.Equal(["app", "hello"], chain.Select(link => link.Name));
+        Assert.Equal(["direct", "prerequisite"], chain.Select(link => link.Kind));
+    }
+
+    [Fact]
     public void UpdateLatestUsesTheSameFirstSourceAsResolution()
     {
         using var first = new Fixture();
