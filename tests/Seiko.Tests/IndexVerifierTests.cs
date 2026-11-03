@@ -85,6 +85,27 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsNullArtifactDependencyList()
+    {
+        using var fixture = NewFixture();
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        foreach (var version in node["versions"]!.AsArray())
+        {
+            foreach (var artifact in version!["artifacts"]!.AsArray())
+            {
+                artifact!.AsObject()["dependencies"] = null;
+            }
+        }
+
+        File.WriteAllText(path, node.ToJsonString());
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-dependency-list");
+    }
+
+    [Fact]
     public void Verify_RejectsNullManifestDependencyList()
     {
         using var fixture = NewFixture();

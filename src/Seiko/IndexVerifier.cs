@@ -450,6 +450,7 @@ public static class IndexVerifier
             ok = false;
         }
 
+        ValidateRelations(context, path, name, entry.Version, "artifact dependency", artifact.Dependencies);
         ValidateRelations(context, path, name, entry.Version, "artifact prerequisite", artifact.Prerequisites);
         ValidateRelations(context, path, name, entry.Version, "artifact optional peer", artifact.OptionalPeers);
         ValidateRelations(context, path, name, entry.Version, "artifact conflict", artifact.Conflicts);
