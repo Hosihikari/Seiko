@@ -69,11 +69,31 @@ public sealed class DoctorTests
         Directory.CreateDirectory(stateDirectory);
         File.WriteAllText(
             Path.Combine(stateDirectory, "state.json"),
-            """{"schemaVersion":1,"generation":1,"files":null}""");
+            $$"""{"schemaVersion":{{LocalState.CurrentSchemaVersion}},"generation":1,"files":null}""");
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
 
         Assert.Contains(result.Findings, finding => finding.Code == "deploy-state");
+    }
+
+    [Fact]
+    public void Doctor_ReportsAnOldStateSchema()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        File.WriteAllText(
+            Path.Combine(stateDirectory, "state.json"),
+            """{"schemaVersion":0,"generation":1,"files":{}}""");
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        var finding = Assert.Single(
+            result.Findings,
+            finding => finding.Code == "deploy-state");
+        Assert.Contains("unsupported deployment state schemaVersion", finding.Message);
+        Assert.Equal("error", finding.Severity);
     }
 
     [Fact]

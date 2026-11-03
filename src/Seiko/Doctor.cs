@@ -218,6 +218,17 @@ public sealed class Doctor
             return;
         }
 
+        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            // v0 does not read old state, so checking old file records would
+            // report findings against ownership the next sync ignores.
+            findings.Add(Error(
+                "deploy-state",
+                $"unsupported deployment state schemaVersion {state.SchemaVersion}",
+                statePath));
+            return;
+        }
+
         if (state.Files is null)
         {
             findings.Add(Error("deploy-state", "invalid deployment state: files is null", statePath));
