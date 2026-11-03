@@ -166,6 +166,45 @@ public sealed class WorkflowTests
         Assert.Equal("1.0.0", item.Current);
         Assert.Equal("1.0.0", item.LatestInRange);
         Assert.Equal("2.0.0", item.Latest);
+        Assert.DoesNotContain(item.Blockers, blocker => blocker.Relation == "rid");
+    }
+
+    [Fact]
+    public void Outdated_ReportsTheDeclaredRangeAsABlocker()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("dep", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+        });
+        fixture.AddSei("dep", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"), new SpecFixture("dep", "[1.0.0]"));
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "2.0.0",
+            Dependencies = [new DepFixture("dep", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "two" } }],
+        });
+        fixture.AddSei("dep", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "two" } }],
+        });
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var item = Assert.Single(client.Outdated(fixture.Root), entry => entry.Name == "dep");
+
+        Assert.Contains(item.Blockers, blocker =>
+            blocker.Relation == "declaration" && blocker.Target == "dep" && blocker.Range == "[1.0.0]");
+        Assert.Contains(item.Blockers, blocker =>
+            blocker.Relation == "dependency" && blocker.Target == "app");
     }
 
     [Fact]

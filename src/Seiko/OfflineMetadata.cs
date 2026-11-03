@@ -7,24 +7,48 @@ namespace Seiko;
 // first failure, and nothing is downloaded implicitly.
 internal static class OfflineMetadata
 {
-    public static void Verify(SeikoConfig config, string storePath, IEnumerable<string> initial)
+    public static void Verify(
+        SeikoConfig config,
+        string storePath,
+        IEnumerable<string> initial,
+        bool followIndexLists = false)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var httpSources = config.Sources
             .Where(IsHttp)
             .Select(source => (Source: source, IndexUri: new Uri(source.Index)))
             .ToList();
+        var pending = new Queue<string>(initial);
 
         foreach (var (source, indexUri) in httpSources)
         {
-            if (!File.Exists(MetadataCache.PathFor(storePath, indexUri.AbsoluteUri)))
+            var path = MetadataCache.PathFor(storePath, indexUri.AbsoluteUri);
+            if (!File.Exists(path))
             {
                 missing.Add($"index metadata of source '{source.Id}'");
+                continue;
+            }
+
+            if (!followIndexLists)
+            {
+                continue;
+            }
+
+            // search walks the root list, so every listed name needs an entry.
+            var root = MetadataCache.TryRead(path, SeikoJsonContext.Default.IndexRoot);
+            if (root is null)
+            {
+                missing.Add($"index metadata of source '{source.Id}' (unreadable)");
+                continue;
+            }
+
+            foreach (var name in root.Sei ?? [])
+            {
+                pending.Enqueue(name);
             }
         }
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var pending = new Queue<string>(initial);
         while (pending.Count > 0)
         {
             var name = pending.Dequeue();

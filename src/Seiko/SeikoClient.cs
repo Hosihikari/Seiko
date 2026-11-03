@@ -1960,33 +1960,47 @@ public sealed class SeikoClient
             {
                 if (latest is not null)
                 {
+                    // Blockers describe constraints on this sei, not the ones
+                    // it declares: the direct range, other locked sei that
+                    // depend on it or conflict with it, and platform limits on
+                    // the latest candidate.
                     var blockers = new List<OutdatedBlocker>();
-                    if (!string.IsNullOrWhiteSpace(locked.Artifact.Rid)
-                        && !string.Equals(locked.Artifact.Rid, rid, StringComparison.OrdinalIgnoreCase))
+                    foreach (var text in rangeTexts.GetValueOrDefault(locked.Name) ?? [])
                     {
-                        blockers.Add(new OutdatedBlocker(
-                            "rid",
-                            locked.Artifact.Rid!,
-                            null,
-                            locked.Source));
+                        blockers.Add(new OutdatedBlocker("declaration", locked.Name, text, locked.Source));
                     }
 
-                    foreach (var dependency in locked.Dependencies)
+                    foreach (var owner in lockFile.Sei)
                     {
-                        blockers.Add(new OutdatedBlocker(
-                            "dependency",
-                            dependency.Name,
-                            dependency.Version,
-                            locked.Source));
+                        foreach (var dependency in owner.Dependencies
+                            .Where(dependency => string.Equals(dependency.Name, locked.Name, StringComparison.Ordinal)))
+                        {
+                            blockers.Add(new OutdatedBlocker(
+                                "dependency",
+                                owner.Name,
+                                dependency.Version,
+                                owner.Source));
+                        }
+
+                        foreach (var conflict in owner.Conflicts
+                            .Where(conflict => string.Equals(conflict.Name, locked.Name, StringComparison.Ordinal)))
+                        {
+                            blockers.Add(new OutdatedBlocker(
+                                "conflict",
+                                owner.Name,
+                                conflict.Version,
+                                owner.Source));
+                        }
                     }
 
-                    foreach (var conflict in locked.Conflicts)
+                    var latestEntry = index.Versions.FirstOrDefault(entry =>
+                        NuGetVersion.TryParse(entry.Version, out var parsed) && parsed.Equals(latest));
+                    if (latestEntry is not null
+                        && latestEntry.Artifacts.All(artifact =>
+                            !string.IsNullOrWhiteSpace(artifact.Rid)
+                            && !artifact.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase)))
                     {
-                        blockers.Add(new OutdatedBlocker(
-                            "conflict",
-                            conflict.Name,
-                            conflict.Version,
-                            locked.Source));
+                        blockers.Add(new OutdatedBlocker("rid", rid, null, locked.Source));
                     }
 
                     result.Add(new OutdatedSei(
