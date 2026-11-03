@@ -20,7 +20,33 @@ public sealed class ResolverValidationTests
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
         Assert.Equal("resolve", error.Code);
-        Assert.Contains("depends on itself", error.Message);
+        Assert.Contains("self relation", error.Message);
+    }
+
+    [Theory]
+    [InlineData("prerequisites")]
+    [InlineData("optionalPeers")]
+    [InlineData("conflicts")]
+    public void Sync_RejectsOtherSelfRelations(string kind)
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello"));
+        var index = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var json = File.ReadAllText(index).Replace(
+            "\"artifacts\"",
+            $"\"{kind}\":[{{\"name\":\"hello\",\"version\":\"*\"}}],\"artifacts\"");
+        File.WriteAllText(index, json);
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("self relation", error.Message);
     }
 
     [Fact]

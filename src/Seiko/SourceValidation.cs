@@ -45,10 +45,12 @@ internal static class SourceValidation
                     code);
             }
 
-            foreach (var relation in entry.Dependencies
+            var entryRelations = entry.Dependencies
                 .Concat(entry.Prerequisites)
                 .Concat(entry.OptionalPeers)
-                .Concat(entry.Conflicts))
+                .Concat(entry.Conflicts)
+                .ToList();
+            foreach (var relation in entryRelations)
             {
                 if (relation is null)
                 {
@@ -56,6 +58,11 @@ internal static class SourceValidation
                         $"source '{sourceId}': invalid relation for {name} {entry.Version}",
                         code);
                 }
+            }
+
+            foreach (var relation in entryRelations)
+            {
+                EnsureNotSelf(name, relation, sourceId, entry.Version, code);
             }
 
             foreach (var artifact in entry.Artifacts)
@@ -84,10 +91,12 @@ internal static class SourceValidation
                         code);
                 }
 
-                foreach (var relation in artifact.Dependencies
+                var artifactRelations = artifact.Dependencies
                     .Concat(artifact.Prerequisites)
                     .Concat(artifact.OptionalPeers)
-                    .Concat(artifact.Conflicts))
+                    .Concat(artifact.Conflicts)
+                    .ToList();
+                foreach (var relation in artifactRelations)
                 {
                     if (relation is null)
                     {
@@ -95,6 +104,11 @@ internal static class SourceValidation
                             $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid relation",
                             code);
                     }
+                }
+
+                foreach (var relation in artifactRelations)
+                {
+                    EnsureNotSelf(name, relation, sourceId, entry.Version, code);
                 }
 
                 if (artifact.Rid is not null && string.IsNullOrWhiteSpace(artifact.Rid))
@@ -111,6 +125,24 @@ internal static class SourceValidation
                         code);
                 }
             }
+        }
+    }
+
+    // A self relation has no meaning in any of the four kinds, and frozen
+    // replay rejects it too: accepting it here would produce a lock that
+    // cannot replay.
+    private static void EnsureNotSelf(
+        string name,
+        SeiDependency relation,
+        string sourceId,
+        string? version,
+        string code)
+    {
+        if (string.Equals(relation.Name, name, StringComparison.Ordinal))
+        {
+            throw Fail(
+                $"source '{sourceId}': {name} {version} has a self relation",
+                code);
         }
     }
 
