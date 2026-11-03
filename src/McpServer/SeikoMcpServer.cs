@@ -693,6 +693,7 @@ public sealed class SeikoMcpServer
         {
             ["changes"] = changes,
             ["blocked"] = blocked,
+            ["warnings"] = new JsonArray([.. preview.Warnings.Select(warning => (JsonNode?)JsonValue.Create(warning))]),
             ["diagnostics"] = diagnostics,
             ["downloaded"] = false,
         }.ToJsonString();
