@@ -131,6 +131,17 @@ public static class LockReplay
 
     private static void ValidateGraph(SeikoLock lockFile)
     {
+        // A lock is only valid for the platform it was produced on (ADR-0025).
+        foreach (var locked in lockFile.Sei)
+        {
+            if (!string.IsNullOrWhiteSpace(locked.Artifact.Rid)
+                && !locked.Artifact.Rid.Equals(lockFile.Target.Rid, StringComparison.OrdinalIgnoreCase))
+            {
+                throw Fail(
+                    $"--frozen: artifact of {locked.Name} {locked.Version} targets rid '{locked.Artifact.Rid}', but the lock targets '{lockFile.Target.Rid}'");
+            }
+        }
+
         var byName = new Dictionary<string, LockedSei>(StringComparer.Ordinal);
         foreach (var locked in lockFile.Sei)
         {

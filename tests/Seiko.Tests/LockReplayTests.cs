@@ -34,6 +34,32 @@ public sealed class LockReplayTests
     }
 
     [Fact]
+    public void Resolve_RejectsAnArtifactForAnotherPlatform()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var sha = new string('a', 64);
+            var source = CreateSource(Path.Combine(directory, "a"), "a", sha, rid: "linux-x64");
+            var lockFile = Lock("a", sha, artifactRid: "linux-x64");
+
+            var error = Assert.Throws<SeikoException>(() => LockReplay.Resolve(
+                [source],
+                lockFile,
+                [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]));
+
+            Assert.Equal("lock", error.Code);
+            Assert.Contains("linux-x64", error.Message);
+            Assert.Contains("win-x64", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Read_RejectsNullLockCollections()
     {
         var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
@@ -80,7 +106,7 @@ public sealed class LockReplayTests
         }
     }
 
-    private static SeikoLock Lock(string source, string sha256)
+    private static SeikoLock Lock(string source, string sha256, string? artifactRid = null)
         => new()
         {
             Target = new PlatformInfo { Rid = "win-x64" },
@@ -93,7 +119,7 @@ public sealed class LockReplayTests
                     Version = "1.0.0",
                     Source = source,
                     Direct = true,
-                    Artifact = new LockedArtifact { Sha256 = sha256 },
+                    Artifact = new LockedArtifact { Sha256 = sha256, Rid = artifactRid },
                 },
             ],
         };
