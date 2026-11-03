@@ -87,6 +87,12 @@ public sealed class HttpSource : ISeiSource, IDisposable
             var stored = cachePath is null
                 ? null
                 : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.SeiIndex);
+            if (stored is null && cachePath is not null && MetadataCache.IsMissing(cachePath))
+            {
+                _cache[name] = null;
+                return null;
+            }
+
             if (stored is null)
             {
                 throw new SeikoException(
@@ -111,6 +117,18 @@ public sealed class HttpSource : ISeiSource, IDisposable
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 _cache[name] = null;
+                if (cachePath is not null)
+                {
+                    try
+                    {
+                        MetadataCache.WriteMissing(cachePath);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // A cache miss only costs an offline failure later.
+                    }
+                }
+
                 return null;
             }
 
@@ -131,6 +149,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
                 try
                 {
                     MetadataCache.Write(cachePath, sei, SeikoJsonContext.Default.SeiIndex);
+                    MetadataCache.ClearMissing(cachePath);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {

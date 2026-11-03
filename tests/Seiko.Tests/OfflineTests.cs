@@ -202,6 +202,45 @@ public sealed class OfflineTests
     }
 
     [Fact]
+    public void Sync_LockedOfflineAcceptsARecordedNotFoundFromAnEarlierSource()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        using var second = new TestHttpServer(fixture.SourceDirectory);
+        Seed(fixture);
+        var firstIndex = Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $$"""
+            schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
+            sources = [
+              { id = "first", index = "{{first.BaseUrl}}subset/missing-index.json" },
+              { id = "second", index = "{{second.BaseUrl}}index.json" }
+            ]
+            rid = "win-x64"
+            sei = [ { name = "hello", version = "[1.0.0]" } ]
+            """);
+        // The first source serves an index in a subdirectory that has no sei
+        // entries, so the package is a 404 there and comes from the second
+        // source; that 404 must not break the offline replay.
+        Directory.CreateDirectory(Path.Combine(fixture.SourceDirectory, "subset"));
+        File.WriteAllText(
+            Path.Combine(fixture.SourceDirectory, "subset", "missing-index.json"),
+            """{"schemaVersion":2,"sei":[]}""");
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal("second", client.ReadLock(fixture.Root)!.Sei.Single().Source);
+
+        var result = client.Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            mode: SyncMode.Locked,
+            offline: true);
+
+        Assert.Equal(1, result.SeiInstalled);
+    }
+
+    [Fact]
     public void Info_OfflineFailsWhenTheEntryIsNotCached()
     {
         using var fixture = new Fixture();

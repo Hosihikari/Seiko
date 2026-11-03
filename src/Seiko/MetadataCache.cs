@@ -12,6 +12,28 @@ internal static class MetadataCache
     public static string PathFor(string storeRoot, string url)
         => Path.Combine(storeRoot, DirectoryName, Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(url)) + ".json");
 
+    // A source that answered 404 for a name is worth remembering: without it
+    // an offline replay fails on the first source that simply lacks the sei,
+    // even though another source supplied it online.
+    private static string MissingPath(string path) => path + ".404";
+
+    public static void WriteMissing(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(MissingPath(path), "");
+    }
+
+    public static bool IsMissing(string path) => File.Exists(MissingPath(path));
+
+    public static void ClearMissing(string path)
+    {
+        var marker = MissingPath(path);
+        if (File.Exists(marker))
+        {
+            File.Delete(marker);
+        }
+    }
+
     public static void Write<T>(string path, T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

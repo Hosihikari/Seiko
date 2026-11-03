@@ -67,7 +67,12 @@ internal static class OfflineMetadata
                     var path = MetadataCache.PathFor(storePath, uri.AbsoluteUri);
                     if (!File.Exists(path))
                     {
-                        missing.Add($"sei/{name}.json from source '{source.Id}'");
+                        // A recorded 404 is an answer, not a missing entry.
+                        if (!MetadataCache.IsMissing(path))
+                        {
+                            missing.Add($"sei/{name}.json from source '{source.Id}'");
+                        }
+
                         continue;
                     }
 
