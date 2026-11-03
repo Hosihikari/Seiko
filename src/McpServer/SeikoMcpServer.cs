@@ -453,6 +453,7 @@ public sealed class SeikoMcpServer
         }
 
         var root = Root(arguments, required: true);
+        var dryRun = Bool(arguments, "dryRun");
         var result = _client.AddMany(
             root,
             specs,
@@ -462,14 +463,18 @@ public sealed class SeikoMcpServer
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"),
             latestInstallable: Bool(arguments, "latestInstallable"),
-            allowCritical: Bool(arguments, "allowCritical"));
-        return SyncResultJson(result);
+            allowCritical: Bool(arguments, "allowCritical"),
+            dryRun: dryRun,
+            adopt: Bool(arguments, "adopt"),
+            force: Bool(arguments, "force"));
+        return MutationResult(result, dryRun);
     }
 
     private string Remove(JsonObject arguments)
     {
         var name = RequiredString(arguments, "name");
         var root = Root(arguments, required: true);
+        var dryRun = Bool(arguments, "dryRun");
         var result = _client.Remove(
             root,
             name,
@@ -477,13 +482,18 @@ public sealed class SeikoMcpServer
             Bool(arguments, "pre"),
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"),
-            allowCritical: Bool(arguments, "allowCritical"));
-        return SyncResultJson(result);
+            allowCritical: Bool(arguments, "allowCritical"),
+            dryRun: dryRun,
+            purge: Bool(arguments, "purge"),
+            adopt: Bool(arguments, "adopt"),
+            force: Bool(arguments, "force"));
+        return MutationResult(result, dryRun);
     }
 
     private string Update(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
+        var dryRun = Bool(arguments, "dryRun");
         var result = _client.Update(
             root,
             OptionalString(arguments, "name"),
@@ -493,8 +503,48 @@ public sealed class SeikoMcpServer
             Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             OptionalString(arguments, "proxy"),
             latestInstallable: Bool(arguments, "latestInstallable"),
-            allowCritical: Bool(arguments, "allowCritical"));
-        return SyncResultJson(result);
+            allowCritical: Bool(arguments, "allowCritical"),
+            dryRun: dryRun,
+            adopt: Bool(arguments, "adopt"),
+            force: Bool(arguments, "force"));
+        return MutationResult(result, dryRun);
+    }
+
+    private static string MutationResult(SyncResult result, bool dryRun)
+        => dryRun ? PreviewJson(result.Preview!) : SyncResultJson(result);
+
+    private static string PreviewJson(PreviewResult preview)
+    {
+        var changes = new JsonArray();
+        foreach (var change in preview.Changes)
+        {
+            changes.Add((JsonNode)new JsonObject
+            {
+                ["action"] = change.Action,
+                ["name"] = change.Name,
+                ["from"] = change.From,
+                ["to"] = change.To,
+                ["source"] = change.Source,
+                ["artifact"] = change.Artifact,
+            });
+        }
+
+        var blocked = new JsonArray();
+        foreach (var block in preview.Blocked)
+        {
+            blocked.Add((JsonNode)new JsonObject
+            {
+                ["code"] = block.Code,
+                ["message"] = block.Message,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["changes"] = changes,
+            ["blocked"] = blocked,
+            ["downloaded"] = false,
+        }.ToJsonString();
     }
 
     private static JsonArray WarningsNode(SyncResult result)
@@ -528,6 +578,7 @@ public sealed class SeikoMcpServer
         }
 
         var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
+        var dryRun = Bool(arguments, "dryRun");
         var result = _client.Sync(
             root,
             StorePath(arguments),
@@ -536,7 +587,15 @@ public sealed class SeikoMcpServer
             jobs: Int(arguments, "jobs") ?? DownloadSession.DefaultJobs,
             proxy: OptionalString(arguments, "proxy"),
             latestInstallable: Bool(arguments, "latestInstallable"),
-            allowCritical: Bool(arguments, "allowCritical"));
+            allowCritical: Bool(arguments, "allowCritical"),
+            dryRun: dryRun,
+            adopt: Bool(arguments, "adopt"),
+            force: Bool(arguments, "force"));
+        if (dryRun)
+        {
+            return MutationResult(result, dryRun: true);
+        }
+
         return new JsonObject
         {
             ["sei"] = result.SeiInstalled,
@@ -794,6 +853,9 @@ public sealed class SeikoMcpServer
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
                 ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
                 ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
+                ["dryRun"] = new JsonObject { ["type"] = "boolean" },
+                ["adopt"] = new JsonObject { ["type"] = "boolean" },
+                ["force"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
             },
@@ -934,6 +996,9 @@ public sealed class SeikoMcpServer
                 ["proxy"] = new JsonObject { ["type"] = "string" },
                 ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
                 ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
+                ["dryRun"] = new JsonObject { ["type"] = "boolean" },
+                ["adopt"] = new JsonObject { ["type"] = "boolean" },
+                ["force"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
@@ -954,6 +1019,9 @@ public sealed class SeikoMcpServer
                 ["pre"] = new JsonObject { ["type"] = "boolean" },
                 ["latestInstallable"] = new JsonObject { ["type"] = "boolean" },
                 ["allowCritical"] = new JsonObject { ["type"] = "boolean" },
+                ["dryRun"] = new JsonObject { ["type"] = "boolean" },
+                ["adopt"] = new JsonObject { ["type"] = "boolean" },
+                ["force"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
             },
@@ -977,6 +1045,13 @@ public sealed class SeikoMcpServer
         }
 
         properties["allowCritical"] = new JsonObject { ["type"] = "boolean" };
+        properties["dryRun"] = new JsonObject { ["type"] = "boolean" };
+        properties["adopt"] = new JsonObject { ["type"] = "boolean" };
+        properties["force"] = new JsonObject { ["type"] = "boolean" };
+        if (!requireSpec)
+        {
+            properties["purge"] = new JsonObject { ["type"] = "boolean" };
+        }
 
         return new JsonObject
         {

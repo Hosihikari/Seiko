@@ -147,6 +147,37 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void AddTool_DryRunReturnsChangesWithoutWriting()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
+
+        var result = CallTool(
+            server,
+            "add",
+            new JsonObject
+            {
+                ["root"] = fixture.Root,
+                ["spec"] = "hello",
+                ["store"] = fixture.StoreDirectory,
+                ["dryRun"] = true,
+            });
+
+        Assert.False(result["isError"]!.GetValue<bool>());
+        var data = JsonNode.Parse(ToolText(result))!.AsObject();
+        Assert.Equal("add", data["changes"]![0]!["action"]!.GetValue<string>());
+        Assert.False(data["downloaded"]!.GetValue<bool>());
+        Assert.Empty(ConfigLoader.Load(fixture.Root).Sei);
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void ToolArguments_RejectWrongValueTypes()
     {
         var root = NewDirectory();
