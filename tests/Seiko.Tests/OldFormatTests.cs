@@ -24,8 +24,9 @@ public sealed class OldFormatTests
         var error = Assert.Throws<SeikoException>(
             () => client.Sync(fixture.Root, fixture.StoreDirectory));
 
-        Assert.Equal("lock", error.Code);
+        Assert.Equal("io", error.Code);
         Assert.Contains("unsupported lock schemaVersion 1", error.Message);
+        Assert.Contains("does not migrate", error.Message);
     }
 
     [Fact]
@@ -49,7 +50,7 @@ public sealed class OldFormatTests
         var error = Assert.Throws<SeikoException>(
             () => client.Rollback(fixture.Root, fixture.StoreDirectory));
 
-        Assert.Equal("lock", error.Code);
+        Assert.Equal("io", error.Code);
         Assert.Contains("unsupported lock schemaVersion 1", error.Message);
         Assert.Equal("v2", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }

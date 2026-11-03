@@ -15,9 +15,13 @@ public static class LockFile
         var value = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeikoLock)
             ?? throw new SeikoException($"invalid lock file: {path}", "lock");
 
+        // Older locks are not migrated in v0; ADR-0031 maps that to `io`,
+        // while a structurally broken current lock stays `lock`.
         if (value.SchemaVersion != SeikoLock.CurrentSchemaVersion)
         {
-            throw new SeikoException($"unsupported lock schemaVersion {value.SchemaVersion}", "lock");
+            throw new SeikoException(
+                $"unsupported lock schemaVersion {value.SchemaVersion}; 0.3 requires {SeikoLock.CurrentSchemaVersion} and does not migrate old locks",
+                "io");
         }
 
         if (value.Target is null || value.Sources is null || value.Sei is null)
