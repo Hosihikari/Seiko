@@ -57,6 +57,37 @@ public sealed class AddTests
     }
 
     [Fact]
+    public void Add_LeavesTheLockAndDeploymentUntouchedWhenSyncFails()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        fixture.AddSei("other", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var lockBefore = File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.lock.json"));
+        fixture.CorruptChecksum("other");
+
+        Assert.Throws<SeikoException>(() => client.Add(
+            fixture.Root,
+            "other",
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal(lockBefore, File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.lock.json")));
+        Assert.Equal("one", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "other.txt")));
+        Assert.Single(ConfigLoader.Load(fixture.Root).Sei);
+    }
+
+    [Fact]
     public void Add_RecoversIncompleteConfigTransactionBeforeReading()
     {
         using var fixture = new Fixture();
