@@ -11,7 +11,8 @@ internal static class OfflineMetadata
         SeikoConfig config,
         string storePath,
         IEnumerable<string> initial,
-        bool followIndexLists = false)
+        bool followIndexLists = false,
+        SeikoLock? lockedGraph = null)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var httpSources = config.Sources
@@ -83,10 +84,32 @@ internal static class OfflineMetadata
                 break;
             }
 
-            if (found is not null)
+            if (found is null)
             {
-                Enqueue(found, pending);
+                continue;
             }
+
+            // Replays only need the locked version's own relations; a resolving
+            // command may land on any version, so it needs all of them.
+            if (lockedGraph is not null)
+            {
+                var locked = lockedGraph.Sei.FirstOrDefault(item =>
+                    string.Equals(item.Name, name, StringComparison.Ordinal));
+                if (locked is not null)
+                {
+                    var entry = found.Versions.FirstOrDefault(item =>
+                        NuGetVersion.TryParse(item.Version, out var version)
+                        && version.ToNormalizedString() == locked.Version);
+                    if (entry is not null)
+                    {
+                        EnqueueEntry(entry, pending);
+                    }
+                }
+
+                continue;
+            }
+
+            Enqueue(found, pending);
         }
 
         if (missing.Count > 0)
@@ -152,23 +175,28 @@ internal static class OfflineMetadata
     {
         foreach (var entry in index.Versions ?? [])
         {
-            foreach (var relation in entry.Dependencies
-                .Concat(entry.Prerequisites)
-                .Concat(entry.OptionalPeers)
-                .Concat(entry.Conflicts))
+            EnqueueEntry(entry, pending);
+        }
+    }
+
+    private static void EnqueueEntry(SeiVersionEntry entry, Queue<string> pending)
+    {
+        foreach (var relation in entry.Dependencies
+            .Concat(entry.Prerequisites)
+            .Concat(entry.OptionalPeers)
+            .Concat(entry.Conflicts))
+        {
+            pending.Enqueue(relation.Name);
+        }
+
+        foreach (var artifact in entry.Artifacts ?? [])
+        {
+            foreach (var relation in (artifact?.Dependencies ?? [])
+                .Concat(artifact!.Prerequisites ?? [])
+                .Concat(artifact.OptionalPeers ?? [])
+                .Concat(artifact.Conflicts ?? []))
             {
                 pending.Enqueue(relation.Name);
-            }
-
-            foreach (var artifact in entry.Artifacts ?? [])
-            {
-                foreach (var relation in (artifact?.Dependencies ?? [])
-                    .Concat(artifact!.Prerequisites ?? [])
-                    .Concat(artifact.OptionalPeers ?? [])
-                    .Concat(artifact.Conflicts ?? []))
-                {
-                    pending.Enqueue(relation.Name);
-                }
             }
         }
     }

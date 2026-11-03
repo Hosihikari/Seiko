@@ -138,19 +138,24 @@ public sealed class SeikoClient
             Log = log,
         };
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+        var lockPath = Path.Combine(root, "seiko.lock.json");
+        var existingLock = LockFile.Read(lockPath);
+        var specs = specsOverride ?? config.Sei;
+
         if (offline)
         {
             // Collect every missing cached entry before constructing sources,
-            // which would otherwise fail on the first one.
-            OfflineMetadata.Verify(config, storePath, config.Sei.Select(spec => spec.Name));
+            // which would otherwise fail on the first one. A replay only needs
+            // the locked graph, not every historical relation target.
+            OfflineMetadata.Verify(
+                config,
+                storePath,
+                config.Sei.Select(spec => spec.Name),
+                lockedGraph: mode == SyncMode.Normal ? null : existingLock);
         }
 
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
-
-        var lockPath = Path.Combine(root, "seiko.lock.json");
-        var existingLock = LockFile.Read(lockPath);
-        var specs = specsOverride ?? config.Sei;
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
