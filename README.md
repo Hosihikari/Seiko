@@ -58,7 +58,7 @@ Current slice:
 - `sk completion bash|zsh|fish|powershell` — prints a completion script that calls `sk "[suggest]"`.
 - `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code. Exit codes are 0 success, 1 domain error, 2 usage error; a dry-run with blockers still exits 0.
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.
-- `seiko-mcp` — MCP server over stdio with full CLI parity; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). Mutation tools take `dryRun`, `offline`, `adopt`, and `force`. `--allowed-root` and `--allowed-store` optionally restrict mutation paths.
+- `seiko-mcp` — MCP server over stdio with full CLI parity; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). Mutation tools take `dryRun`, `offline`, `adopt`, and `force`. `--allowed-root` and `--allowed-store` optionally restrict mutation paths; `--audit-log <path>` appends one JSON line per call without credentials.
 - Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so a corrupt cached artifact is downloaded again and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
 - Unix modes are limited to `0000–0777`: setuid, setgid, and sticky bits are rejected by deployment and `sk index verify`. Extraction is capped at 100,000 entries, 1 GiB per entry, and 4 GiB total.
 - Payload paths must be unique ignoring case and Unicode normalization. A deployment that would write both `A.txt`/`a.txt` or NFC/NFD forms of one name is rejected, so roots stay consistent across case-sensitive, case-insensitive, and Unicode-normalizing volumes.
@@ -86,7 +86,7 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-Add `"--allow-mutations"` to `args` to enable mutation tools. `seiko-mcp --help` lists the options and `seiko-mcp --version` prints the build.
+Add `"--allow-mutations"` to `args` to enable mutation tools. `--audit-log <path>` writes one JSON line per call (tool, root, arguments, outcome, truncated result). `seiko-mcp --help` lists the options and `seiko-mcp --version` prints the build.
 
 ## Official index
 
