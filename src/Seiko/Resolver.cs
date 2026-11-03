@@ -637,7 +637,7 @@ public sealed class Resolver
 
             var solvable = tied.Count(artifact =>
                 ReferenceEquals(artifact, resolved.Artifact)
-                || DependenciesSatisfiedByFinalGraph(artifact));
+                || CanResolveDependencies(artifact, top));
             if (solvable > 1)
             {
                 throw Fail(
@@ -679,13 +679,40 @@ public sealed class Resolver
         return true;
     }
 
-    private bool DependenciesSatisfiedByFinalGraph(ArtifactEntry artifact)
+    // A tied artifact counts as solvable when its dependency group could be
+    // added: a dependency already in the graph must satisfy the range, and an
+    // absent one needs some source version with an artifact for this rid.
+    // Declaration order alone must not decide an ambiguity.
+    private bool CanResolveDependencies(ArtifactEntry artifact, int specificity)
     {
+        _ = specificity;
         foreach (var dependency in artifact.Dependencies ?? [])
         {
-            if (!_assigned.TryGetValue(dependency.Name, out var target)
-                || !ParseRange(dependency.Version, dependency.Name)
-                    .Satisfies(target.ParsedVersion))
+            var range = ParseRange(dependency.Version, dependency.Name);
+            var constraints = _pending
+                .Where(requirement => string.Equals(requirement.Name, dependency.Name, StringComparison.Ordinal))
+                .Select(requirement => requirement.Range)
+                .Append(range)
+                .ToList();
+
+            if (_assigned.TryGetValue(dependency.Name, out var target))
+            {
+                if (!constraints.All(constraint => constraint.Satisfies(target.ParsedVersion)))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!TryFindSource(dependency.Name, out _, out var index)
+                || !index.Versions.Any(entry =>
+                    NuGetVersion.TryParse(entry.Version, out var version)
+                    && !entry.Yanked
+                    && constraints.All(constraint => constraint.Satisfies(version))
+                    && entry.Artifacts.Any(candidate =>
+                        string.IsNullOrWhiteSpace(candidate.Rid)
+                        || candidate.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))))
             {
                 return false;
             }
