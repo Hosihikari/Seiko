@@ -443,6 +443,18 @@ public sealed class SeikoMcpServer
             Bool(arguments, "offline"),
             StorePath(arguments)))
         {
+            var blockers = new JsonArray();
+            foreach (var blocker in item.Blockers)
+            {
+                blockers.Add((JsonNode)new JsonObject
+                {
+                    ["relation"] = blocker.Relation,
+                    ["target"] = blocker.Target,
+                    ["range"] = blocker.Range,
+                    ["source"] = blocker.Source,
+                });
+            }
+
             items.Add((JsonNode)new JsonObject
             {
                 ["name"] = item.Name,
@@ -450,6 +462,7 @@ public sealed class SeikoMcpServer
                 ["latestInRange"] = item.LatestInRange,
                 ["latest"] = item.Latest,
                 ["latestInstallable"] = item.LatestInstallable,
+                ["blockers"] = blockers,
             });
         }
 

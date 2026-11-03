@@ -220,6 +220,33 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void OutdatedTool_IncludesBlockers()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+        });
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
+
+        var result = CallTool(server, "outdated", new JsonObject { ["root"] = fixture.Root });
+
+        var item = JsonNode.Parse(ToolText(result))!.AsArray().Single()!;
+        var blocker = item["blockers"]!.AsArray().Single()!;
+        Assert.Equal("declaration", blocker["relation"]!.GetValue<string>());
+        Assert.Equal("[1.0.0]", blocker["range"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void ToolArguments_RejectWrongValueTypes()
     {
         var root = NewDirectory();
