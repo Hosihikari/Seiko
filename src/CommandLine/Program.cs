@@ -519,6 +519,17 @@ indexVerify.SetAction(parseResult => Run(
         IsJson(parseResult))));
 index.Add(indexVerify);
 
+var completion = new Command("completion", "Print a shell completion script.");
+var completionShell = new Argument<string>("shell")
+{
+    Description = "bash, zsh, fish, or powershell.",
+};
+completion.Add(completionShell);
+completion.SetAction(parseResult => Run(
+    "completion",
+    IsJson(parseResult),
+    () => Completion(parseResult.GetValue(completionShell)!, IsJson(parseResult))));
+
 var help = new Command("help", "Show help.");
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
@@ -538,6 +549,7 @@ rootCommand.Add(source);
 rootCommand.Add(config);
 rootCommand.Add(cache);
 rootCommand.Add(index);
+rootCommand.Add(completion);
 rootCommand.Add(help);
 rootCommand.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
@@ -1350,6 +1362,71 @@ static int RunDoctor(string? rootOption, string? store, bool clean, bool json)
     }
 
     return hasError ? 1 : 0;
+}
+
+static int Completion(string? shell, bool json)
+{
+    var name = Path.GetFileName(shell ?? "");
+    var script = name switch
+    {
+        "bash" => CompletionScript("bash"),
+        "zsh" => CompletionScript("zsh"),
+        "fish" => CompletionScript("fish"),
+        "powershell" or "pwsh" => CompletionScript("powershell"),
+        _ => throw new SeikoException(
+            "completion requires bash, zsh, fish, or powershell",
+            "usage"),
+    };
+    if (json)
+    {
+        WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "completion", new InitData(script)));
+        return 0;
+    }
+
+    Console.Write(script);
+    return 0;
+}
+
+static string CompletionScript(string shell)
+{
+    const string program = "sk";
+    return shell switch
+    {
+        "bash" => $$"""
+_{{program}}_complete() {
+    local word="${COMP_WORDS[COMP_CWORD]:-}"
+    local out
+    out=$({{program}} "[suggest]" "$word" 2>/dev/null | tr '
+' ' ')
+    COMPREPLY=( $(compgen -W "$out" -- "$word") )
+}
+complete -F _{{program}}_complete {{program}}
+""",
+        "zsh" => $$"""
+#compdef {{program}}
+_{{program}}_complete() {
+    local -a out
+    out=($({{program}} "[suggest]" "${words[CURRENT]:-}" 2>/dev/null))
+    compadd -a out
+}
+compdef _{{program}}_complete {{program}}
+""",
+        "fish" => $$"""
+function __{{program}}_complete
+    set -l word (commandline -ct)
+    {{program}} "[suggest]" "$word" 2>/dev/null
+end
+complete -c {{program}} -f -a '(__{{program}}_complete)'
+""",
+        _ => $$"""
+Register-ArgumentCompleter -Native -CommandName {{program}} -ScriptBlock {
+    param($wordToComplete)
+    {{program}} "[suggest]" "$wordToComplete" 2>/dev/null | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+}
+""",
+    };
 }
 
 static string ResolveRoot(string? rootOption)
