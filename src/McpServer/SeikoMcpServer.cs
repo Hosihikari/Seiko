@@ -219,8 +219,8 @@ public sealed class SeikoMcpServer
         }
     }
 
-    // One line per call. Arguments never contain credentials: the token is
-    // derived from the environment and never appears in a tool request.
+    // One line per call. Arguments can contain URLs, so both arguments and the
+    // result are redacted before they reach the log.
     private void Audit(string outcome, string tool, JsonObject arguments, string text)
     {
         if (_auditLog is null)
@@ -230,15 +230,16 @@ public sealed class SeikoMcpServer
 
         try
         {
+            var full = Path.GetFullPath(_auditLog);
             var entry = new JsonObject
             {
                 ["time"] = DateTimeOffset.UtcNow.ToString("O"),
                 ["tool"] = tool,
                 ["outcome"] = outcome,
-                ["arguments"] = arguments.DeepClone(),
-                ["result"] = text.Length > 4096 ? text[..4096] : text,
+                ["arguments"] = RedactUrls(arguments.DeepClone()),
+                ["result"] = Urls.RedactText(text.Length > 4096 ? text[..4096] : text),
             };
-            var directory = Path.GetDirectoryName(Path.GetFullPath(_auditLog));
+            var directory = Path.GetDirectoryName(full);
             if (!string.IsNullOrEmpty(directory))
             {
                 Directory.CreateDirectory(directory);
@@ -249,6 +250,33 @@ public sealed class SeikoMcpServer
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // An audit failure must not fail the call itself.
+        }
+    }
+
+    // Arguments can carry URLs (proxy, source index) with userinfo or signed
+    // query strings; redact them before they reach a persisted log.
+    private static JsonNode RedactUrls(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (var pair in obj.ToList())
+                {
+                    obj[pair.Key] = RedactUrls(pair.Value);
+                }
+
+                return obj;
+            case JsonArray array:
+                for (var i = 0; i < array.Count; i++)
+                {
+                    array[i] = RedactUrls(array[i]);
+                }
+
+                return array;
+            case JsonValue value when value.TryGetValue<string>(out var text):
+                return JsonValue.Create(Urls.RedactText(text))!;
+            default:
+                return node ?? JsonValue.Create((string?)null)!;
         }
     }
 
@@ -754,7 +782,12 @@ public sealed class SeikoMcpServer
 
     private string Check(JsonObject arguments) => RunDoctor(arguments, clean: false);
 
-    private string Doctor(JsonObject arguments) => RunDoctor(arguments, Bool(arguments, "clean"));
+    // clean=true deletes .part files, so it needs the mutation gate; plain
+    // diagnostics stay available without it.
+    private string Doctor(JsonObject arguments)
+        => Bool(arguments, "clean")
+            ? RequireMutations(() => RunDoctor(arguments, clean: true))
+            : RunDoctor(arguments, clean: false);
 
     private string RunDoctor(JsonObject arguments, bool clean)
     {

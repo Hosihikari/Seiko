@@ -46,7 +46,13 @@ public sealed class StoreTests
         var storedFile = Path.Combine(fixture.StoreDirectory, digest, "hello.txt");
         File.WriteAllText(storedFile, "tampered");
 
-        client.Sync(fixture.Root, fixture.StoreDirectory);
+        // The deployed file is a hardlink to the store, so tampering also
+        // changes the deployed bytes; without --force that is a user edit.
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        Assert.Equal("deploy", error.Code);
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
 
         Assert.Equal("hello", File.ReadAllText(storedFile));
         Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));

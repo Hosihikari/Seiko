@@ -132,14 +132,23 @@ public static class Deployer
             }
 
             var record = state.Files[oldFile];
-            if (!record.Adopted
-                && !force
-                && !adopt
-                && !string.Equals(Hashing.Sha256File(Native(root, oldFile)), record.Sha256, StringComparison.Ordinal))
+            var edited = !string.Equals(
+                Hashing.Sha256File(Native(root, oldFile)),
+                record.Sha256,
+                StringComparison.Ordinal);
+            if (edited && !record.Adopted && !force && !adopt)
             {
                 throw new SeikoException(
                     $"deployment conflict: managed file {oldFile} was modified; pass --force to delete it or --adopt to keep it",
                     "deploy");
+            }
+
+            // Adopted content is user state: keep it on disk and drop only the
+            // ownership record. force still deletes; an untouched file is
+            // cleaned up as before.
+            if (!force && (record.Adopted || adopt))
+            {
+                continue;
             }
 
             mutations.Add(new Mutation(oldFile, null));
@@ -164,15 +173,7 @@ public static class Deployer
                 var modified = managedHere
                     && !previous!.Adopted
                     && !string.Equals(actual, previous.Sha256, StringComparison.Ordinal);
-                // A hard-linked store payload shares its inode with the
-                // deployed file, so store corruption is indistinguishable from
-                // an in-place edit. When the requested artifact still has the
-                // recorded digest, redeploying is the repair path; only a
-                // different target digest counts as a user-visible change.
-                if (modified
-                    && !string.Equals(previous!.Sha256, file.Sha256, StringComparison.Ordinal)
-                    && !adopt
-                    && !force)
+                if (modified && !adopt && !force)
                 {
                     throw new SeikoException(
                         $"deployment conflict: managed file {relative} was modified; pass --force to overwrite it or --adopt to keep it",

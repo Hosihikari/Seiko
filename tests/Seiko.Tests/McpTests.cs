@@ -173,6 +173,45 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void AuditLog_RedactsUrlSecrets()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var audit = Path.Combine(fixture.Root, "audit.jsonl");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: true, auditLog: audit);
+
+        CallTool(
+            server,
+            "source_add",
+            new JsonObject
+            {
+                ["root"] = fixture.Root,
+                ["id"] = "demo",
+                ["index"] = "https://demo:SECRET@example.invalid/index.json?token=QUERY",
+            });
+
+        var text = File.ReadAllText(audit);
+        Assert.DoesNotContain("SECRET", text);
+        Assert.DoesNotContain("QUERY", text);
+        Assert.Contains("https://example.invalid/index.json", text);
+    }
+
+    [Fact]
+    public void DoctorCleanNeedsMutationsButPlainDoctorDoesNot()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
+
+        var clean = CallTool(server, "doctor", new JsonObject { ["root"] = fixture.Root, ["clean"] = true });
+        Assert.True(clean["isError"]!.GetValue<bool>());
+        Assert.Contains("--allow-mutations", ToolText(clean));
+
+        var plain = CallTool(server, "doctor", new JsonObject { ["root"] = fixture.Root });
+        Assert.False(plain["isError"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public void AuditLog_RecordsEachCall()
     {
         using var fixture = new Fixture();

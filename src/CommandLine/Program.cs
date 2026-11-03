@@ -883,7 +883,10 @@ static int Remove(
             log,
             allowCritical: allowCritical,
             dryRun: dryRun,
-            purge: purge));
+            purge: purge,
+            adopt: adopt,
+            force: force,
+            offline: offline));
 
 static int Update(
     string? rootOption,

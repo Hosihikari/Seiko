@@ -607,7 +607,8 @@ public sealed class SeikoClient
                 latestInstallable,
                 allowCritical,
                 adopt,
-                force);
+                force,
+                offline);
         }
 
         return WriteSpecsAndSync(
@@ -814,7 +815,8 @@ public sealed class SeikoClient
                 latestInstallable,
                 allowCritical,
                 adopt,
-                force);
+                force,
+                offline);
         }
 
         return WriteSpecsAndSync(
@@ -954,7 +956,8 @@ public sealed class SeikoClient
                 latestInstallable,
                 allowCritical,
                 adopt,
-                force);
+                force,
+                offline);
         }
 
         return writeConfig
