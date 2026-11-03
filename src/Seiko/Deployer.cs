@@ -145,8 +145,15 @@ public static class Deployer
             PathSafety.EnsureNoLinks(root, relative);
         }
 
-        foreach (var relative in state.Files.Keys)
+        foreach (var (relative, record) in state.Files)
         {
+            if (record is null)
+            {
+                throw new SeikoException(
+                    $"deployment state has no record for {relative}",
+                    "deploy");
+            }
+
             PathSafety.EnsureNoLinks(root, relative);
         }
 

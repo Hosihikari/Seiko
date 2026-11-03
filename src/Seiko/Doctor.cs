@@ -227,6 +227,12 @@ public sealed class Doctor
         foreach (var (relative, file) in state.Files)
         {
             var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+            if (file is null)
+            {
+                findings.Add(Error("deploy-state", $"deployed file {relative} has no record", statePath));
+                continue;
+            }
+
             if (!File.Exists(path))
             {
                 findings.Add(Error("deploy-missing-file", $"deployed file {relative} is missing", path));

@@ -27,6 +27,11 @@ public static class LockFile
             throw new SeikoException($"invalid lock file: {path}", "lock");
         }
 
+        if (value.Sources.Any(source => source is null))
+        {
+            throw new SeikoException($"invalid lock file: {path}", "lock");
+        }
+
         foreach (var entry in value.Sei)
         {
             if (entry is null
@@ -39,6 +44,20 @@ public static class LockFile
                 || entry.Artifact.Prerequisites is null
                 || entry.Artifact.OptionalPeers is null
                 || entry.Artifact.Conflicts is null)
+            {
+                throw new SeikoException($"invalid lock file: {path}", "lock");
+            }
+
+            // Relation elements are read directly by replay; a JSON `null`
+            // would otherwise surface as an internal NRE.
+            if (entry.Dependencies.Concat(entry.Prerequisites)
+                    .Concat(entry.OptionalPeers)
+                    .Concat(entry.Conflicts)
+                    .Any(relation => relation is null)
+                || entry.Artifact.Dependencies.Concat(entry.Artifact.Prerequisites)
+                    .Concat(entry.Artifact.OptionalPeers)
+                    .Concat(entry.Artifact.Conflicts)
+                    .Any(relation => relation is null))
             {
                 throw new SeikoException($"invalid lock file: {path}", "lock");
             }

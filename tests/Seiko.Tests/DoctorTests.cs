@@ -77,6 +77,31 @@ public sealed class DoctorTests
     }
 
     [Fact]
+    public void Doctor_ReportsNullDeployedFileRecord()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        var statePath = Path.Combine(fixture.Root, ".seiko", "state.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePath))!;
+        foreach (var key in node["files"]!.AsObject().Select(pair => pair.Key).ToList())
+        {
+            node["files"]![key] = null;
+        }
+
+        File.WriteAllText(statePath, node.ToJsonString());
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "deploy-state");
+    }
+
+    [Fact]
     public void Doctor_ReportsMissingDeployedFile()
     {
         using var fixture = new Fixture();
