@@ -34,7 +34,9 @@ public sealed class SeikoMcpServer
         string? defaultStore = null,
         string? auditLog = null)
     {
-        _auditLog = auditLog;
+        // A bad audit path must fail at startup, while failures to append at
+        // call time must not change the outcome of a completed operation.
+        _auditLog = string.IsNullOrEmpty(auditLog) ? null : ValidateAuditPath(auditLog);
         _defaultRoot = Path.GetFullPath(defaultRoot);
         _allowMutations = allowMutations;
         _allowedRoots = (allowedRoots ?? [])
@@ -230,7 +232,6 @@ public sealed class SeikoMcpServer
 
         try
         {
-            var full = Path.GetFullPath(_auditLog);
             var entry = new JsonObject
             {
                 ["time"] = DateTimeOffset.UtcNow.ToString("O"),
@@ -239,18 +240,45 @@ public sealed class SeikoMcpServer
                 ["arguments"] = RedactUrls(arguments.DeepClone()),
                 ["result"] = Urls.RedactText(text.Length > 4096 ? text[..4096] : text),
             };
-            var directory = Path.GetDirectoryName(full);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
             File.AppendAllText(_auditLog, entry.ToJsonString() + "\n");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // An audit failure must not fail the call itself.
         }
+    }
+
+    private static string ValidateAuditPath(string path)
+    {
+        string full;
+        try
+        {
+            full = Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            throw new SeikoException($"invalid audit log path '{path}': {ex.Message}", "usage");
+        }
+
+        if (Directory.Exists(full))
+        {
+            throw new SeikoException($"audit log path '{path}' is a directory", "usage");
+        }
+
+        var directory = Path.GetDirectoryName(full);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            try
+            {
+                Directory.CreateDirectory(directory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new SeikoException($"cannot create audit log directory '{directory}': {ex.Message}", "usage");
+            }
+        }
+
+        return full;
     }
 
     // Arguments can carry URLs (proxy, source index) with userinfo or signed

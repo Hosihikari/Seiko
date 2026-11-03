@@ -212,6 +212,30 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void AuditLog_RejectsADirectoryPathAtStartup()
+    {
+        using var fixture = new Fixture();
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoMcpServer(fixture.Root, allowMutations: false, auditLog: fixture.Root));
+
+        Assert.Equal("usage", error.Code);
+    }
+
+    [Fact]
+    public void AuditLog_CreatesTheMissingDirectory()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var audit = Path.Combine(fixture.Root, "nested", "audit", "calls.jsonl");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false, auditLog: audit);
+
+        CallTool(server, "check", new JsonObject { ["root"] = fixture.Root });
+
+        Assert.True(File.Exists(audit));
+    }
+
+    [Fact]
     public void AuditLog_RecordsEachCall()
     {
         using var fixture = new Fixture();

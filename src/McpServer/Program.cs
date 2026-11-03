@@ -1,3 +1,4 @@
+using Seiko;
 using Seiko.McpServer;
 
 var root = Directory.GetCurrentDirectory();
@@ -63,7 +64,17 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-var server = new SeikoMcpServer(root, allowMutations, allowedRoots, allowedStores, auditLog: auditLog);
+SeikoMcpServer server;
+try
+{
+    server = new SeikoMcpServer(root, allowMutations, allowedRoots, allowedStores, auditLog: auditLog);
+}
+catch (SeikoException ex)
+{
+    Console.Error.WriteLine($"seiko-mcp: {ex.Message}");
+    return 2;
+}
+
 while (Console.ReadLine() is { } line)
 {
     if (string.IsNullOrWhiteSpace(line))
