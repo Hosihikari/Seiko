@@ -313,10 +313,18 @@ public static class LockReplay
         return null;
     }
 
+    // Same order as LockFile.SortRelations: a name can carry several ranges,
+    // and replay must not call a reordering a metadata change.
     private static bool DependenciesEqual(List<SeiDependency>? left, List<SeiDependency>? right)
     {
-        var a = (left ?? []).OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
-        var b = (right ?? []).OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
+        var a = (left ?? [])
+            .OrderBy(d => d.Name, StringComparer.Ordinal)
+            .ThenBy(d => d.Version ?? "", StringComparer.Ordinal)
+            .ToList();
+        var b = (right ?? [])
+            .OrderBy(d => d.Name, StringComparer.Ordinal)
+            .ThenBy(d => d.Version ?? "", StringComparer.Ordinal)
+            .ToList();
         return a.Count == b.Count
             && a.Zip(b).All(pair =>
                 string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
