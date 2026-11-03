@@ -35,25 +35,29 @@ Upgrade by re-running the installer; uninstall by deleting `sk` and `seiko-mcp` 
 
 Current slice:
 
-- `sk init` — writes a `seiko.conf` template with the official index as source `official`.
-- `sk sync` — reads `seiko.conf`, resolves sei from a static index (local or HTTPS), selects an artifact by `selectors`, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`.
-- `sk sync --frozen` — replays `seiko.lock.json` without resolving; the declared direct set must match the lock's direct entries; `--locked` fails if the lock is out of date; `sk install` is an alias.
-- `sk add <name>[@range]` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync. `sync`, `add`, and `update` accept `--latest-installable` to skip versions with no artifact for the resolved graph; the default remains the highest version.
+- `sk init` — atomically writes a minimal `seiko.conf` with the required `schemaVersion` and the official index as source `official`.
+- `sk sync` — reads `seiko.conf`, resolves sei from a static index (local or HTTPS), selects an artifact by `rid` and artifact prerequisites, verifies SHA-256, extracts into the content-addressed store, deploys files into the install root, and writes `seiko.lock.json`. The resolved root is printed.
+- `sk sync --frozen` — replays `seiko.lock.json` without resolving; the declared direct set must match the lock's direct entries, and the lock must target the configured `rid`; `--locked` fails if the lock is out of date; `sk install` is an alias. Neither mode rewrites the lock.
+- `sk add <name>[@range]... [--remove <name>]...` / `sk remove <name>` / `sk update [name] [--latest]` — edit direct declarations and sync in one transaction. Adding without a range records `[version, next-major)` (or the next minor for `0.y.z`); repeating `add A` re-resolves A within its range. `sync`, `add`, and `update` accept `--latest-installable` to skip versions with no artifact for the resolved graph; the default remains the highest version.
+- Relations: `dependencies` (installed and kept alive), `prerequisites` (must exist, not auto-added, used to pick artifacts), `optionalPeers` (must match when present), and `conflicts`. Both version-level and artifact-level scopes are enforced, and resolving backtracks over versions and artifacts together.
+- `--dry-run` prints the planned `changes` and `blocked` constraints and resolves without downloading payloads or writing config, lock, or deployment; `--diagnostics` adds relation and constraint details; `--offline` limits work to the lock, store, and cached index metadata.
+- `--adopt` keeps existing or edited files and records them as adopted; `--force` overwrites them; both work on unmanaged paths and modified managed files. Modified managed files are otherwise blocked before deployment.
+- `sk remove --purge` moves `config/hosihikari/<name>.conf` and `data/hosihikari/<name>/` into the transaction trash and deletes them on commit; config/data are kept by default.
 - `sk why <name>` — shows the dependency chains to a sei.
 - `sk outdated` — shows newer in-range, overall, and latest installable versions.
 - `sk list` — lists installed sei from the lock.
-- `sk rollback [--to <n>] [--proxy <url>]` — restores the previous deployment generation from the content-addressed store; missing target artifacts are downloaded again.
+- `sk rollback [--to <n>] [--proxy <url>]` — restores a generation's config, lock, and deployment from the store; missing target artifacts are downloaded again.
 - `sk search <term>` — searches sei names in the configured indexes.
 - `sk info <name>` — shows versions, dependencies, and artifact counts.
 - Sources may be a local path or an http(s) index; the official index is `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`. Private sources use host-keyed bearer tokens: set `SEIKO_TOKEN_<HOST>` where ASCII letters and digits are uppercased and every other UTF-8 byte is written as `_XX`, for example `SEIKO_TOKEN_PACKAGES_2EEXAMPLE_2ECOM` for `packages.example.com`. Tokens are only sent over HTTPS to the index host or to hosts listed in the source's `tokenHosts`; project configuration cannot name an arbitrary environment variable.
 - `sk index verify [path] [--check-artifacts] [--strict]` — validates an index directory: schema, names, versions, artifact URLs, SHA-256, and with `--check-artifacts` the artifact bytes and the embedded `sei.json`; `--strict` also fails on warnings.
-- Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`.
+- Downloads use a global HTTP request budget (`--jobs`, default 4), retries with backoff, Range chunking for large artifacts, `--proxy`, and cross-process resume from `<store>/.partial`. Index metadata is cached under `<store>/.metadata` for offline use, and every selected version is cross-checked against other sources for conflicting digests of artifacts with equal conditions.
 - `sk source add|remove|list` — manage sources (repeatable `--token-host`); `sk config get|set rid` — read or write the platform override.
 - `sk cache status|verify|clean` — inspect the store, verify artifacts, or remove artifacts not referenced by any registered root's current lock or its retained rollback generations. Sync and rollback re-download artifacts whose digest metadata or payload is missing or corrupt.
-- `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads.
-- `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code.
+- `sk doctor [--clean]` — checks the lock, store, deployment, and residual partial downloads, and reports an unfinished transaction as an error.
+- `--json` — emits a `{schemaVersion, command, data}` envelope for machine use; errors use the same envelope with an error code. Exit codes are 0 success, 1 domain error, 2 usage error; a dry-run with blockers still exits 0.
 - `-v/--verbose` adds debug logs and demystified stack traces; `-q/--quiet` suppresses progress and log output. Progress bars appear only on an interactive stdout.
-- `seiko-mcp` — MCP server over stdio; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). `--allowed-root` and `--allowed-store` optionally restrict mutation paths.
+- `seiko-mcp` — MCP server over stdio with full CLI parity; read-only tools by default, `--allow-mutations` adds the mutating tools (`sync`, `rollback`, `add`, `remove`, `update`, source/config/cache changes). Mutation tools take `dryRun`, `offline`, `adopt`, and `force`. `--allowed-root` and `--allowed-store` optionally restrict mutation paths.
 - Payload files are deployed by reflink when the filesystem supports it (APFS, btrfs, XFS), otherwise by hardlink on the same volume, otherwise by copy. The store records a SHA-256 for every file, so a corrupt cached artifact is downloaded again and `sk cache verify` checks the payload too. Hardlinked payload files must not be edited in place; editing them also edits the store.
 - Unix modes are limited to `0000–0777`: setuid, setgid, and sticky bits are rejected by deployment and `sk index verify`. Extraction is capped at 100,000 entries, 1 GiB per entry, and 4 GiB total.
 - Payload paths must be unique ignoring case and Unicode normalization. A deployment that would write both `A.txt`/`a.txt` or NFC/NFD forms of one name is rejected, so roots stay consistent across case-sensitive, case-insensitive, and Unicode-normalizing volumes.
