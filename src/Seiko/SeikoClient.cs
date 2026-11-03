@@ -138,6 +138,13 @@ public sealed class SeikoClient
             Log = log,
         };
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+        if (offline)
+        {
+            // Collect every missing cached entry before constructing sources,
+            // which would otherwise fail on the first one.
+            OfflineMetadata.Verify(config, storePath, config.Sei.Select(spec => spec.Name));
+        }
+
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
 
@@ -202,6 +209,11 @@ public sealed class SeikoClient
         progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
 
         var store = new Store(storePath);
+        if (offline)
+        {
+            OfflineMetadata.EnsureArtifacts(store, resolved);
+        }
+
         if (dryRun)
         {
             return new SyncResult

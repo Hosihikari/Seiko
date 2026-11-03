@@ -57,6 +57,60 @@ public sealed class OfflineTests
     }
 
     [Fact]
+    public void Sync_LockedOfflineListsAllMissingMetadataAtOnce()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        fixture.AddSei("b", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("a", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Directory.Delete(Path.Combine(fixture.StoreDirectory, ".metadata"), recursive: true);
+
+        var error = Assert.Throws<SeikoException>(() => client.Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            mode: SyncMode.Locked,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("index metadata", error.Message);
+        Assert.Contains("sei/a.json", error.Message);
+    }
+
+    [Fact]
+    public void Sync_LockedOfflineListsMissingArtifactsAtOnce()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        Seed(fixture, server.BaseUrl);
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var digest = client.ReadLock(fixture.Root)!.Sei.Single().Artifact.Sha256;
+        Directory.Delete(Path.Combine(fixture.StoreDirectory, digest), recursive: true);
+
+        var error = Assert.Throws<SeikoException>(() => client.Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            mode: SyncMode.Locked,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("missing cached artifacts", error.Message);
+        Assert.Contains("hello 1.0.0", error.Message);
+        Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public void Sync_LockedOfflineFailsWhenMetadataIsNotCached()
     {
         using var fixture = new Fixture();
@@ -73,7 +127,7 @@ public sealed class OfflineTests
             offline: true));
 
         Assert.Equal("source", error.Code);
-        Assert.Contains("not cached", error.Message);
+        Assert.Contains("missing cached metadata", error.Message);
     }
 
     [Fact]
