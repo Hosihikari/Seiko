@@ -172,8 +172,9 @@ public sealed class Store
         return new StoredSei(directory, manifest, digests);
     }
 
-    // The cold path just hashed every extracted file while writing it, so it
-    // can reuse those digests; cache hits still run VerifyFiles.
+    // The cold path computed digests while extracting, but ADR-0024 requires
+    // the same full verify as a cache hit: the bytes on disk must be hashed
+    // again rather than trusting the extraction pass.
     private static StoredSei LoadExtracted(
         ResolvedSei sei,
         string directory,
@@ -188,6 +189,7 @@ public sealed class Store
             digests[digest.Path] = digest;
         }
 
+        VerifyFiles(directory, digests);
         return new StoredSei(directory, manifest, digests);
     }
 
