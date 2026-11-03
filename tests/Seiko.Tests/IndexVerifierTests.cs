@@ -22,6 +22,19 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_HintsAtMigrationForAnOldIndexSchema()
+    {
+        using var fixture = NewFixture();
+        var path = Path.Combine(fixture.SourceDirectory, "index.json");
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1"));
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "index-schema" && finding.Message.Contains("migrate the index"));
+    }
+
+    [Fact]
     public void Verify_AcceptsUnlistedPackageAndAdvisory()
     {
         using var fixture = NewFixture();
