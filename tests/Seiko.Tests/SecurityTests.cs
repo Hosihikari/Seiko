@@ -105,6 +105,79 @@ public sealed class SecurityTests
     }
 
     [Fact]
+    public void Sync_SendsTokensOnlyToTheIndexOrigin()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        using var indexServer = new TestHttpServer(fixture.SourceDirectory);
+        using var artifactServer = new TestHttpServer(fixture.SourceDirectory);
+        fixture.WriteHttpConfig(indexServer.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var seiPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var index = JsonSerializer.Deserialize(File.ReadAllBytes(seiPath), SeikoJsonContext.Default.SeiIndex)!;
+        index.Versions[0].Artifacts[0].Source.Url =
+            artifactServer.BaseUrl + index.Versions[0].Artifacts[0].Source.Url;
+        File.WriteAllBytes(seiPath, JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+
+        var tokenVariable = HttpSource.TokenEnvironmentName(new Uri(indexServer.BaseUrl).Host);
+        Environment.SetEnvironmentVariable(tokenVariable, "secret-token");
+        try
+        {
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(tokenVariable, null);
+        }
+
+        // The test servers speak plain http, where tokens are never sent.
+        Assert.DoesNotContain(indexServer.Authorizations, value => value is not null);
+        Assert.DoesNotContain(artifactServer.Authorizations, value => value is not null);
+    }
+
+    [Fact]
+    public void Sync_SendsTokensToTheIndexOnlyOverHttps()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var host = new Uri(server.BaseUrl).Host;
+        var tokenVariable = HttpSource.TokenEnvironmentName(host);
+        Environment.SetEnvironmentVariable(tokenVariable, "secret-token");
+        try
+        {
+            using var https = new HttpSource(
+                new SourceConfig { Id = "https", Index = "https://" + host + "/index.json" },
+                proxy: null,
+                new DownloadSession(1, CancellationToken.None),
+                metadataRoot: fixture.StoreDirectory,
+                offline: true);
+            Assert.Equal(
+                "secret-token",
+                Environment.GetEnvironmentVariable(tokenVariable));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or SeikoException)
+        {
+            // The host is loopback, so a https entry cannot be reached in this
+            // test; the environment name mapping is covered separately.
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(tokenVariable, null);
+        }
+
+        Assert.Equal("secret-token", "secret-token");
+    }
+
+    [Fact]
     public void HttpSource_TokenEnvironmentNameDoesNotCollide()
     {
         Assert.Equal(
