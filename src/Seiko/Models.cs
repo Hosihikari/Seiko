@@ -151,7 +151,9 @@ public sealed class LockedArtifact
 
 public sealed class LocalState
 {
-    public int SchemaVersion { get; set; } = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public int Generation { get; set; }
     public Dictionary<string, DeployedFile> Files { get; set; } = new(StringComparer.Ordinal);
 }

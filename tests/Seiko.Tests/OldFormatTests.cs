@@ -97,6 +97,34 @@ public sealed class OldFormatTests
     }
 
     [Fact]
+    public void Sync_RestartsGenerationNumberOnOldLocalState()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(Path.Combine(stateDirectory, "generations", "7"));
+        File.WriteAllText(
+            Path.Combine(stateDirectory, "state.json"),
+            """{"schemaVersion":1,"generation":7,"files":{}}""");
+        File.WriteAllText(Path.Combine(stateDirectory, "generations", "7", "lock.json"), "{}");
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var state = System.Text.Json.JsonSerializer.Deserialize(
+            File.ReadAllBytes(Path.Combine(stateDirectory, "state.json")),
+            SeikoJsonContext.Default.LocalState)!;
+        Assert.Equal(1, state.Generation);
+        Assert.Equal(LocalState.CurrentSchemaVersion, state.SchemaVersion);
+        Assert.True(Directory.Exists(Path.Combine(stateDirectory, "generations", "7")));
+        Assert.True(File.Exists(Path.Combine(stateDirectory, "generations", "1", "seiko.conf")));
+    }
+
+    [Fact]
     public void Sync_ContinuesAfterARollback()
     {
         using var fixture = new Fixture();
