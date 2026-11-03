@@ -576,6 +576,22 @@ public sealed class SeikoMcpServer
         }.ToJsonString();
     }
 
+    private static JsonArray DiagnosticsNode(IReadOnlyList<PreviewDiagnostic> diagnostics)
+    {
+        var array = new JsonArray();
+        foreach (var diagnostic in diagnostics)
+        {
+            array.Add((JsonNode)new JsonObject
+            {
+                ["name"] = diagnostic.Name,
+                ["kind"] = diagnostic.Kind,
+                ["message"] = diagnostic.Message,
+            });
+        }
+
+        return array;
+    }
+
     private static JsonArray WarningsNode(SyncResult result)
     {
         var warnings = new JsonArray();
@@ -599,6 +615,7 @@ public sealed class SeikoMcpServer
     private string Sync(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
+        var diagnostics = Bool(arguments, "diagnostics");
         var frozen = Bool(arguments, "frozen");
         var locked = Bool(arguments, "locked");
         if (frozen && locked)
@@ -632,6 +649,7 @@ public sealed class SeikoMcpServer
             ["files"] = result.FilesDeployed,
             ["mode"] = mode.ToString(),
             ["warnings"] = WarningsNode(result),
+            ["diagnostics"] = diagnostics ? DiagnosticsNode(result.Diagnostics) : null,
         }.ToJsonString();
     }
 
@@ -928,6 +946,7 @@ public sealed class SeikoMcpServer
                 ["adopt"] = new JsonObject { ["type"] = "boolean" },
                 ["force"] = new JsonObject { ["type"] = "boolean" },
                 ["offline"] = new JsonObject { ["type"] = "boolean" },
+                ["diagnostics"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
             },

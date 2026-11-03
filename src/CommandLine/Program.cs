@@ -736,11 +736,12 @@ static int Sync(
                 result.SeiInstalled,
                 result.FilesDeployed,
                 mode.ToString(),
-                result.Warnings.ToList())));
+                result.Warnings.ToList(),
+                diagnostics ? result.Diagnostics.ToList() : null)));
         return 0;
     }
 
-    PrintSyncResult(result);
+    PrintSyncResult(result, diagnostics);
     return 0;
 }
 
@@ -1103,17 +1104,18 @@ static int RunMutation(
                 result.SeiInstalled,
                 result.FilesDeployed,
                 SyncMode.Normal.ToString(),
-                result.Warnings.ToList())));
+                result.Warnings.ToList(),
+                diagnostics ? result.Diagnostics.ToList() : null)));
     }
     else
     {
-        PrintSyncResult(result);
+        PrintSyncResult(result, diagnostics);
     }
 
     return 0;
 }
 
-static void PrintSyncResult(SyncResult result)
+static void PrintSyncResult(SyncResult result, bool diagnostics)
 {
     foreach (var warning in result.Warnings)
     {
@@ -1124,6 +1126,14 @@ static void PrintSyncResult(SyncResult result)
     foreach (var sei in result.Lock.Sei)
     {
         Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}");
+    }
+
+    if (diagnostics)
+    {
+        foreach (var diagnostic in result.Diagnostics)
+        {
+            Console.WriteLine($"diagnostic	{diagnostic.Name}	{diagnostic.Kind}: {diagnostic.Message}");
+        }
     }
 }
 

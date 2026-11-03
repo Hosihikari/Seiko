@@ -10,7 +10,12 @@ public sealed record ListItem(
     bool Direct,
     Dictionary<string, string>? Selectors);
 
-public sealed record SyncData(int Sei, int Files, string Mode, List<string> Warnings);
+public sealed record SyncData(
+    int Sei,
+    int Files,
+    string Mode,
+    List<string> Warnings,
+    List<PreviewDiagnostic>? Diagnostics);
 
 public sealed record PreviewData(
     List<PlannedChange> Changes,

@@ -80,6 +80,36 @@ public sealed class DryRunTests
     }
 
     [Fact]
+    public void DryRun_ReportsRelationDiagnostics()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("dep", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
+        });
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("dep", "[1.0.0]")],
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        var result = new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            dryRun: true);
+
+        Assert.Contains(result.Preview!.Diagnostics, diagnostic =>
+            diagnostic.Name == "hello"
+            && diagnostic.Kind == "dependency"
+            && diagnostic.Message.Contains("dep"));
+        Assert.Contains(result.Preview.Diagnostics, diagnostic =>
+            diagnostic.Kind == "artifact");
+    }
+
+    [Fact]
     public void DryRun_ReportsBlockedNewerVersions()
     {
         using var fixture = new Fixture();

@@ -12,6 +12,7 @@ public sealed class SyncResult
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public int SeiInstalled => Lock.Sei.Count;
     public PreviewResult? Preview { get; init; }
+    public IReadOnlyList<PreviewDiagnostic> Diagnostics { get; init; } = [];
 }
 
 public sealed class RollbackResult
@@ -251,11 +252,18 @@ public sealed class SeikoClient
                 adopt: adopt,
                 force: force);
 
+        var described = new List<PreviewDiagnostic>();
+        foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            Describe(sei, described);
+        }
+
         return new SyncResult
         {
             Lock = lockFile,
             FilesDeployed = deployment.FileCount,
             Warnings = warnings,
+            Diagnostics = described,
         };
     }
 
