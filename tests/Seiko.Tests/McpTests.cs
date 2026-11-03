@@ -20,6 +20,7 @@ public sealed class McpTests
         Assert.Contains("cache_status", names);
         Assert.Contains("cache_verify", names);
         Assert.Contains("index_verify", names);
+        Assert.Contains("doctor", names);
         Assert.DoesNotContain("sync", names);
         Assert.DoesNotContain("add", names);
         Assert.DoesNotContain("source_add", names);
@@ -39,6 +40,29 @@ public sealed class McpTests
         Assert.Contains("source_remove", names);
         Assert.Contains("config_set", names);
         Assert.Contains("cache_clean", names);
+        Assert.Contains("init", names);
+    }
+
+    [Fact]
+    public void ToolSurface_MatchesTheCliCommands()
+    {
+        var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);
+        var names = ToolNames(server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!);
+        string[] expectedRead =
+        [
+            "list", "search", "info", "lock", "source_list", "config_get",
+            "cache_status", "cache_verify", "why", "outdated", "index_verify", "doctor",
+        ];
+        string[] expectedWrite =
+        [
+            "add", "remove", "update", "source_add", "source_remove",
+            "config_set", "cache_clean", "sync", "rollback", "init",
+        ];
+
+        Assert.Equal(
+            expectedRead.Concat(expectedWrite).OrderBy(name => name, StringComparer.Ordinal),
+            names.OrderBy(name => name, StringComparer.Ordinal));
+        Assert.DoesNotContain("install", names);
     }
 
     [Fact]

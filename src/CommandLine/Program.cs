@@ -1278,34 +1278,7 @@ static int Rollback(
 
 static int Init(string? rootOption, bool json)
 {
-    var root = Path.GetFullPath(rootOption ?? Directory.GetCurrentDirectory());
-    Directory.CreateDirectory(root);
-    var path = Path.Combine(root, "seiko.conf");
-    if (File.Exists(path))
-    {
-        throw new SeikoException($"{path} already exists", "io");
-    }
-
-    var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
-    try
-    {
-        File.WriteAllText(temporary, InitTemplate.Create() + "\n");
-        File.Move(temporary, path, overwrite: false);
-    }
-    finally
-    {
-        try
-        {
-            if (File.Exists(temporary))
-            {
-                File.Delete(temporary);
-            }
-        }
-        catch (IOException)
-        {
-        }
-    }
-
+    var path = InitTemplate.Write(Path.GetFullPath(rootOption ?? Directory.GetCurrentDirectory()));
     if (json)
     {
         WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "init", new InitData(path)));

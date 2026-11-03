@@ -142,7 +142,8 @@ public sealed class SeikoMcpServer
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
-            Tool("index_verify", "Validate a static index directory.", IndexVerifySchema()));
+            Tool("index_verify", "Validate a static index directory.", IndexVerifySchema()),
+            Tool("doctor", "Check the lock, store, deployment, and partial downloads.", DoctorSchema()));
 
         if (_allowMutations)
         {
@@ -155,6 +156,7 @@ public sealed class SeikoMcpServer
             tools.Add((JsonNode)Tool("cache_clean", "Remove artifacts not referenced by this root.", CacheCleanSchema()));
             tools.Add((JsonNode)Tool("sync", "Resolve and deploy sei.", SyncSchema()));
             tools.Add((JsonNode)Tool("rollback", "Restore a previous generation.", RollbackSchema()));
+            tools.Add((JsonNode)Tool("init", "Write a minimal seiko.conf.", RootSchema(required: true)));
         }
 
         return new JsonObject { ["tools"] = tools };
@@ -184,6 +186,7 @@ public sealed class SeikoMcpServer
                 "why" => Why(arguments),
                 "outdated" => Outdated(arguments),
                 "index_verify" => IndexVerify(arguments),
+                "doctor" => RequireMutations(() => Doctor(arguments)),
                 "add" => RequireMutations(() => Add(arguments)),
                 "remove" => RequireMutations(() => Remove(arguments)),
                 "update" => RequireMutations(() => Update(arguments)),
@@ -193,6 +196,7 @@ public sealed class SeikoMcpServer
                 "cache_clean" => RequireMutations(() => CacheClean(arguments)),
                 "sync" => RequireMutations(() => Sync(arguments)),
                 "rollback" => RequireMutations(() => Rollback(arguments)),
+                "init" => RequireMutations(() => Init(arguments)),
                 _ => throw new SeikoException($"unknown tool '{name}'"),
             };
             return ToolResult(text);
@@ -687,6 +691,36 @@ public sealed class SeikoMcpServer
         }.ToJsonString();
     }
 
+    private string Init(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var path = InitTemplate.Write(root);
+        return new JsonObject { ["created"] = path }.ToJsonString();
+    }
+
+    private string Doctor(JsonObject arguments)
+    {
+        var root = Root(arguments, required: true);
+        var result = new Doctor().Run(root, StorePath(arguments), Bool(arguments, "clean"));
+        var findings = new JsonArray();
+        foreach (var finding in result.Findings)
+        {
+            findings.Add((JsonNode)new JsonObject
+            {
+                ["severity"] = finding.Severity,
+                ["code"] = finding.Code,
+                ["message"] = finding.Message,
+                ["path"] = finding.Path,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["findings"] = findings,
+            ["cleanCount"] = result.CleanCount,
+        }.ToJsonString();
+    }
+
     private string Rollback(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
@@ -1158,6 +1192,19 @@ public sealed class SeikoMcpServer
                 JsonValue.Create(requireSpec ? "spec" : "name")),
         };
     }
+
+    private static JsonObject DoctorSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+                ["clean"] = new JsonObject { ["type"] = "boolean" },
+            },
+            ["required"] = new JsonArray(JsonValue.Create("root")),
+        };
 
     private static JsonObject IndexVerifySchema()
         => new()
