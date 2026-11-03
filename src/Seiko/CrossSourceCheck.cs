@@ -12,7 +12,9 @@ internal static class CrossSourceCheck
         IEnumerable<ResolvedSei> resolved,
         string code)
     {
-        var validated = new HashSet<string>(StringComparer.Ordinal);
+        // Each name is a separate SeiIndex within the same source, so the
+        // cache key covers source id and name.
+        var validated = new HashSet<(string Source, string Name)>();
         foreach (var sei in resolved)
         {
             foreach (var source in sources)
@@ -29,7 +31,7 @@ internal static class CrossSourceCheck
                     continue;
                 }
 
-                if (validated.Add(source.Id))
+                if (validated.Add((source.Id, sei.Name)))
                 {
                     SourceValidation.EnsureIndex(index, source.Id, code);
                 }

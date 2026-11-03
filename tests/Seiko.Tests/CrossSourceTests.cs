@@ -57,6 +57,57 @@ public sealed class CrossSourceTests
         Assert.Equal("first", File.ReadAllText(Path.Combine(first.Root, "hello.txt")));
     }
 
+    [Fact]
+    public void Sync_ValidatesEveryMirroredIndexObject()
+    {
+        using var first = new Fixture();
+        first.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        first.AddSei("b", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+        });
+        using var second = new Fixture();
+        second.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+        });
+        second.AddSei("b", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+        });
+        first.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"), new SpecFixture("b", "[1.0.0]"));
+        second.WriteConfig("win-x64");
+        var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
+        var secondIndex = Path.Combine(second.SourceDirectory, "index.json").Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(first.Root, "seiko.conf"),
+            $$"""
+            schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
+            sources = [
+              { id = "first", index = "{{firstIndex}}" },
+              { id = "second", index = "{{secondIndex}}" }
+            ]
+            rid = "win-x64"
+            sei = [ { name = "a", version = "[1.0.0]" }, { name = "b", version = "[1.0.0]" } ]
+            """);
+        File.WriteAllText(
+            Path.Combine(second.SourceDirectory, "sei", "b.json"),
+            """{"schemaVersion":2,"name":"b","versions":[{"version":"1.0.0","dependencies":[],"artifacts":null}]}""");
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(first.Root, first.StoreDirectory));
+
+        Assert.Equal("checksum", error.Code);
+        Assert.Contains("artifact list", error.Message);
+    }
+
     private static void WriteConfig(Fixture first, Fixture second)
     {
         first.WriteConfig("win-x64");
