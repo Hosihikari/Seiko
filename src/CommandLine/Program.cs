@@ -167,7 +167,7 @@ var removeAdopt = AdoptOption();
 var removeForce = ForceOption();
 var removePurge = new Option<bool>("--purge")
 {
-    Description = "Also delete config/hosihikari/<name>.conf and data/hosihikari/<name>/.",
+    Description = "Also delete config/seiko/<name>.conf and data/seiko/<name>/.",
 };
 var removeAllowCritical = new Option<bool>("--allow-critical")
 {

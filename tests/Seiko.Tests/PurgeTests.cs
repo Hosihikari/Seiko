@@ -95,8 +95,8 @@ public sealed class PurgeTests
     }
 
     private static string ConfigFile(Fixture fixture)
-        => Path.Combine(fixture.Root, "config", "hosihikari", "hello.conf");
+        => Path.Combine(fixture.Root, "config", "seiko", "hello.conf");
 
     private static string DataFile(Fixture fixture)
-        => Path.Combine(fixture.Root, "data", "hosihikari", "hello", "state.txt");
+        => Path.Combine(fixture.Root, "data", "seiko", "hello", "state.txt");
 }

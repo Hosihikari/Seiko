@@ -888,10 +888,10 @@ public sealed class SeikoClient
     }
 
     internal static string PurgeConfigPath(string name)
-        => $"config/hosihikari/{name}.conf";
+        => $"config/seiko/{name}.conf";
 
     internal static string PurgeDataPath(string name)
-        => $"data/hosihikari/{name}";
+        => $"data/seiko/{name}";
 
     public SyncResult Update(
         string root,

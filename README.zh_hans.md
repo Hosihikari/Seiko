@@ -42,7 +42,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 - 关系分四类：`dependencies`（安装并保活）、`prerequisites`（必须存在、不自动加入、参与构件选择）、`optionalPeers`（存在时必须匹配）、`conflicts`。版本级与构件级作用域都生效，解析会同时回溯版本与构件。
 - `--dry-run` 输出计划 `changes` 与被阻塞项，完成解析但不下载载荷、不写配置/锁/部署；`--diagnostics` 展开关系与约束来源；`--offline` 只使用锁、存储与缓存索引元数据。
 - `--adopt` 保留现有或被编辑的文件并记录为已接管；`--force` 覆盖它们；两者都处理未受管路径与已修改的受管文件。默认情况下，已修改的受管文件会在部署前阻止。
-- `sk remove --purge` 把 `config/hosihikari/<name>.conf` 与 `data/hosihikari/<name>/` 移入事务 trash，提交后删除；默认保留 config/data。
+- `sk remove --purge` 把 `config/seiko/<name>.conf` 与 `data/seiko/<name>/` 移入事务 trash，提交后删除；默认保留 config/data。
 - `sk why <name>`：显示到某个 sei 的依赖链。
 - `sk outdated`：显示范围内、整体与最新可安装版本。
 - `sk list`：读锁列出已安装的 sei。

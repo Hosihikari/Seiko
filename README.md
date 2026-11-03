@@ -42,7 +42,7 @@ Current slice:
 - Relations: `dependencies` (installed and kept alive), `prerequisites` (must exist, not auto-added, used to pick artifacts), `optionalPeers` (must match when present), and `conflicts`. Both version-level and artifact-level scopes are enforced, and resolving backtracks over versions and artifacts together.
 - `--dry-run` prints the planned `changes` and `blocked` constraints and resolves without downloading payloads or writing config, lock, or deployment; `--diagnostics` adds relation and constraint details; `--offline` limits work to the lock, store, and cached index metadata.
 - `--adopt` keeps existing or edited files and records them as adopted; `--force` overwrites them; both work on unmanaged paths and modified managed files. Modified managed files are otherwise blocked before deployment.
-- `sk remove --purge` moves `config/hosihikari/<name>.conf` and `data/hosihikari/<name>/` into the transaction trash and deletes them on commit; config/data are kept by default.
+- `sk remove --purge` moves `config/seiko/<name>.conf` and `data/seiko/<name>/` into the transaction trash and deletes them on commit; config/data are kept by default.
 - `sk why <name>` — shows the dependency chains to a sei.
 - `sk outdated` — shows newer in-range, overall, and latest installable versions.
 - `sk list` — lists installed sei from the lock.
