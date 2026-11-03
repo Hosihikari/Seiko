@@ -226,7 +226,7 @@ public sealed class SeikoClient
                 Lock = lockFile,
                 FilesDeployed = 0,
                 Warnings = warnings,
-                Preview = Preview(existingLock, lockFile, resolved, mode),
+                Preview = Preview(existingLock, lockFile, resolved, mode, warnings),
             };
         }
 
@@ -300,6 +300,22 @@ public sealed class SeikoClient
                 $"requires {dependency.Name} {dependency.Version ?? "*"} (version scope)"));
         }
 
+        foreach (var prerequisite in sei.Entry.Prerequisites)
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "prerequisite",
+                $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} (version scope)"));
+        }
+
+        foreach (var peer in sei.Entry.OptionalPeers)
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "optional-peer",
+                $"constrains {peer.Name} {peer.Version ?? "*"} when present (version scope)"));
+        }
+
         foreach (var dependency in sei.Artifact.Dependencies ?? [])
         {
             diagnostics.Add(new PreviewDiagnostic(
@@ -316,6 +332,14 @@ public sealed class SeikoClient
                 $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this artifact"));
         }
 
+        foreach (var peer in sei.Artifact.OptionalPeers ?? [])
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "artifact-optional-peer",
+                $"constrains {peer.Name} {peer.Version ?? "*"} when present (artifact scope)"));
+        }
+
         foreach (var conflict in sei.Entry.Conflicts)
         {
             diagnostics.Add(new PreviewDiagnostic(
@@ -323,13 +347,22 @@ public sealed class SeikoClient
                 "conflict",
                 $"excludes {conflict.Name} {conflict.Version ?? "*"}"));
         }
+
+        foreach (var conflict in sei.Artifact.Conflicts ?? [])
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "artifact-conflict",
+                $"excludes {conflict.Name} {conflict.Version ?? "*"} for this artifact"));
+        }
     }
 
     private static PreviewResult Preview(
         SeikoLock? existing,
         SeikoLock proposed,
         IReadOnlyList<ResolvedSei> resolved,
-        SyncMode mode)
+        SyncMode mode,
+        IReadOnlyList<string> warnings)
     {
         var previous = existing?.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal)
             ?? new Dictionary<string, LockedSei>(StringComparer.Ordinal);
@@ -401,6 +434,7 @@ public sealed class SeikoClient
             Changes = changes,
             Blocked = blocked,
             Diagnostics = diagnostics,
+            Warnings = warnings,
         };
     }
 

@@ -17,4 +17,5 @@ public sealed class PreviewResult
     public IReadOnlyList<PlannedChange> Changes { get; init; } = [];
     public IReadOnlyList<PreviewBlock> Blocked { get; init; } = [];
     public IReadOnlyList<PreviewDiagnostic> Diagnostics { get; init; } = [];
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 }

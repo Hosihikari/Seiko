@@ -784,7 +784,7 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
             new PreviewEnvelope(1, command, new PreviewData(
                 preview.Changes.ToList(),
                 preview.Blocked.ToList(),
-                [],
+                preview.Warnings.ToList(),
                 false,
                 diagnostics ? preview.Diagnostics.ToList() : null)));
         return 0;
@@ -794,7 +794,15 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
     {
         var from = change.From is null ? "" : $" {change.From} ->";
         var to = change.To is null ? "" : $" {change.To}";
-        Console.WriteLine($"{change.Action}\t{change.Name}{from}{to}");
+        var detail = change.Source is null
+            ? ""
+            : $"source={change.Source} artifact={change.Artifact}";
+        Console.WriteLine($"{change.Action}\t{change.Name}{from}{to}\t{detail}".TrimEnd());
+    }
+
+    foreach (var warning in preview.Warnings)
+    {
+        Console.WriteLine($"warning\t{warning}");
     }
 
     foreach (var block in preview.Blocked)

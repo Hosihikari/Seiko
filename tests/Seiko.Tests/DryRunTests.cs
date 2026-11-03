@@ -33,6 +33,36 @@ public sealed class DryRunTests
     }
 
     [Fact]
+    public void DryRun_PreviewCarriesWarningsAndEveryRelationKind()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("marker", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["m.txt"] = "m" } }],
+        });
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Prerequisites = [new DepFixture("marker", "*")],
+            OptionalPeers = [new DepFixture("marker", "*")],
+            Conflicts = [new DepFixture("gone", "*")],
+            Deprecated = "use world",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"), new SpecFixture("marker", "[1.0.0]"));
+
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
+
+        var preview = result.Preview!;
+        Assert.NotEmpty(preview.Warnings);
+        var kinds = preview.Diagnostics.Select(diagnostic => diagnostic.Kind).ToHashSet();
+        Assert.Contains("prerequisite", kinds);
+        Assert.Contains("optional-peer", kinds);
+        Assert.Contains("conflict", kinds);
+    }
+
+    [Fact]
     public void DryRun_RemoveReportsRemovedSei()
     {
         using var fixture = new Fixture();
