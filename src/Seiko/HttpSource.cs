@@ -18,16 +18,25 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private readonly HashSet<string> _tokenHosts;
     private readonly DownloadSession _session;
     private readonly Dictionary<string, SeiIndex?> _cache = new(StringComparer.Ordinal);
+    private readonly string? _metadataRoot;
+    private readonly bool _offline;
 
     public string Id { get; }
     public IndexRoot Index { get; }
 
     public void Dispose() => _client.Dispose();
 
-    public HttpSource(SourceConfig config, string? proxy, DownloadSession session)
+    public HttpSource(
+        SourceConfig config,
+        string? proxy,
+        DownloadSession session,
+        string? metadataRoot = null,
+        bool offline = false)
     {
         Id = config.Id;
         _session = session;
+        _metadataRoot = metadataRoot;
+        _offline = offline;
         if (!Uri.TryCreate(config.Index, UriKind.Absolute, out var indexUri)
             || (indexUri.Scheme != Uri.UriSchemeHttp && indexUri.Scheme != Uri.UriSchemeHttps))
         {
@@ -72,6 +81,24 @@ public sealed class HttpSource : ISeiSource, IDisposable
         }
 
         var uri = new Uri(_baseUri, $"sei/{name}.json");
+        var cachePath = _metadataRoot is null ? null : MetadataCache.PathFor(_metadataRoot, uri.AbsoluteUri);
+        if (_offline)
+        {
+            var stored = cachePath is null
+                ? null
+                : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.SeiIndex);
+            if (stored is null)
+            {
+                throw new SeikoException(
+                    $"offline: metadata for {name} is not cached (source '{Id}')",
+                    "source");
+            }
+
+            ValidateSei(stored, name);
+            _cache[name] = stored;
+            return stored;
+        }
+
         await _session.HttpSlots.WaitAsync(_session.CancellationToken).ConfigureAwait(false);
         try
         {
@@ -98,9 +125,17 @@ public sealed class HttpSource : ISeiSource, IDisposable
             var sei = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiIndex)
                 ?? throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
 
-            if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion || !string.Equals(sei.Name, name, StringComparison.Ordinal))
+            ValidateSei(sei, name);
+            if (cachePath is not null)
             {
-                throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
+                try
+                {
+                    MetadataCache.Write(cachePath, sei, SeikoJsonContext.Default.SeiIndex);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // A cache miss only costs an offline failure later.
+                }
             }
 
             _cache[name] = sei;
@@ -109,6 +144,15 @@ public sealed class HttpSource : ISeiSource, IDisposable
         finally
         {
             _session.HttpSlots.Release();
+        }
+    }
+
+    private void ValidateSei(SeiIndex sei, string name)
+    {
+        if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion
+            || !string.Equals(sei.Name, name, StringComparison.Ordinal))
+        {
+            throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
         }
     }
 
@@ -673,9 +717,37 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
     private IndexRoot FetchIndex(Uri uri)
     {
-        var bytes = FetchBytes(uri);
-        var index = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.IndexRoot)
-            ?? throw new SeikoException($"source '{Id}': invalid index", "source");
+        var cachePath = _metadataRoot is null ? null : MetadataCache.PathFor(_metadataRoot, uri.AbsoluteUri);
+        IndexRoot? index = null;
+        if (_offline)
+        {
+            index = cachePath is null
+                ? null
+                : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.IndexRoot);
+            if (index is null)
+            {
+                throw new SeikoException(
+                    $"offline: index metadata is not cached (source '{Id}')",
+                    "source");
+            }
+        }
+        else
+        {
+            var bytes = FetchBytes(uri);
+            index = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.IndexRoot)
+                ?? throw new SeikoException($"source '{Id}': invalid index", "source");
+            if (cachePath is not null)
+            {
+                try
+                {
+                    MetadataCache.Write(cachePath, index, SeikoJsonContext.Default.IndexRoot);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
         if (index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
         {
             throw new SeikoException(

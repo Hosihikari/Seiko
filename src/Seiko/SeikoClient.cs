@@ -56,7 +56,8 @@ public sealed class SeikoClient
         bool allowCritical = false,
         bool dryRun = false,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
     {
         root = Path.GetFullPath(root);
         cancellationToken.ThrowIfCancellationRequested();
@@ -85,7 +86,8 @@ public sealed class SeikoClient
             allowCritical,
             dryRun: dryRun,
             adopt: adopt,
-            force: force);
+            force: force,
+            offline: offline);
     }
 
     private SyncResult SyncLocked(
@@ -105,11 +107,19 @@ public sealed class SeikoClient
         bool dryRun = false,
         IReadOnlyList<SeiSpec>? specsOverride = null,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
     {
         if (transaction is null)
         {
             Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        }
+
+        if (offline && mode == SyncMode.Normal && !dryRun)
+        {
+            throw new SeikoException(
+                "offline: sync needs --locked or --frozen; add/remove/update require a network update of cached metadata",
+                "source");
         }
 
         var config = ConfigLoader.Load(root);
@@ -120,7 +130,7 @@ public sealed class SeikoClient
             Log = log,
         };
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-        var sources = LoadSources(config, root, proxy, session);
+        var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
 
         var lockPath = Path.Combine(root, "seiko.lock.json");
@@ -375,7 +385,8 @@ public sealed class SeikoClient
         bool allowCritical = false,
         bool dryRun = false,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
         => AddMany(
             root,
             [specification],
@@ -391,7 +402,8 @@ public sealed class SeikoClient
             allowCritical,
             dryRun,
             adopt,
-            force);
+            force,
+            offline);
 
     public SyncResult AddMany(
         string root,
@@ -408,7 +420,8 @@ public sealed class SeikoClient
         bool allowCritical = false,
         bool dryRun = false,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
     {
         root = Path.GetFullPath(root);
         var additions = specifications
@@ -423,6 +436,8 @@ public sealed class SeikoClient
         {
             throw new SeikoException("add requires at least one sei or --remove", "usage");
         }
+
+        RequireOnline(offline, dryRun, "add");
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -471,7 +486,7 @@ public sealed class SeikoClient
         if (defaultRangeTargets.Count > 0 || (existingLock is not null && removedNames.Count > 0))
         {
             using var session = new DownloadSession(jobs, cancellationToken);
-            var sources = LoadSources(config, root, proxy, session);
+            var sources = LoadSources(config, root, proxy, session, storePath, offline);
             using var sourceScope = new SourceScope(sources);
             var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
             var resolved = new Resolver(
@@ -552,7 +567,8 @@ public sealed class SeikoClient
         bool latestInstallable,
         bool allowCritical,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
         => SyncLocked(
             root,
             storePath,
@@ -570,7 +586,8 @@ public sealed class SeikoClient
             dryRun: true,
             specs,
             adopt,
-            force);
+            force,
+            offline);
 
     private static SyncResult WriteSpecsAndSync(
         string root,
@@ -616,6 +633,16 @@ public sealed class SeikoClient
             : $"[{lower},{version.Major + 1}.0.0)";
     }
 
+    private static void RequireOnline(bool offline, bool dryRun, string command)
+    {
+        if (offline && !dryRun)
+        {
+            throw new SeikoException(
+                $"offline: {command} needs network metadata; use --dry-run --offline to preview from the cache",
+                "source");
+        }
+    }
+
     private static SeiSpec ParseAddSpecification(string specification)
     {
         var at = specification.LastIndexOf('@');
@@ -644,13 +671,16 @@ public sealed class SeikoClient
         bool dryRun = false,
         bool purge = false,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new SeikoException("remove requires a sei name", "usage");
         }
+
+        RequireOnline(offline, dryRun, "remove");
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -670,7 +700,7 @@ public sealed class SeikoClient
         if (existingLock is not null)
         {
             using var session = new DownloadSession(jobs, cancellationToken);
-            var sources = LoadSources(config, root, proxy, session);
+            var sources = LoadSources(config, root, proxy, session, storePath, offline);
             using var sourceScope = new SourceScope(sources);
             var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
             var resolved = new Resolver(
@@ -726,7 +756,8 @@ public sealed class SeikoClient
                 allowCritical,
                 transaction,
                 adopt: adopt,
-                force: force),
+                force: force,
+                offline: offline),
             purge
                 ? transaction =>
                 {
@@ -757,13 +788,16 @@ public sealed class SeikoClient
         bool allowCritical = false,
         bool dryRun = false,
         bool adopt = false,
-        bool force = false)
+        bool force = false,
+        bool offline = false)
     {
         root = Path.GetFullPath(root);
         if (latest && latestInstallable)
         {
             throw new SeikoException("--latest and --latest-installable are mutually exclusive", "usage");
         }
+
+        RequireOnline(offline, dryRun, "update");
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -793,7 +827,7 @@ public sealed class SeikoClient
         if (writeConfig)
         {
             using var session = new DownloadSession(jobs, cancellationToken);
-            var sources = LoadSources(config, root, proxy, session);
+            var sources = LoadSources(config, root, proxy, session, storePath, offline);
             using var sourceScope = new SourceScope(sources);
             foreach (var target in targets)
             {
@@ -821,7 +855,8 @@ public sealed class SeikoClient
             allowCritical,
             transaction,
             adopt: adopt,
-            force: force);
+            force: force,
+            offline: offline);
 
         if (dryRun)
         {
@@ -1395,7 +1430,8 @@ public sealed class SeikoClient
         string root,
         string? storeRoot = null,
         int? toGeneration = null,
-        string? proxy = null)
+        string? proxy = null,
+        bool offline = false)
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -1494,7 +1530,7 @@ public sealed class SeikoClient
         if (needsFetch)
         {
             using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
-            var sources = LoadSources(snapshotConfigInfo, root, proxy, session);
+            var sources = LoadSources(snapshotConfigInfo, root, proxy, session, storePath, offline);
             using var sourceScope = new SourceScope(sources);
             var specs = snapshotLock.Sei
                 .Where(item => item.Direct)
@@ -1532,7 +1568,7 @@ public sealed class SeikoClient
         };
     }
 
-    public IReadOnlyList<SeiSummary> Search(string root, string term, string? proxy = null)
+    public IReadOnlyList<SeiSummary> Search(string root, string term, string? proxy = null, bool offline = false, string? storeRoot = null)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
@@ -1579,12 +1615,13 @@ public sealed class SeikoClient
         return results.OrderBy(result => result.Name, StringComparer.Ordinal).ToList();
     }
 
-    public SeiInfo Info(string root, string name, string? proxy = null)
+    public SeiInfo Info(string root, string name, string? proxy = null, bool offline = false, string? storeRoot = null)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
-        var sources = LoadSources(config, root, proxy, session);
+        var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
 
         foreach (var source in sources)
@@ -1703,7 +1740,9 @@ public sealed class SeikoClient
     public IReadOnlyList<OutdatedSei> Outdated(
         string root,
         string? proxy = null,
-        bool allowPrerelease = false)
+        bool allowPrerelease = false,
+        bool offline = false,
+        string? storeRoot = null)
     {
         root = Path.GetFullPath(root);
         var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
@@ -1713,8 +1752,9 @@ public sealed class SeikoClient
         }
 
         var config = ConfigLoader.Load(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
-        var sources = LoadSources(config, root, proxy, session);
+        var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
         var rangeTexts = config.Sei
             .GroupBy(spec => spec.Name, StringComparer.Ordinal)
@@ -1968,19 +2008,25 @@ public sealed class SeikoClient
         SeikoConfig config,
         string root,
         string? proxy,
-        DownloadSession session)
-        => config.Sources.Select(source => CreateSource(source, root, proxy, session)).ToList();
+        DownloadSession session,
+        string? storePath = null,
+        bool offline = false)
+        => config.Sources
+            .Select(source => CreateSource(source, root, proxy, session, storePath, offline))
+            .ToList();
 
     private static ISeiSource CreateSource(
         SourceConfig source,
         string root,
         string? proxy,
-        DownloadSession session)
+        DownloadSession session,
+        string? storePath = null,
+        bool offline = false)
     {
         if (source.Index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || source.Index.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            return new HttpSource(source, proxy, session);
+            return new HttpSource(source, proxy, session, storePath, offline);
         }
 
         return new LocalSource(source, root);

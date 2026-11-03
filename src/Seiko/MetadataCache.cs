@@ -1,0 +1,59 @@
+using System.Text.Json;
+
+namespace Seiko;
+
+// Index metadata fetched over HTTP is cached so offline replays and previews
+// do not have to touch the network. The cache is keyed by the absolute URL;
+// an entry is only read when it parses and matches the expected schema.
+internal static class MetadataCache
+{
+    public const string DirectoryName = ".metadata";
+
+    public static string PathFor(string storeRoot, string url)
+        => Path.Combine(storeRoot, DirectoryName, Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(url)) + ".json");
+
+    public static void Write<T>(string path, T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(value, info));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                try
+                {
+                    File.Delete(temp);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+    }
+
+    public static T? TryRead<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info)
+        where T : class
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(File.ReadAllBytes(path), info);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static string Describe(string storeRoot)
+        => Path.Combine(storeRoot, DirectoryName);
+}
