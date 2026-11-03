@@ -93,7 +93,13 @@ public static class Deployer
         var state = File.Exists(statePath)
             ? JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState) ?? new LocalState()
             : new LocalState();
-        EnsureCurrentGenerationFormat(stateDirectory, state);
+        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            // v0 does not read old local state: its ownership and generation
+            // are ignored, the deployment starts again at 1, and files the
+            // old state recorded are treated as unmanaged.
+            state = new LocalState();
+        }
 
         PathSafety.EnsureNoLinks(root, Relative(root, stateDirectory));
         foreach (var relative in desired.Keys)
@@ -471,24 +477,6 @@ public static class Deployer
         }
 
         return desired;
-    }
-
-    // v0 does not replay old generations. If the state or the current
-    // generation snapshot predates 0.3, the next deployment starts at 1 and
-    // leaves the old directories in place.
-    private static void EnsureCurrentGenerationFormat(string stateDirectory, LocalState state)
-    {
-        if (state.Generation == 0)
-        {
-            return;
-        }
-
-        var directory = Path.Combine(stateDirectory, "generations", state.Generation.ToString());
-        var config = Path.Combine(directory, "seiko.conf");
-        if (state.SchemaVersion != LocalState.CurrentSchemaVersion || !File.Exists(config))
-        {
-            state.Generation = 0;
-        }
     }
 
     private static HashSet<string> ValidateDesiredTree(

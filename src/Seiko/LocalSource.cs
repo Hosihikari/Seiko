@@ -26,7 +26,7 @@ public sealed class LocalSource : ISeiSource
 
         if (Index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
         {
-            throw new SeikoException($"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}; 0.3 uses {IndexRoot.CurrentSchemaVersion} (migrate the index to the new relation schema)", "source");
+            throw new SeikoException($"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}", "source");
         }
     }
 
@@ -48,7 +48,7 @@ public sealed class LocalSource : ISeiSource
 
         if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion)
         {
-            throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}; 0.3 uses {SeiIndex.CurrentSchemaVersion} (migrate the index to the new relation schema)", "source");
+            throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}", "source");
         }
 
         if (!string.Equals(sei.Name, name, StringComparison.Ordinal))

@@ -135,7 +135,7 @@ public static class IndexVerifier
             {
                 context.Error(
                     "index-schema",
-                    $"unsupported index schemaVersion {index.SchemaVersion}; 0.3 uses {IndexRoot.CurrentSchemaVersion} (migrate the index to the new relation schema)",
+                    $"unsupported index schemaVersion {index.SchemaVersion}",
                     "index.json");
                 return null;
             }
@@ -188,7 +188,7 @@ public static class IndexVerifier
         {
             context.Error(
                 "sei-schema",
-                $"unsupported sei schemaVersion {index.SchemaVersion}; 0.3 uses {SeiIndex.CurrentSchemaVersion} (migrate the index to the new relation schema)",
+                $"unsupported sei schemaVersion {index.SchemaVersion}",
                 relative);
             return;
         }

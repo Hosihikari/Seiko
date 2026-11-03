@@ -22,7 +22,7 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
-    public void Verify_HintsAtMigrationForAnOldIndexSchema()
+    public void Verify_RejectsAnOldIndexSchema()
     {
         using var fixture = NewFixture();
         var path = Path.Combine(fixture.SourceDirectory, "index.json");
@@ -31,7 +31,7 @@ public sealed class IndexVerifierTests
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
         Assert.Contains(result.Findings, finding =>
-            finding.Code == "index-schema" && finding.Message.Contains("migrate the index"));
+            finding.Code == "index-schema" && finding.Message.Contains("unsupported index schemaVersion"));
     }
 
     [Fact]

@@ -19,9 +19,7 @@ public static class LockFile
         // while a structurally broken current lock stays `lock`.
         if (value.SchemaVersion != SeikoLock.CurrentSchemaVersion)
         {
-            throw new SeikoException(
-                $"unsupported lock schemaVersion {value.SchemaVersion}; 0.3 requires {SeikoLock.CurrentSchemaVersion} and does not migrate old locks",
-                "io");
+            throw new SeikoException($"unsupported lock schemaVersion {value.SchemaVersion}", "io");
         }
 
         if (value.Target is null || value.Sources is null || value.Sei is null)

@@ -26,7 +26,6 @@ public sealed class OldFormatTests
 
         Assert.Equal("io", error.Code);
         Assert.Contains("unsupported lock schemaVersion 1", error.Message);
-        Assert.Contains("does not migrate", error.Message);
     }
 
     [Fact]
@@ -74,7 +73,6 @@ public sealed class OldFormatTests
 
         Assert.Equal("source", error.Code);
         Assert.Contains("unsupported index schemaVersion 1", error.Message);
-        Assert.Contains("migrate the index", error.Message);
     }
 
     [Fact]
@@ -123,6 +121,7 @@ public sealed class OldFormatTests
         Assert.Equal(LocalState.CurrentSchemaVersion, state.SchemaVersion);
         Assert.True(Directory.Exists(Path.Combine(stateDirectory, "generations", "7")));
         Assert.True(File.Exists(Path.Combine(stateDirectory, "generations", "1", "seiko.conf")));
+        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]

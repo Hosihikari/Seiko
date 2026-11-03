@@ -33,7 +33,7 @@ public static class ConfigLoader
             || schemaVersion != SeikoConfig.CurrentSchemaVersion)
         {
             throw new SeikoException(
-                $"{path}: unsupported config schemaVersion '{schemaText ?? "(missing)"}'; 0.3 requires {SeikoConfig.CurrentSchemaVersion}",
+                $"{path}: unsupported config schemaVersion '{schemaText ?? "(missing)"}'",
                 "config");
         }
 
