@@ -183,6 +183,44 @@ public sealed class OfflineTests
         Assert.Equal("1.0.0", client.ReadLock(fixture.Root)!.Sei.Single().Version);
     }
 
+    [Fact]
+    public void Info_OfflineUsesOnlyTheCache()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        Seed(fixture, server.BaseUrl);
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var info = client.Info(
+            fixture.Root,
+            "hello",
+            offline: true,
+            storeRoot: fixture.StoreDirectory);
+
+        Assert.Equal("hello", info.Name);
+    }
+
+    [Fact]
+    public void Info_OfflineFailsWhenTheEntryIsNotCached()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        Seed(fixture, server.BaseUrl);
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Directory.Delete(Path.Combine(fixture.StoreDirectory, ".metadata"), recursive: true);
+
+        var error = Assert.Throws<SeikoException>(() => client.Info(
+            fixture.Root,
+            "hello",
+            offline: true,
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("sei/hello.json", error.Message);
+    }
+
     private static void Seed(Fixture fixture, string? httpBaseUrl = null)
     {
         fixture.AddSei("hello", new VersionFixture

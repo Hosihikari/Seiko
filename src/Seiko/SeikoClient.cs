@@ -1651,8 +1651,16 @@ public sealed class SeikoClient
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        if (offline)
+        {
+            // search walks the root name list, so every listed entry needs a
+            // cached file; collect them before constructing sources.
+            OfflineMetadata.Verify(config, storePath, [], followIndexLists: true);
+        }
+
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
-        var sources = LoadSources(config, root, proxy, session);
+        var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var results = new List<SeiSummary>();
@@ -1699,6 +1707,11 @@ public sealed class SeikoClient
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        if (offline)
+        {
+            OfflineMetadata.Verify(config, storePath, [name]);
+        }
+
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
