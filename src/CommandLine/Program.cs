@@ -784,6 +784,14 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
         Console.WriteLine($"blocked\t{block.Code}: {block.Message}");
     }
 
+    if (diagnostics)
+    {
+        foreach (var diagnostic in preview.Diagnostics)
+        {
+            Console.WriteLine($"diagnostic\t{diagnostic.Name}\t{diagnostic.Kind}: {diagnostic.Message}");
+        }
+    }
+
     Console.WriteLine("no files were downloaded or deployed; run without --dry-run to apply");
     return 0;
 }
