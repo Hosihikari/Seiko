@@ -751,7 +751,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
         if (index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
         {
             throw new SeikoException(
-                $"source '{Id}': unsupported index schemaVersion {index.SchemaVersion}",
+                $"source '{Id}': unsupported index schemaVersion {index.SchemaVersion}; 0.3 uses {IndexRoot.CurrentSchemaVersion} (migrate the index to the new relation schema)",
                 "source");
         }
 

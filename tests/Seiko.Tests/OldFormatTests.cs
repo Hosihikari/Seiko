@@ -74,6 +74,7 @@ public sealed class OldFormatTests
 
         Assert.Equal("source", error.Code);
         Assert.Contains("unsupported index schemaVersion 1", error.Message);
+        Assert.Contains("migrate the index", error.Message);
     }
 
     [Fact]
