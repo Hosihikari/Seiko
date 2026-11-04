@@ -197,6 +197,32 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void AuditLog_RedactsSecretsWithUrlLegalSeparators()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var audit = Path.Combine(fixture.Root, "audit.jsonl");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: true, auditLog: audit);
+
+        CallTool(
+            server,
+            "source_add",
+            new JsonObject
+            {
+                ["root"] = fixture.Root,
+                ["id"] = "demo",
+                ["index"] =
+                    "http://demo:PASS,SECRET@127.0.0.1/index.json?token=QUERY",
+            });
+
+        var text = File.ReadAllText(audit);
+        Assert.DoesNotContain("PASS", text);
+        Assert.DoesNotContain("SECRET", text);
+        Assert.DoesNotContain("QUERY", text);
+        Assert.Contains("http://127.0.0.1/index.json", text);
+    }
+
+    [Fact]
     public void DoctorCleanNeedsMutationsButPlainDoctorDoesNot()
     {
         using var fixture = new Fixture();

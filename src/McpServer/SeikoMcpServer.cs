@@ -302,7 +302,11 @@ public sealed class SeikoMcpServer
 
                 return array;
             case JsonValue value when value.TryGetValue<string>(out var text):
-                return JsonValue.Create(Urls.RedactText(text))!;
+                // A structured argument that is exactly a URL is redacted as a
+                // whole URI, so characters the text scanner must treat as
+                // separators cannot cut it short.
+                return JsonValue.Create(
+                    Urls.TryGetHttp(text, out var uri) ? Urls.Redact(uri!) : Urls.RedactText(text))!;
             default:
                 return node ?? JsonValue.Create((string?)null)!;
         }
