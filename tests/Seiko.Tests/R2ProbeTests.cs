@@ -109,7 +109,7 @@ public sealed class R2ProbeTests
     }
 
     [Fact]
-    public void F5_StaleSuccessOutlivesANewer404()
+    public void F5_ANewer404ReplacesAStaleSuccess()
     {
         using var first = new Fixture();
         using var firstServer = new TestHttpServer(first.SourceDirectory);
@@ -146,12 +146,15 @@ public sealed class R2ProbeTests
         client.Sync(first.Root, first.StoreDirectory);
         Assert.Equal("2.0.0", client.ReadLock(first.Root)!.Sei.Single().Version);
 
-        var error = Assert.Throws<SeikoException>(() => client.Sync(
+        // Offline must read the first source as absent, not as its stale
+        // 1.0.0 answer, or the locked replay would see an out-of-date lock.
+        var info = client.Info(
             first.Root,
-            first.StoreDirectory,
-            mode: SyncMode.Locked,
-            offline: true));
+            "aaa",
+            offline: true,
+            storeRoot: first.StoreDirectory);
 
-        Assert.Contains("out of date", error.Message);
+        Assert.Equal("second", info.Source);
+        Assert.Equal("2.0.0", Assert.Single(info.Versions).Version);
     }
 }

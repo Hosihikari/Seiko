@@ -84,15 +84,15 @@ public sealed class HttpSource : ISeiSource, IDisposable
         var cachePath = _metadataRoot is null ? null : MetadataCache.PathFor(_metadataRoot, uri.AbsoluteUri);
         if (_offline)
         {
-            var stored = cachePath is null
-                ? null
-                : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.SeiIndex);
-            if (stored is null && cachePath is not null && MetadataCache.IsMissing(cachePath))
+            if (cachePath is not null && MetadataCache.IsMissing(cachePath))
             {
                 _cache[name] = null;
                 return null;
             }
 
+            var stored = cachePath is null
+                ? null
+                : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.SeiIndex);
             if (stored is null)
             {
                 throw new SeikoException(

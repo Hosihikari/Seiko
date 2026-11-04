@@ -14,13 +14,18 @@ internal static class MetadataCache
 
     // A source that answered 404 for a name is worth remembering: without it
     // an offline replay fails on the first source that simply lacks the sei,
-    // even though another source supplied it online.
+    // even though another source supplied it online. The two answers are
+    // mutually exclusive so only the most recent one can be read back.
     private static string MissingPath(string path) => path + ".404";
 
     public static void WriteMissing(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(MissingPath(path), "");
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
     }
 
     public static bool IsMissing(string path) => File.Exists(MissingPath(path));
