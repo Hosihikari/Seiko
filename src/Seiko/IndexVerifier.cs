@@ -474,6 +474,63 @@ public static class IndexVerifier
             return false;
         }
 
+        if (ExternalFiles.Count(new ArtifactManifest
+        {
+            ExternalFiles = artifact.ExternalFiles,
+            ExternalArchives = artifact.ExternalArchives,
+        }) > 0)
+        {
+            try
+            {
+                ExternalFiles.Validate(
+                    new ArtifactManifest
+                    {
+                        ExternalFiles = artifact.ExternalFiles,
+                        ExternalArchives = artifact.ExternalArchives,
+                    },
+                    $"sei '{name}' {entry.Version}",
+                    "artifact-external");
+            }
+            catch (SeikoException ex)
+            {
+                context.Error("artifact-external", ex.Message, path);
+                ok = false;
+            }
+
+            var summary = artifact.External;
+            if (summary is null)
+            {
+                context.Warning(
+                    "artifact-external-summary",
+                    $"sei '{name}' {entry.Version} has external files but no external summary",
+                    path);
+            }
+            else
+            {
+                var expected = ExternalFiles.Count(new ArtifactManifest
+                {
+                    ExternalFiles = artifact.ExternalFiles,
+                    ExternalArchives = artifact.ExternalArchives,
+                });
+                if (summary.Files + summary.Archives != expected)
+                {
+                    context.Error(
+                        "artifact-external-summary",
+                        $"sei '{name}' {entry.Version} external summary count does not match the declarations",
+                        path);
+                    ok = false;
+                }
+            }
+        }
+        else if (artifact.External is not null)
+        {
+            context.Error(
+                "artifact-external-summary",
+                $"sei '{name}' {entry.Version} has an external summary but no external declarations",
+                path);
+            ok = false;
+        }
+
         if (!IsValidArtifactUrl(source.Url))
         {
             context.Error(
@@ -854,7 +911,7 @@ public static class IndexVerifier
             }
 
             var prefix = $"sei '{reference.Sei}' {reference.Version}";
-            if (manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion)
+            if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
             {
                 context.Error(
                     "manifest-mismatch",
@@ -951,6 +1008,43 @@ public static class IndexVerifier
                     "manifest-mismatch",
                     $"{prefix}: sei.json modes do not match the index artifact",
                     reference.Path);
+            }
+
+            // A 3 manifest may carry external payload; validate it here so CI
+            // catches bad URLs, paths and digests without fetching the bytes.
+            if (ExternalFiles.Count(manifest.Artifact) > 0)
+            {
+                if (manifest.SchemaVersion == 2)
+                {
+                    context.Error(
+                        "manifest-external",
+                        $"{prefix}: external declarations require sei.json schemaVersion 3",
+                        reference.Path);
+                }
+
+                try
+                {
+                    ExternalFiles.Validate(manifest.Artifact!, prefix, "manifest-external");
+                }
+                catch (SeikoException ex)
+                {
+                    context.Error("manifest-external", ex.Message, reference.Path);
+                }
+
+                var declared = (manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path)
+                    .Concat((manifest.Artifact.ExternalArchives ?? [])
+                        .SelectMany(archive => archive.Members)
+                        .Select(member => member.Path));
+                foreach (var target in declared)
+                {
+                    if (seenNames.Contains(target))
+                    {
+                        context.Error(
+                            "manifest-external",
+                            $"{prefix}: external target '{target}' also exists inside the artifact",
+                            reference.Path);
+                    }
+                }
             }
 
             if (manifest.Artifact?.Modes is not null)

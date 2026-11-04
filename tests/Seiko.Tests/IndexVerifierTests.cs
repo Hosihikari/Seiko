@@ -508,6 +508,61 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_AcceptsExternalDeclarationsWithoutDownloading()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("vendor/server.bin", "https://vendor.invalid/server.bin", "data"));
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Empty(result.Findings);
+        Assert.Equal(0, result.CheckedArtifacts);
+    }
+
+    [Fact]
+    public void Verify_RejectsExternalUrlWithUserinfo()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture(
+                "vendor/server.bin",
+                "https://user:secret@vendor.invalid/server.bin",
+                "data"));
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "artifact-external" && finding.Message.Contains("userinfo"));
+    }
+
+    [Fact]
+    public void Verify_RejectsExternalTargetInsideTheZip()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("hello.txt", "https://vendor.invalid/hello.txt", "data"));
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "manifest-external" && finding.Message.Contains("also exists inside"));
+    }
+
+    [Fact]
+    public void Verify_CheckArtifactsReportsForeignLocation()
+    {
+        using var fixture = NewFixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        var sei = ReadSei(fixture, "hello");
+        var source = sei.Versions[0].Artifacts[0].Source;
+        source.Url = server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url);
+        WriteSei(fixture, "hello", sei);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Empty(result.Findings);
+        Assert.Equal(1, result.CheckedArtifacts);
+    }
+
+    [Fact]
     public void Verify_LogRedactsSignedArtifactUrls()
     {
         using var fixture = NewFixture();
@@ -692,6 +747,25 @@ public sealed class IndexVerifierTests
         {
             Version = "1.0.0",
             Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+        return fixture;
+    }
+
+    private static Fixture ExternalFixture(params ExternalFileFixture[] files)
+    {
+        var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    ExternalFiles = files.ToList(),
+                },
+            ],
         });
         fixture.WriteConfig("win-x64");
         return fixture;

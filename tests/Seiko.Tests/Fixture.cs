@@ -8,6 +8,12 @@ internal sealed record DepFixture(string Name, string? Version);
 
 internal sealed record SpecFixture(string Name, string? Version = null);
 
+internal sealed record ExternalFileFixture(string Path, string Url, string Content);
+
+internal sealed record ExternalMemberFixture(string Member, string Path);
+
+internal sealed record ExternalArchiveFixture(string Url, string Format, byte[] Content, params ExternalMemberFixture[] Members);
+
 internal sealed class ArtifactFixture
 {
     public string? Rid { get; init; }
@@ -17,6 +23,10 @@ internal sealed class ArtifactFixture
     public List<DepFixture> Prerequisites { get; init; } = [];
     public List<DepFixture> OptionalPeers { get; init; } = [];
     public List<DepFixture> Conflicts { get; init; } = [];
+    public List<ExternalFileFixture> ExternalFiles { get; init; } = [];
+    public List<ExternalArchiveFixture> ExternalArchives { get; init; } = [];
+    public int ManifestSchemaVersion { get; init; } = SeiManifest.CurrentSchemaVersion;
+    public string? OverriddenDigest { get; init; }
 }
 
 internal sealed class VersionFixture
@@ -52,6 +62,66 @@ internal sealed class Fixture : IDisposable
     public string SourceDirectory { get; }
     public string StoreDirectory { get; }
 
+    // External bytes are written next to the artifacts so the test HTTP server
+    // can expose them from the same root as the index.
+    public string WriteExternal(string relative, byte[] content)
+    {
+        var path = Path.Combine(SourceDirectory, "external", relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, content);
+        return path;
+    }
+
+    public static byte[] Zip(IReadOnlyDictionary<string, byte[]> entries)
+    {
+        using var buffer = new MemoryStream();
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (name, content) in entries)
+            {
+                var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+                using var stream = entry.Open();
+                stream.Write(content);
+            }
+        }
+
+        return buffer.ToArray();
+    }
+
+    public static byte[] Tar(IReadOnlyDictionary<string, byte[]> entries)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new System.Formats.Tar.TarWriter(buffer, leaveOpen: true))
+        {
+            foreach (var (name, content) in entries)
+            {
+                var entry = new System.Formats.Tar.PaxTarEntry(
+                    System.Formats.Tar.TarEntryType.RegularFile,
+                    name)
+                {
+                    DataStream = new MemoryStream(content),
+                };
+                writer.WriteEntry(entry);
+            }
+        }
+
+        return buffer.ToArray();
+    }
+
+    public static byte[] Gzip(byte[] content)
+    {
+        using var buffer = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(
+            buffer,
+            System.IO.Compression.CompressionLevel.Optimal,
+            leaveOpen: true))
+        {
+            gzip.Write(content);
+        }
+
+        return buffer.ToArray();
+    }
+
     public void AddSei(string name, params VersionFixture[] versions)
     {
         var index = _indexes.TryGetValue(name, out var existing)
@@ -67,6 +137,7 @@ internal sealed class Fixture : IDisposable
                 var zipPath = Path.Combine(SourceDirectory, "artifacts", zipName);
                 var manifest = new SeiManifest
                 {
+                    SchemaVersion = artifact.ManifestSchemaVersion,
                     Name = name,
                     Version = version.Version,
                     Dependencies = ToDependencies(version.Dependencies),
@@ -82,6 +153,31 @@ internal sealed class Fixture : IDisposable
                         Conflicts = ToDependencies(artifact.Conflicts),
                         Layout = "root",
                         Modes = artifact.Modes,
+                        ExternalFiles = artifact.ExternalFiles
+                            .Select(file => new ExternalFile
+                            {
+                                Path = file.Path,
+                                Url = file.Url,
+                                Sha256 = Hashing.Sha256Bytes(Encoding.UTF8.GetBytes(file.Content)),
+                                Size = Encoding.UTF8.GetByteCount(file.Content),
+                            })
+                            .ToList(),
+                        ExternalArchives = artifact.ExternalArchives
+                            .Select(archive => new ExternalArchive
+                            {
+                                Url = archive.Url,
+                                Format = archive.Format,
+                                Sha256 = Hashing.Sha256Bytes(archive.Content),
+                                Size = archive.Content.Length,
+                                Members = archive.Members
+                                    .Select(member => new ExternalArchiveMember
+                                    {
+                                        Member = member.Member,
+                                        Path = member.Path,
+                                    })
+                                    .ToList(),
+                            })
+                            .ToList(),
                     },
                 };
 
@@ -104,10 +200,49 @@ internal sealed class Fixture : IDisposable
                     Conflicts = ToDependencies(artifact.Conflicts),
                     Layout = "root",
                     Modes = artifact.Modes,
+                    ExternalFiles = artifact.ExternalFiles
+                        .Select(file => new ExternalFile
+                        {
+                            Path = file.Path,
+                            Url = file.Url,
+                            Sha256 = Hashing.Sha256Bytes(Encoding.UTF8.GetBytes(file.Content)),
+                            Size = Encoding.UTF8.GetByteCount(file.Content),
+                        })
+                        .ToList(),
+                    ExternalArchives = artifact.ExternalArchives
+                        .Select(archive => new ExternalArchive
+                        {
+                            Url = archive.Url,
+                            Format = archive.Format,
+                            Sha256 = Hashing.Sha256Bytes(archive.Content),
+                            Size = archive.Content.Length,
+                            Members = archive.Members
+                                .Select(member => new ExternalArchiveMember
+                                {
+                                    Member = member.Member,
+                                    Path = member.Path,
+                                })
+                                .ToList(),
+                        })
+                        .ToList(),
+                    External = artifact.ExternalFiles.Count + artifact.ExternalArchives.Count == 0
+                        ? null
+                        : new ExternalSummary
+                        {
+                            Files = artifact.ExternalFiles.Count,
+                            Archives = artifact.ExternalArchives.Count,
+                            Size = artifact.ExternalFiles.Sum(file => Encoding.UTF8.GetByteCount(file.Content))
+                                + artifact.ExternalArchives.Sum(archive => (long)archive.Content.Length),
+                            Hosts = artifact.ExternalFiles.Select(file => new Uri(file.Url).Host)
+                                .Concat(artifact.ExternalArchives.Select(archive => new Uri(archive.Url).Host))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .OrderBy(host => host, StringComparer.OrdinalIgnoreCase)
+                                .ToList(),
+                        },
                     Source = new ArtifactLocation
                     {
                         Url = "artifacts/" + zipName,
-                        Sha256 = Hashing.Sha256File(zipPath),
+                        Sha256 = artifact.OverriddenDigest ?? Hashing.Sha256File(zipPath),
                         Size = info.Length,
                     },
                 });
