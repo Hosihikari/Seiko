@@ -54,16 +54,18 @@ internal static class Urls
         }
     }
 
-    // Everything that can appear inside a URL. Non-ASCII is allowed because a
-    // raw IR IRI can carry Unicode userinfo or query text; stopping there
-    // would leave the secret tail outside the redacted span. A JSON escape
-    // (`\uXXXX`) is also accepted so already-serialized text stays one span.
+    // Everything that can appear inside a URL. A quote is kept in the span:
+    // it may sit in userinfo or a query, and a quote that merely surrounds the
+    // URL is removed again by TrimTrailing. Non-ASCII is allowed because a raw
+    // IRI can carry Unicode userinfo or query text; stopping there would leave
+    // the secret tail outside the redacted span. A JSON escape (`\uXXXX`) is
+    // also accepted so already-serialized text stays one span.
     private static bool IsUriChar(char value)
         => !char.IsWhiteSpace(value)
-            && value is not ('"' or '\'' or '<' or '>')
+            && value is not ('<' or '>')
             && (char.IsAsciiLetterOrDigit(value)
                 || !char.IsAscii(value)
-                || "-._~:/?#[]@!$&'()*+,;=%\\".Contains(value, StringComparison.Ordinal));
+                || "-._~:/?#[]@!$&'()*+,;=%\\'\"".Contains(value, StringComparison.Ordinal));
 
     // Sentence punctuation commonly follows a URL. Only characters that are
     // rarely meaningful at the very end of a URL are trimmed, and never from

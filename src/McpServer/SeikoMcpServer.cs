@@ -26,6 +26,9 @@ public sealed class SeikoMcpServer
     private readonly SeikoClient _client = new();
     private readonly string? _auditLog;
 
+    // Long tool results are capped; the cap must never cut the JSON line.
+    private const int MaxAuditLength = 4096;
+
     public SeikoMcpServer(
         string defaultRoot,
         bool allowMutations,
@@ -255,7 +258,33 @@ public sealed class SeikoMcpServer
     }
 
     private static string Truncate(string text)
-        => text.Length > 4096 ? text[..4096] : text;
+        => text.Length > MaxAuditLength ? text[..MaxAuditLength] : text;
+
+    // Already-redacted JSON, cut so that its serialized form fits the budget,
+    // with a marker naming what was lost. The cut is inside a JSON string, so
+    // the value stays valid whatever it lands on.
+    private static JsonValue TruncationMarker(JsonNode redacted, int budget)
+    {
+        var json = redacted.ToJsonString();
+        if (json.Length <= budget)
+        {
+            return JsonValue.Create(json)!;
+        }
+
+        // Escaping can expand the text, so measure the serialized form and
+        // shrink until it fits instead of assuming a 1:1 ratio.
+        var keep = json.Length;
+        while (true)
+        {
+            keep /= 2;
+            var candidate = JsonValue.Create(
+                $"[truncated, {json.Length} chars] {json[..keep]}");
+            if (candidate!.ToJsonString().Length <= budget || keep == 0)
+            {
+                return candidate;
+            }
+        }
+    }
 
     // One line per call. Arguments can contain URLs, so both arguments and the
     // result are redacted before they reach the log.
@@ -264,7 +293,7 @@ public sealed class SeikoMcpServer
         string tool,
         JsonObject arguments,
         JsonNode? resultTree,
-        string resultText)
+        string? resultText)
     {
         if (_auditLog is null)
         {
@@ -279,10 +308,32 @@ public sealed class SeikoMcpServer
                 ["tool"] = tool,
                 ["outcome"] = outcome,
                 ["arguments"] = RedactUrls(arguments.DeepClone()),
-                ["result"] = resultTree ?? (JsonNode)JsonValue.Create(resultText)!,
+                ["result"] = resultTree ?? (JsonNode)JsonValue.Create(resultText ?? "")!,
             };
-            // A very large result is trimmed only once it is already safe.
-            var line = Truncate(entry.ToJsonString());
+
+            // The cap is applied to the redacted value, never to the
+            // serialized line: a line cut mid-token is not JSON any more.
+            var line = entry.ToJsonString();
+            if (line.Length > MaxAuditLength)
+            {
+                entry["result"] = TruncationMarker(entry["result"]!, MaxAuditLength / 2);
+                line = entry.ToJsonString();
+            }
+
+            if (line.Length > MaxAuditLength)
+            {
+                entry["arguments"] = TruncationMarker(entry["arguments"]!, MaxAuditLength / 4);
+                line = entry.ToJsonString();
+            }
+
+            if (line.Length > MaxAuditLength)
+            {
+                // Fixed fields plus markers still overrun: keep the record
+                // valid and short rather than cut it.
+                entry["result"] = $"[truncated: {line.Length} chars]";
+                line = entry.ToJsonString();
+            }
+
             File.AppendAllText(_auditLog, line + "\n");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
