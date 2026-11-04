@@ -137,12 +137,15 @@ public static class Deployer
             : new LocalState();
         if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
         {
-            // v0 does not read old local state: its ownership and generation
-            // are ignored, the deployment starts again at 1, and files the
-            // old state recorded are treated as unmanaged.
-            state = new LocalState();
+            // v0 accepts exactly one local state format: an old one is a hard
+            // error, not a silent reset, so an upgrade cannot look like an
+            // empty root and deploy over the old environment.
+            throw new SeikoException(
+                $"unsupported deployment state schemaVersion {state.SchemaVersion}",
+                "io");
         }
-        else if (state.Files is null)
+
+        if (state.Files is null)
         {
             throw new SeikoException("deployment state has no file list", "deploy");
         }

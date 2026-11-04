@@ -1570,6 +1570,12 @@ public sealed class SeikoClient
 
         var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
             ?? throw new SeikoException("invalid local state", "lock");
+        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            throw new SeikoException(
+                $"unsupported deployment state schemaVersion {state.SchemaVersion}",
+                "io");
+        }
 
         var target = toGeneration ?? state.Generation - 1;
         if (target < 1)
