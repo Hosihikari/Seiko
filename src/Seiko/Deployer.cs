@@ -142,6 +142,10 @@ public static class Deployer
             // old state recorded are treated as unmanaged.
             state = new LocalState();
         }
+        else if (state.Files is null)
+        {
+            throw new SeikoException("deployment state has no file list", "deploy");
+        }
 
         PathSafety.EnsureNoLinks(root, Relative(root, stateDirectory));
         foreach (var relative in desired.Keys)
@@ -355,9 +359,14 @@ public static class Deployer
                 transaction.SetNewGeneration(Relative(root, generationDirectory));
             }
 
-            // Adopted bytes are copied into the generation snapshot; register
-            // every target before the journal so a failure restores them.
+            // Adopted bytes are copied into the generation snapshot through a
+            // staging directory. Register it before the journal so a crash
+            // between copy and move leaves nothing behind.
             var adoptedDirectory = Path.Combine(generationDirectory, "adopted");
+            var staging = Path.Combine(
+                generationDirectory,
+                DeploymentTransaction.AdoptedStagingPrefix + Guid.NewGuid().ToString("N"));
+            transaction.WillCreateTemporary(Relative(root, staging));
             foreach (var existing in Directory.Exists(adoptedDirectory)
                 ? Directory.EnumerateFiles(adoptedDirectory, "*", SearchOption.AllDirectories)
                 : [])
@@ -452,7 +461,7 @@ public static class Deployer
             }
 
             WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
-            WriteGeneration(stateDirectory, newState, lockFile, configSnapshot, adoptedSources);
+            WriteGeneration(stateDirectory, newState, lockFile, configSnapshot, adoptedSources, staging);
             WriteInstalledManifests(installedPaths, sei);
             if (writeLock)
             {
@@ -740,7 +749,8 @@ public static class Deployer
         LocalState state,
         SeikoLock lockFile,
         byte[] config,
-        IReadOnlyDictionary<string, string>? adoptedFiles = null)
+        IReadOnlyDictionary<string, string>? adoptedFiles = null,
+        string? staging = null)
     {
         var directory = Path.Combine(stateDirectory, "generations", state.Generation.ToString());
         Directory.CreateDirectory(directory);
@@ -753,9 +763,12 @@ public static class Deployer
         // Adopted files are the only deployed bytes the store cannot supply,
         // so the snapshot must carry them for a later rollback. Stage them
         // first: a rollback reads its sources from the target generation's own
-        // adopted directory, which is replaced here.
+        // adopted directory, which is replaced here. The caller already
+        // registered the staging path with the transaction.
         var adoptedDirectory = Path.Combine(directory, "adopted");
-        var staging = Path.Combine(directory, ".adopted-staging-" + Guid.NewGuid().ToString("N"));
+        staging ??= Path.Combine(
+            directory,
+            DeploymentTransaction.AdoptedStagingPrefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(staging);
         try
         {

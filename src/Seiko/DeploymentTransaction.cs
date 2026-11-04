@@ -5,6 +5,8 @@ namespace Seiko;
 
 internal sealed class DeploymentTransaction
 {
+    public const string AdoptedStagingPrefix = ".adopted-staging-";
+
     private const string JournalName = "transaction.json";
     private const string BackupName = "transaction";
     private const string OwnershipName = "transaction.created";
@@ -289,7 +291,11 @@ internal sealed class DeploymentTransaction
         {
             var normalized = Normalize(temporary);
             var path = Resolve(rootFull, normalized);
-            if (File.Exists(path))
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+            else if (File.Exists(path))
             {
                 File.Delete(path);
             }
@@ -521,7 +527,8 @@ internal sealed class DeploymentTransaction
             var relative = Normalize(temporary);
             Resolve(root, relative);
             if (!IsDeploymentTemporary(relative, entries)
-                && !IsRestoreTemporary(relative, entries))
+                && !IsRestoreTemporary(relative, entries)
+                && !IsAdoptedStaging(relative))
             {
                 throw new SeikoException(
                     $"invalid deployment transaction temporary path: {relative}",
@@ -595,6 +602,16 @@ internal sealed class DeploymentTransaction
 
     private static bool IsRestoreTemporary(string relative, HashSet<string> entries)
         => HasTemporaryLeaf(relative, entries, ".seiko-restore-");
+
+    // The adopted staging directory is a generation-local directory, not a
+    // sibling file, so it needs its own shape check.
+    private static bool IsAdoptedStaging(string relative)
+    {
+        var leaf = relative[(relative.LastIndexOf('/') + 1)..];
+        return leaf.StartsWith(AdoptedStagingPrefix, StringComparison.Ordinal)
+            && leaf.Length == AdoptedStagingPrefix.Length + 32
+            && Hashing.IsLowerHex(leaf.AsSpan(AdoptedStagingPrefix.Length));
+    }
 
     private static bool HasTemporaryLeaf(
         string relative,
