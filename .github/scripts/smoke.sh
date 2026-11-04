@@ -21,9 +21,11 @@ run "$mcp" --help >/dev/null
 
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
+# The current lock format is the only one 0.3 reads; an old fixture would be
+# rejected by design, so this must track the schema the build produces.
 cat > "$root/seiko.lock.json" <<'JSON'
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": { "rid": "smoke" },
   "sources": ["official"],
   "sei": [
@@ -32,8 +34,11 @@ cat > "$root/seiko.lock.json" <<'JSON'
       "version": "1.0.0",
       "source": "official",
       "direct": true,
-      "artifact": { "sha256": "", "selectors": null },
-      "dependencies": []
+      "artifact": { "sha256": "", "rid": "smoke" },
+      "dependencies": [],
+      "prerequisites": [],
+      "optionalPeers": [],
+      "conflicts": []
     }
   ]
 }
