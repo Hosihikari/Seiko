@@ -36,6 +36,9 @@ public sealed class Resolver
     private readonly HashSet<SeiIndex> _validatedIndexes = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ForcedPick> _forced;
+    private readonly bool _checkAmbiguity;
+    private IReadOnlyList<SeiSpec> _specs = [];
     private SeikoException? _lastConflict;
     private long _totalAssignments;
     private bool _hintsGrew;
@@ -48,6 +51,29 @@ public sealed class Resolver
         IReadOnlySet<string>? updateNames = null,
         bool latestInstallable = false,
         bool allowCritical = false)
+        : this(
+            sources,
+            existingLock,
+            rid,
+            allowPrerelease,
+            updateNames,
+            latestInstallable,
+            allowCritical,
+            new Dictionary<string, ForcedPick>(StringComparer.Ordinal),
+            checkAmbiguity: true)
+    {
+    }
+
+    private Resolver(
+        IReadOnlyList<ISeiSource> sources,
+        SeikoLock? existingLock,
+        string rid,
+        bool allowPrerelease,
+        IReadOnlySet<string>? updateNames,
+        bool latestInstallable,
+        bool allowCritical,
+        Dictionary<string, ForcedPick> forced,
+        bool checkAmbiguity)
     {
         _sources = sources;
         _lock = existingLock;
@@ -56,6 +82,8 @@ public sealed class Resolver
         _updateNames = updateNames;
         _latestInstallable = latestInstallable;
         _allowCritical = allowCritical;
+        _forced = forced;
+        _checkAmbiguity = checkAmbiguity;
     }
 
     public IReadOnlyList<string> Warnings()
@@ -78,7 +106,10 @@ public sealed class Resolver
     }
 
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
-        => ResolveOnce(specs);
+    {
+        _specs = specs;
+        return ResolveOnce(specs);
+    }
 
     private IReadOnlyList<ResolvedSei> ResolveOnce(IReadOnlyList<SeiSpec> specs)
     {
@@ -118,8 +149,7 @@ public sealed class Resolver
                 }
 
                 CrossSourceCheck.Verify(_sources, _assigned.Values, "checksum");
-                return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
-            }
+                return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();            }
 
             if (!_hintsGrew)
             {
@@ -177,6 +207,13 @@ public sealed class Resolver
         }
 
         var candidates = Candidates(requirement.Name, source, indexData, _pending);
+        if (_forced.TryGetValue(requirement.Name, out var forcedVersion))
+        {
+            candidates = candidates
+                .Where(candidate => candidate.Version.ToNormalizedString() == forcedVersion.Version)
+                .ToList();
+        }
+
         if (candidates.Count == 0)
         {
             _lastConflict = Conflict(requirement.Name, source.Id, _pending);
@@ -222,6 +259,21 @@ public sealed class Resolver
             var artifactCandidates = ridArtifacts
                 .Where(artifact => CanStillMatch(artifact, resolved))
                 .ToList();
+
+            // A probe pins the sibling it is testing, so the search must not
+            // silently fall back to the other one. Sources hand out fresh
+            // index objects per read, so the artifact is matched by identity.
+            if (_forced.TryGetValue(requirement.Name, out var forced))
+            {
+                artifactCandidates = artifactCandidates
+                    .Where(artifact => SameArtifact(artifact, forced)
+                        && string.Equals(
+                            version.ToNormalizedString(),
+                            forced.Version,
+                            StringComparison.Ordinal))
+                    .ToList();
+            }
+
             if (artifactCandidates.Count == 0)
             {
                 _lastConflict = Fail(NoArtifactMessage(resolved));
@@ -635,14 +687,50 @@ public sealed class Resolver
                 continue;
             }
 
+            if (!_checkAmbiguity)
+            {
+                continue;
+            }
+
             var solvable = tied.Count(artifact =>
                 ReferenceEquals(artifact, resolved.Artifact)
-                || CanResolveDependencies(artifact, top));
+                || CanSolveWith(artifact, resolved));
             if (solvable > 1)
             {
                 throw Fail(
                     $"ambiguous artifact for {resolved.Name} {resolved.Version}: {solvable} artifacts match at specificity {top}");
             }
+        }
+    }
+
+    // Ask the real search whether swapping this artifact in still yields a
+    // solution. A local existence check is not enough: the alternative can
+    // introduce its own conflicts, missing transitive targets or an
+    // unsatisfiable prerequisite, and it must not create a false ambiguity.
+    private bool CanSolveWith(ArtifactEntry artifact, ResolvedSei owner)
+    {
+        var forced = new Dictionary<string, ForcedPick>(_forced, StringComparer.Ordinal)
+        {
+            [owner.Name] = new ForcedPick(owner.Version, artifact),
+        };
+        var probe = new Resolver(
+            _sources,
+            _lock,
+            _rid,
+            _allowPrerelease,
+            _updateNames,
+            _latestInstallable,
+            _allowCritical,
+            forced,
+            checkAmbiguity: false);
+        try
+        {
+            probe.ResolveOnce(_specs);
+            return true;
+        }
+        catch (SeikoException)
+        {
+            return false;
         }
     }
 
@@ -679,47 +767,23 @@ public sealed class Resolver
         return true;
     }
 
-    // A tied artifact counts as solvable when its dependency group could be
-    // added: a dependency already in the graph must satisfy the range, and an
-    // absent one needs some source version with an artifact for this rid.
-    // Declaration order alone must not decide an ambiguity.
-    private bool CanResolveDependencies(ArtifactEntry artifact, int specificity)
-    {
-        _ = specificity;
-        foreach (var dependency in artifact.Dependencies ?? [])
-        {
-            var range = ParseRange(dependency.Version, dependency.Name);
-            var constraints = _pending
-                .Where(requirement => string.Equals(requirement.Name, dependency.Name, StringComparison.Ordinal))
-                .Select(requirement => requirement.Range)
-                .Append(range)
-                .ToList();
+    // Sources return a fresh object graph per read, so a forced artifact is
+    // identified by its content-addressed digest and its place among equals.
+    private static bool SameArtifact(ArtifactEntry candidate, ForcedPick forced)
+        => string.Equals(
+                candidate.Source?.Sha256,
+                forced.Artifact.Source?.Sha256,
+                StringComparison.OrdinalIgnoreCase)
+            && SameRelations(candidate.Dependencies, forced.Artifact.Dependencies)
+            && SameRelations(candidate.Prerequisites, forced.Artifact.Prerequisites)
+            && SameRelations(candidate.OptionalPeers, forced.Artifact.OptionalPeers)
+            && SameRelations(candidate.Conflicts, forced.Artifact.Conflicts);
 
-            if (_assigned.TryGetValue(dependency.Name, out var target))
-            {
-                if (!constraints.All(constraint => constraint.Satisfies(target.ParsedVersion)))
-                {
-                    return false;
-                }
-
-                continue;
-            }
-
-            if (!TryFindSource(dependency.Name, out _, out var index)
-                || !index.Versions.Any(entry =>
-                    NuGetVersion.TryParse(entry.Version, out var version)
-                    && !entry.Yanked
-                    && constraints.All(constraint => constraint.Satisfies(version))
-                    && entry.Artifacts.Any(candidate =>
-                        string.IsNullOrWhiteSpace(candidate.Rid)
-                        || candidate.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    private static bool SameRelations(List<SeiDependency>? left, List<SeiDependency>? right)
+        => (left ?? []).Count == (right ?? []).Count
+            && (left ?? []).Zip(right ?? []).All(pair =>
+                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                && string.Equals(pair.First.Version, pair.Second.Version, StringComparison.Ordinal));
 
     private bool ValidateRelations(
         string owner,
@@ -836,6 +900,8 @@ public sealed class Resolver
         => string.IsNullOrWhiteSpace(entry.Advisory?.Url)
             ? version
             : $"{version} ({entry.Advisory.Url})";
+
+    private sealed record ForcedPick(string Version, ArtifactEntry Artifact);
 
     private sealed record Requirement(
         string Name,
