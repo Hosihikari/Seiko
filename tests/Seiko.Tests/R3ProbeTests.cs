@@ -29,7 +29,7 @@ public sealed class R3ProbeTests
     }
 
     [Fact]
-    public void F2_AmbiguityMissedWhenTheAlternativeNeedsAnotherDependencyVersion()
+    public void F2_AmbiguityIsFoundInEachCandidatesOwnGraph()
     {
         using var fixture = new Fixture();
         fixture.AddSei(
@@ -57,9 +57,41 @@ public sealed class R3ProbeTests
         });
         fixture.WriteConfig("win-x64", new SpecFixture("aaa", "[1.0.0]"));
 
+        // Both alternatives are satisfiable, each with its own marker version,
+        // so declaration order must not decide between them.
         var error = Assert.Throws<SeikoException>(
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
+        Assert.Equal("resolve", error.Code);
         Assert.Contains("ambiguous artifact", error.Message);
+    }
+
+    [Fact]
+    public void F2_ALowerSpecificityAlternativeIsNotAmbiguous()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("marker", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["m.txt"] = "m" } }],
+        });
+        fixture.AddSei("aaa", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "plain" } },
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("marker", "*")],
+                    Files = { ["a.txt"] = "specific" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("aaa", "[1.0.0]"), new SpecFixture("marker", "*"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("specific", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
     }
 }

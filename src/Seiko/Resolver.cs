@@ -38,9 +38,9 @@ public sealed class Resolver
     private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ForcedPick> _forced;
     private readonly bool _checkAmbiguity;
+    private readonly SearchBudget _budget;
     private IReadOnlyList<SeiSpec> _specs = [];
     private SeikoException? _lastConflict;
-    private long _totalAssignments;
     private bool _hintsGrew;
 
     public Resolver(
@@ -60,7 +60,8 @@ public sealed class Resolver
             latestInstallable,
             allowCritical,
             new Dictionary<string, ForcedPick>(StringComparer.Ordinal),
-            checkAmbiguity: true)
+            checkAmbiguity: true,
+            new SearchBudget())
     {
     }
 
@@ -73,7 +74,8 @@ public sealed class Resolver
         bool latestInstallable,
         bool allowCritical,
         Dictionary<string, ForcedPick> forced,
-        bool checkAmbiguity)
+        bool checkAmbiguity,
+        SearchBudget budget)
     {
         _sources = sources;
         _lock = existingLock;
@@ -84,6 +86,7 @@ public sealed class Resolver
         _allowCritical = allowCritical;
         _forced = forced;
         _checkAmbiguity = checkAmbiguity;
+        _budget = budget;
     }
 
     public IReadOnlyList<string> Warnings()
@@ -124,7 +127,6 @@ public sealed class Resolver
             directNames.Add(spec.Name);
         }
 
-        _totalAssignments = 0;
         while (true)
         {
             _pending.Clear();
@@ -222,7 +224,7 @@ public sealed class Resolver
 
         foreach (var (entry, version) in Order(requirement.Name, candidates))
         {
-            if (++_totalAssignments > MaxTotalAssignments)
+            if (!_budget.TryConsume())
             {
                 throw Fail("dependency resolution exceeded the work budget");
             }
@@ -285,7 +287,7 @@ public sealed class Resolver
             var found = false;
             foreach (var artifact in OrderArtifacts(requirement.Name, artifactCandidates))
             {
-                if (++_totalAssignments > MaxTotalAssignments)
+                if (!_budget.TryConsume())
                 {
                     throw Fail("dependency resolution exceeded the work budget");
                 }
@@ -653,52 +655,34 @@ public sealed class Resolver
     {
         foreach (var resolved in _assigned.Values)
         {
-            var top = -1;
-            var tied = new List<ArtifactEntry>();
-            foreach (var artifact in resolved.Entry.Artifacts)
-            {
-                if (!string.IsNullOrWhiteSpace(artifact.Rid)
-                    && !artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (!ArtifactMatchesFinalGraph(artifact))
-                {
-                    continue;
-                }
-
-                var specificity = artifact.Prerequisites?.Count ?? 0;
-                if (specificity > top)
-                {
-                    top = specificity;
-                    tied.Clear();
-                    tied.Add(artifact);
-                }
-                else if (specificity == top)
-                {
-                    tied.Add(artifact);
-                }
-            }
-
-            if (tied.Count < 2
-                || (resolved.Artifact.Prerequisites?.Count ?? 0) < top)
+            var ridArtifacts = resolved.Entry.Artifacts
+                .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
+                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (ridArtifacts.Count < 2 || !_checkAmbiguity)
             {
                 continue;
             }
 
-            if (!_checkAmbiguity)
+            // Every candidate is judged in its own complete graph. A
+            // prerequisite that only holds under a different dependency
+            // version is still a real alternative, so it must not be filtered
+            // out against the current assignment first.
+            var solvable = ridArtifacts
+                .Where(artifact => ReferenceEquals(artifact, resolved.Artifact)
+                    || CanSolveWith(artifact, resolved))
+                .ToList();
+            if (solvable.Count < 2)
             {
                 continue;
             }
 
-            var solvable = tied.Count(artifact =>
-                ReferenceEquals(artifact, resolved.Artifact)
-                || CanSolveWith(artifact, resolved));
-            if (solvable > 1)
+            var top = solvable.Max(artifact => artifact.Prerequisites?.Count ?? 0);
+            var tied = solvable.Count(artifact => (artifact.Prerequisites?.Count ?? 0) == top);
+            if (tied > 1)
             {
                 throw Fail(
-                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {solvable} artifacts match at specificity {top}");
+                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}");
             }
         }
     }
@@ -722,49 +706,19 @@ public sealed class Resolver
             _latestInstallable,
             _allowCritical,
             forced,
-            checkAmbiguity: false);
+            checkAmbiguity: false,
+            _budget);
         try
         {
             probe.ResolveOnce(_specs);
             return true;
         }
-        catch (SeikoException)
+        catch (SeikoException) when (!_budget.Exhausted)
         {
+            // An exhausted budget only proves the answer is unknown, so that
+            // case propagates instead of being reported as "unsolvable".
             return false;
         }
-    }
-
-    private bool ArtifactMatchesFinalGraph(ArtifactEntry artifact)
-    {
-        foreach (var prerequisite in artifact.Prerequisites ?? [])
-        {
-            if (!_assigned.TryGetValue(prerequisite.Name, out var target)
-                || !ParseRange(prerequisite.Version, prerequisite.Name)
-                    .Satisfies(target.ParsedVersion))
-            {
-                return false;
-            }
-        }
-
-        foreach (var peer in artifact.OptionalPeers ?? [])
-        {
-            if (_assigned.TryGetValue(peer.Name, out var target)
-                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
-            {
-                return false;
-            }
-        }
-
-        foreach (var conflict in artifact.Conflicts ?? [])
-        {
-            if (_assigned.TryGetValue(conflict.Name, out var target)
-                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     // Sources return a fresh object graph per read, so a forced artifact is
@@ -900,6 +854,31 @@ public sealed class Resolver
         => string.IsNullOrWhiteSpace(entry.Advisory?.Url)
             ? version
             : $"{version} ({entry.Advisory.Url})";
+
+    // One budget for the whole operation: the main search and every probe
+    // share it, so a wide set of alternatives cannot multiply the cap.
+    private sealed class SearchBudget
+    {
+        public bool Exhausted { get; private set; }
+
+        public bool TryConsume()
+        {
+            if (Exhausted)
+            {
+                return false;
+            }
+
+            if (++_used <= MaxTotalAssignments)
+            {
+                return true;
+            }
+
+            Exhausted = true;
+            return false;
+        }
+
+        private long _used;
+    }
 
     private sealed record ForcedPick(string Version, ArtifactEntry Artifact);
 
