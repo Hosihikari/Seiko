@@ -6,7 +6,7 @@ namespace Seiko.Tests;
 public sealed class R2ProbeTests
 {
     [Fact]
-    public void F2_CorruptAdoptedSnapshotIsRestoredBlindly()
+    public void F2_CorruptAdoptedSnapshotIsRejectedBeforeTouchingTheEnvironment()
     {
         using var fixture = new Fixture();
         fixture.AddSei(
@@ -20,13 +20,44 @@ public sealed class R2ProbeTests
         File.WriteAllText(deployed, "ADOPTED");
         client.Sync(fixture.Root, fixture.StoreDirectory, adopt: true);
         client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
+        var lockBefore = File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.lock.json"));
         File.WriteAllText(
             Path.Combine(fixture.Root, ".seiko", "generations", "2", "adopted", "hello.txt"),
             "CORRUPTED SNAPSHOT");
 
-        client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2);
+        var error = Assert.Throws<SeikoException>(
+            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2));
 
-        Assert.Equal("CORRUPTED SNAPSHOT", File.ReadAllText(deployed));
+        Assert.Equal("checksum", error.Code);
+        Assert.Contains("corrupted", error.Message);
+        Assert.Equal("v1", File.ReadAllText(deployed));
+        Assert.Equal(lockBefore, File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.lock.json")));
+    }
+
+    [Fact]
+    public void F2_AMissingGenerationStateIsRejected()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var deployed = Path.Combine(fixture.Root, "hello.txt");
+        File.WriteAllText(deployed, "ADOPTED");
+        client.Sync(fixture.Root, fixture.StoreDirectory, adopt: true);
+        client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
+        File.Delete(Path.Combine(fixture.Root, ".seiko", "generations", "2", "state.json"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2));
+
+        Assert.Equal("io", error.Code);
+        Assert.Contains("no state", error.Message);
+        Assert.Equal("v1", File.ReadAllText(deployed));
     }
 
     [Fact]

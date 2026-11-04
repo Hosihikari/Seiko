@@ -114,11 +114,15 @@ public static class Deployer
                         "deploy");
                 }
 
+                // The caller validated the snapshot against the target
+                // generation's record; reusing that digest keeps the new state
+                // identical to the restored one.
+                var sha256 = Hashing.Sha256File(snapshot);
                 desired[relative] = new DesiredFile
                 {
                     SourcePath = snapshot,
                     StoreDirectory = stateDirectory,
-                    Sha256 = Hashing.Sha256File(snapshot),
+                    Sha256 = sha256,
                     Owners = entry.Owners,
                     Modes = entry.Modes,
                     SnapshotSource = true,

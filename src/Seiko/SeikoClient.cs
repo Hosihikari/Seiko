@@ -1610,25 +1610,68 @@ public sealed class SeikoClient
                 "io");
         }
 
+        // The target generation's own state is what defines its deployment,
+        // so a generation without one cannot be restored faithfully.
         var adoptedSnapshots = new Dictionary<string, string>(StringComparer.Ordinal);
         var snapshotStatePath = Path.Combine(stateDirectory, "generations", target.ToString(), "state.json");
-        if (File.Exists(snapshotStatePath))
+        if (!File.Exists(snapshotStatePath))
         {
-            var snapshotState = JsonSerializer.Deserialize(
-                File.ReadAllBytes(snapshotStatePath),
-                SeikoJsonContext.Default.LocalState);
-            foreach (var (relative, record) in snapshotState?.Files ?? [])
+            throw new SeikoException($"generation {target} has no state", "io");
+        }
+
+        var snapshotState = JsonSerializer.Deserialize(
+            File.ReadAllBytes(snapshotStatePath),
+            SeikoJsonContext.Default.LocalState)
+            ?? throw new SeikoException($"generation {target} has no state", "io");
+        if (snapshotState.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            throw new SeikoException(
+                $"generation {target} has unsupported state schemaVersion {snapshotState.SchemaVersion}",
+                "io");
+        }
+
+        if (snapshotState.Files is null)
+        {
+            throw new SeikoException($"generation {target} has no deployment state", "io");
+        }
+
+        foreach (var (relative, record) in snapshotState.Files)
+        {
+            if (record is null)
             {
-                if (record?.Adopted == true)
-                {
-                    adoptedSnapshots[relative] = Path.Combine(
-                        stateDirectory,
-                        "generations",
-                        target.ToString(),
-                        "adopted",
-                        relative);
-                }
+                throw new SeikoException(
+                    $"generation {target} has no record for {relative}",
+                    "io");
             }
+
+            if (!record.Adopted)
+            {
+                continue;
+            }
+
+            var snapshot = Path.Combine(
+                stateDirectory,
+                "generations",
+                target.ToString(),
+                "adopted",
+                relative);
+            if (!File.Exists(snapshot))
+            {
+                throw new SeikoException(
+                    $"generation {target} is missing the adopted snapshot of {relative}",
+                    "io");
+            }
+
+            // A damaged snapshot must not silently redefine the generation:
+            // the recorded digest is the authority, not today's bytes.
+            if (!string.Equals(Hashing.Sha256File(snapshot), record.Sha256, StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"generation {target} snapshot of adopted file {relative} is corrupted",
+                    "checksum");
+            }
+
+            adoptedSnapshots[relative] = snapshot;
         }
 
         var store = new Store(storePath);
