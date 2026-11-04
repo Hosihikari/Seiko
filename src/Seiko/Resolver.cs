@@ -111,7 +111,84 @@ public sealed class Resolver
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
     {
         _specs = specs;
-        return ResolveOnce(specs);
+        var result = ResolveOnce(specs);
+        if (!_checkAmbiguity)
+        {
+            return result;
+        }
+
+        // Specificity is a selection rule, not only an ambiguity test: when
+        // exactly one artifact is solvable at the highest specificity, the
+        // final answer must use it. Each round can only add a force, and a
+        // force is re-checked by a full search, so this settles quickly.
+        for (var round = 0; round < 64; round++)
+        {
+            var added = PreferMoreSpecificArtifact(result);
+            if (added.Count == 0)
+            {
+                return result;
+            }
+
+            try
+            {
+                result = ResolveOnce(specs);
+            }
+            catch (SeikoException)
+            {
+                // The preference does not survive the other forced choices;
+                // fall back to the solution that was already complete.
+                foreach (var name in added)
+                {
+                    _forced.Remove(name);
+                }
+
+                return ResolveOnce(specs);
+            }
+        }
+
+        return result;
+    }
+
+    // Force the unique highest-specificity solvable artifact of each package
+    // where the current answer is less specific. Returns the names forced.
+    private List<string> PreferMoreSpecificArtifact(IReadOnlyList<ResolvedSei> result)
+    {
+        var added = new List<string>();
+        foreach (var resolved in result.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            if (_forced.ContainsKey(resolved.Name))
+            {
+                continue;
+            }
+
+            var ridArtifacts = resolved.Entry.Artifacts
+                .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
+                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (ridArtifacts.Count < 2)
+            {
+                continue;
+            }
+
+            var solvable = ridArtifacts
+                .Where(artifact => ReferenceEquals(artifact, resolved.Artifact)
+                    || CanSolveWith(artifact, resolved))
+                .ToList();
+            var top = solvable.Max(artifact => artifact.Prerequisites?.Count ?? 0);
+            var best = solvable
+                .Where(artifact => (artifact.Prerequisites?.Count ?? 0) == top)
+                .ToList();
+            if (best.Count != 1
+                || (resolved.Artifact.Prerequisites?.Count ?? 0) >= top)
+            {
+                continue;
+            }
+
+            _forced[resolved.Name] = new ForcedPick(resolved.Version, best[0]);
+            added.Add(resolved.Name);
+        }
+
+        return added;
     }
 
     private IReadOnlyList<ResolvedSei> ResolveOnce(IReadOnlyList<SeiSpec> specs)
@@ -653,13 +730,21 @@ public sealed class Resolver
 
     private void EnsureNoAmbiguousArtifacts()
     {
+        // Only the ambiguity verdict belongs to the search. Choosing the sole
+        // most specific candidate happens in Resolve, after the accepted
+        // solution is known, so a probe must not recurse into selection.
+        if (!_checkAmbiguity)
+        {
+            return;
+        }
+
         foreach (var resolved in _assigned.Values)
         {
             var ridArtifacts = resolved.Entry.Artifacts
                 .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
                     || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            if (ridArtifacts.Count < 2 || !_checkAmbiguity)
+            if (ridArtifacts.Count < 2)
             {
                 continue;
             }
