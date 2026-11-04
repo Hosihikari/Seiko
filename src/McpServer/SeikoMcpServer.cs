@@ -226,8 +226,10 @@ public sealed class SeikoMcpServer
     // messages are plain text and take the text path.
     private void AuditText(string outcome, string tool, JsonObject arguments, string text)
     {
+        // The length cap applies after redaction: truncating the raw JSON
+        // first would cut a URL in half and save its secret tail as text.
         JsonNode? parsed = null;
-        if (text.Length <= 4096)
+        if (!string.IsNullOrWhiteSpace(text) && text[0] is '{' or '[')
         {
             try
             {
@@ -238,13 +240,22 @@ public sealed class SeikoMcpServer
             }
         }
 
-        Audit(
-            outcome,
-            tool,
-            arguments,
-            parsed is null ? null : RedactUrls(parsed),
-            Urls.RedactText(text.Length > 4096 ? text[..4096] : text));
+        if (parsed is null)
+        {
+            Audit(
+                outcome,
+                tool,
+                arguments,
+                null,
+                Truncate(Urls.RedactText(text)));
+            return;
+        }
+
+        Audit(outcome, tool, arguments, RedactUrls(parsed), null);
     }
+
+    private static string Truncate(string text)
+        => text.Length > 4096 ? text[..4096] : text;
 
     // One line per call. Arguments can contain URLs, so both arguments and the
     // result are redacted before they reach the log.
@@ -270,7 +281,9 @@ public sealed class SeikoMcpServer
                 ["arguments"] = RedactUrls(arguments.DeepClone()),
                 ["result"] = resultTree ?? (JsonNode)JsonValue.Create(resultText)!,
             };
-            File.AppendAllText(_auditLog, entry.ToJsonString() + "\n");
+            // A very large result is trimmed only once it is already safe.
+            var line = Truncate(entry.ToJsonString());
+            File.AppendAllText(_auditLog, line + "\n");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
