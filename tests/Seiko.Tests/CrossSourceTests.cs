@@ -101,6 +101,20 @@ public sealed class CrossSourceTests
             Path.Combine(second.SourceDirectory, "sei", "b.json"),
             """{"schemaVersion":2,"name":"b","versions":[{"version":"1.0.0","dependencies":[],"artifacts":null}]}""");
 
+        // Mirror 'a' byte for byte so only the broken 'b' is left to report;
+        // independently built zips can differ by their timestamps.
+        var artifact = Directory.EnumerateFiles(
+            Path.Combine(first.SourceDirectory, "artifacts"),
+            "a-1.0.0-*.zip").Single();
+        File.Copy(
+            artifact,
+            Path.Combine(second.SourceDirectory, "artifacts", Path.GetFileName(artifact)),
+            overwrite: true);
+        File.Copy(
+            Path.Combine(first.SourceDirectory, "sei", "a.json"),
+            Path.Combine(second.SourceDirectory, "sei", "a.json"),
+            overwrite: true);
+
         var error = Assert.Throws<SeikoException>(
             () => new SeikoClient().Sync(first.Root, first.StoreDirectory));
 

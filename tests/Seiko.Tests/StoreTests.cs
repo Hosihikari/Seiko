@@ -46,16 +46,38 @@ public sealed class StoreTests
         var storedFile = Path.Combine(fixture.StoreDirectory, digest, "hello.txt");
         File.WriteAllText(storedFile, "tampered");
 
-        // The deployed file is a hardlink to the store, so tampering also
-        // changes the deployed bytes; without --force that is a user edit.
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
-        Assert.Equal("deploy", error.Code);
-
+        // Repair must be requested explicitly. The deployed copy may or may
+        // not share the inode: reflink on macOS isolates it, so whether the
+        // deployed bytes changed is not a property this test can rely on.
         client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
 
         Assert.Equal("hello", File.ReadAllText(storedFile));
-        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
+    public void Sync_BlocksALocallyEditedDeployedFile()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var deployed = Path.Combine(fixture.Root, "hello.txt");
+        // Detach from any hardlink so the store stays intact and only the
+        // deployed entry carries the edit.
+        var detached = deployed + ".edit";
+        File.WriteAllText(detached, "edited");
+        File.Move(detached, deployed, overwrite: true);
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Equal("edited", File.ReadAllText(deployed));
     }
 
     [Fact]
