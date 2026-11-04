@@ -2,7 +2,10 @@ namespace Seiko;
 
 public sealed class SeiManifest
 {
-    public const int CurrentSchemaVersion = 2;
+    // 3 adds the external file/archive declarations. A manifest without them
+    // stays at 2; 0.3 clients reject 3 at their exact-version check instead of
+    // silently installing a metadata-only zip as an empty package.
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string Name { get; set; } = "";
@@ -23,6 +26,35 @@ public sealed class ArtifactManifest
     public List<SeiDependency> Conflicts { get; set; } = [];
     public string? Layout { get; set; }
     public Dictionary<string, string>? Modes { get; set; }
+    public List<ExternalFile>? ExternalFiles { get; set; }
+    public List<ExternalArchive>? ExternalArchives { get; set; }
+}
+
+// A single upstream byte source mapped to one path inside the package. The
+// digest is the authority; the URL is only a location.
+public sealed class ExternalFile
+{
+    public string Path { get; set; } = "";
+    public string Url { get; set; } = "";
+    public string Sha256 { get; set; } = "";
+    public long Size { get; set; }
+}
+
+// One archive download can feed several target paths. Only the declared
+// members are extracted and the archive digest covers all of them.
+public sealed class ExternalArchive
+{
+    public string Url { get; set; } = "";
+    public string Sha256 { get; set; } = "";
+    public string Format { get; set; } = "";
+    public long Size { get; set; }
+    public List<ExternalArchiveMember> Members { get; set; } = [];
+}
+
+public sealed class ExternalArchiveMember
+{
+    public string Member { get; set; } = "";
+    public string Path { get; set; } = "";
 }
 
 public sealed class SeiDependency
@@ -79,7 +111,22 @@ public sealed class ArtifactEntry
     public List<SeiDependency> Conflicts { get; set; } = [];
     public string? Layout { get; set; }
     public Dictionary<string, string>? Modes { get; set; }
+    public List<ExternalFile>? ExternalFiles { get; set; }
+    public List<ExternalArchive>? ExternalArchives { get; set; }
+
+    // Mirrored by the index for `info` and `--dry-run` so neither has to open
+    // the artifact. The manifest stays the authority; CI compares the two.
+    public ExternalSummary? External { get; set; }
+
     public ArtifactLocation Source { get; set; } = new();
+}
+
+public sealed class ExternalSummary
+{
+    public int Files { get; set; }
+    public int Archives { get; set; }
+    public long Size { get; set; }
+    public List<string> Hosts { get; set; } = [];
 }
 
 public sealed class ArtifactLocation
@@ -210,7 +257,9 @@ public sealed record SeiArtifactInfo(
     IReadOnlyList<SeiDependency> Dependencies,
     IReadOnlyList<SeiDependency> Prerequisites,
     IReadOnlyList<SeiDependency> OptionalPeers,
-    IReadOnlyList<SeiDependency> Conflicts);
+    IReadOnlyList<SeiDependency> Conflicts,
+    int ExternalCount,
+    IReadOnlyList<string> ExternalHosts);
 
 public sealed record SeiVersionInfo(
     string Version,

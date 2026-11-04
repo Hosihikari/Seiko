@@ -111,6 +111,16 @@ public sealed class Store
                 try
                 {
                     extracted = Extract(artifactPath, temp);
+                    var manifest = ReadManifest(temp, Path.Combine(temp, "sei.json"));
+                    ExternalFiles.Validate(manifest.Artifact!, sei.Name);
+                    EnsureNoTargetCollision(extracted, manifest, sei.Name);
+                    ExternalMaterializer.Run(
+                        sei,
+                        manifest,
+                        temp,
+                        extracted,
+                        session,
+                        cancellationToken);
                     if (Directory.Exists(directory))
                     {
                         Directory.Delete(directory, recursive: true);
@@ -206,14 +216,50 @@ public sealed class Store
                 File.ReadAllBytes(manifestPath),
                 SeikoJsonContext.Default.SeiManifest)
             ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
-        if (manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion)
+        if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
         {
             throw new SeikoException(
                 $"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}",
                 "io");
         }
 
+        // Only a 3 manifest may carry external declarations; 2 is the
+        // pre-external format and must stay free of them.
+        if (manifest.SchemaVersion == 2 && ExternalFiles.Count(manifest.Artifact) > 0)
+        {
+            throw new SeikoException(
+                $"{directory}: sei.json schemaVersion 2 cannot declare external files",
+                "io");
+        }
+
         return manifest;
+    }
+
+    // An external target may not overwrite a file that came out of the
+    // metadata zip; the two sources would silently disagree.
+    private static void EnsureNoTargetCollision(
+        List<StoreFileDigest> extracted,
+        SeiManifest manifest,
+        string name)
+    {
+        var artifact = manifest.Artifact;
+        if (artifact is null)
+        {
+            return;
+        }
+
+        var targets = (artifact.ExternalFiles ?? []).Select(file => file.Path)
+            .Concat((artifact.ExternalArchives ?? []).SelectMany(archive => archive.Members).Select(member => member.Path));
+        var zipPaths = extracted.Select(digest => digest.Path).ToHashSet(StringComparer.Ordinal);
+        foreach (var target in targets)
+        {
+            if (zipPaths.Contains(target))
+            {
+                throw new SeikoException(
+                    $"{name}: external target path '{target}' also exists inside the artifact",
+                    "io");
+            }
+        }
     }
 
     private static void VerifyFiles(
@@ -400,7 +446,7 @@ public sealed class Store
 
     private static void Validate(ResolvedSei sei, SeiManifest manifest)
     {
-        if (manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion)
+        if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
         {
             throw new SeikoException($"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}", "io");
         }
