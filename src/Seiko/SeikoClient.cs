@@ -1855,7 +1855,19 @@ public sealed class SeikoClient
                             artifact.Dependencies ?? [],
                             artifact.Prerequisites ?? [],
                             artifact.OptionalPeers ?? [],
-                            artifact.Conflicts ?? []))
+                            artifact.Conflicts ?? [],
+                            artifact.External is not null
+                                ? artifact.External.Files + artifact.External.Archives
+                                : ExternalFiles.Count(new ArtifactManifest
+                                {
+                                    ExternalFiles = artifact.ExternalFiles,
+                                    ExternalArchives = artifact.ExternalArchives,
+                                }),
+                            artifact.External?.Hosts ?? ExternalFiles.Hosts(new ArtifactManifest
+                            {
+                                ExternalFiles = artifact.ExternalFiles,
+                                ExternalArchives = artifact.ExternalArchives,
+                            }).ToList()))
                         .ToList()))
                 .ToList();
             return new SeiInfo(name, source.Id, sei.Unlisted, sei.Deprecated, versions);
