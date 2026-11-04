@@ -64,7 +64,7 @@ public sealed class R2ProbeTests
     }
 
     [Fact]
-    public void F4_LockedOfflineNeedsUnselectedArtifactRelations()
+    public void F4_LockedOfflineIgnoresUnselectedArtifactRelations()
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
@@ -83,17 +83,29 @@ public sealed class R2ProbeTests
             ],
         });
         fixture.WriteHttpConfig(server.BaseUrl, "osx-arm64", new SpecFixture("aaa", "[1.0.0]"));
+        // A winning non-retaining relation whose target is not locked.
+        fixture.AddSei("bbb", new VersionFixture
+        {
+            Version = "1.0.0",
+            OptionalPeers = [new DepFixture("also-unneeded", "*")],
+            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+        });
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "osx-arm64",
+            new SpecFixture("aaa", "[1.0.0]"),
+            new SpecFixture("bbb", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        var error = Assert.Throws<SeikoException>(() => client.Sync(
+        var result = client.Sync(
             fixture.Root,
             fixture.StoreDirectory,
             mode: SyncMode.Locked,
-            offline: true));
+            offline: true);
 
-        Assert.Equal("source", error.Code);
-        Assert.Contains("unneeded", error.Message);
+        Assert.Equal(2, result.SeiInstalled);
+        Assert.Equal("osx", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
     }
 
     [Fact]

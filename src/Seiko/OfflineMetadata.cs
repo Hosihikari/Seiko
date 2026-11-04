@@ -20,6 +20,17 @@ internal static class OfflineMetadata
             .Select(source => (Source: source, IndexUri: new Uri(source.Index)))
             .ToList();
         var pending = new Queue<string>(initial);
+        if (lockedGraph is not null)
+        {
+            // A replay is fully described by the lock: every name it needs is
+            // a locked entry. Relations of unselected versions, unselected
+            // artifacts and non-retaining kinds would only be extra cache
+            // requirements, so the walk does not follow them here.
+            foreach (var locked in lockedGraph.Sei)
+            {
+                pending.Enqueue(locked.Name);
+            }
+        }
 
         foreach (var (source, indexUri) in httpSources)
         {
@@ -94,23 +105,11 @@ internal static class OfflineMetadata
                 continue;
             }
 
-            // Replays only need the locked version's own relations; a resolving
-            // command may land on any version, so it needs all of them.
+            // A replay only needs the index of each locked name, not the
+            // relations of its selected version: the lock already names every
+            // target that will be installed.
             if (lockedGraph is not null)
             {
-                var locked = lockedGraph.Sei.FirstOrDefault(item =>
-                    string.Equals(item.Name, name, StringComparison.Ordinal));
-                if (locked is not null)
-                {
-                    var entry = found.Versions.FirstOrDefault(item =>
-                        NuGetVersion.TryParse(item.Version, out var version)
-                        && version.ToNormalizedString() == locked.Version);
-                    if (entry is not null)
-                    {
-                        EnqueueEntry(entry, pending);
-                    }
-                }
-
                 continue;
             }
 
