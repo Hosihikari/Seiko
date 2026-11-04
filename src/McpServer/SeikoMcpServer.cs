@@ -206,24 +206,54 @@ public sealed class SeikoMcpServer
                 "init" => RequireMutations(() => Init(arguments)),
                 _ => throw new SeikoException($"unknown tool '{name}'"),
             };
-            Audit("ok", name, arguments, text);
+            AuditText("ok", name, arguments, text);
             return ToolResult(text);
         }
         catch (SeikoException ex)
         {
-            Audit("error", name, arguments, ex.Message);
+            AuditText("error", name, arguments, ex.Message);
             return ToolError(ex.Message);
         }
         catch (Exception ex)
         {
-            Audit("error", name, arguments, ex.Message);
+            AuditText("error", name, arguments, ex.Message);
             return ToolError(ex.Message);
         }
     }
 
+    // Tool results are JSON: redact them as a tree, so a URL is seen as one
+    // string instead of being escaped by a later serialization step. Error
+    // messages are plain text and take the text path.
+    private void AuditText(string outcome, string tool, JsonObject arguments, string text)
+    {
+        JsonNode? parsed = null;
+        if (text.Length <= 4096)
+        {
+            try
+            {
+                parsed = JsonNode.Parse(text);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+        }
+
+        Audit(
+            outcome,
+            tool,
+            arguments,
+            parsed is null ? null : RedactUrls(parsed),
+            Urls.RedactText(text.Length > 4096 ? text[..4096] : text));
+    }
+
     // One line per call. Arguments can contain URLs, so both arguments and the
     // result are redacted before they reach the log.
-    private void Audit(string outcome, string tool, JsonObject arguments, string text)
+    private void Audit(
+        string outcome,
+        string tool,
+        JsonObject arguments,
+        JsonNode? resultTree,
+        string resultText)
     {
         if (_auditLog is null)
         {
@@ -238,7 +268,7 @@ public sealed class SeikoMcpServer
                 ["tool"] = tool,
                 ["outcome"] = outcome,
                 ["arguments"] = RedactUrls(arguments.DeepClone()),
-                ["result"] = Urls.RedactText(text.Length > 4096 ? text[..4096] : text),
+                ["result"] = resultTree ?? (JsonNode)JsonValue.Create(resultText)!,
             };
             File.AppendAllText(_auditLog, entry.ToJsonString() + "\n");
         }
@@ -290,14 +320,24 @@ public sealed class SeikoMcpServer
             case JsonObject obj:
                 foreach (var pair in obj.ToList())
                 {
-                    obj[pair.Key] = RedactUrls(pair.Value);
+                    var redacted = RedactUrls(pair.Value);
+                    if (!ReferenceEquals(redacted, pair.Value))
+                    {
+                        // Re-assigning a node that still belongs to this
+                        // object throws; containers are edited in place.
+                        obj[pair.Key] = redacted;
+                    }
                 }
 
                 return obj;
             case JsonArray array:
                 for (var i = 0; i < array.Count; i++)
                 {
-                    array[i] = RedactUrls(array[i]);
+                    var redacted = RedactUrls(array[i]);
+                    if (!ReferenceEquals(redacted, array[i]))
+                    {
+                        array[i] = redacted;
+                    }
                 }
 
                 return array;
