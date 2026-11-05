@@ -1042,7 +1042,10 @@ public sealed class SeikoClient
             foreach (var target in targets)
             {
                 var version = FindLatestVersion(sources, target.Name, allowPrerelease, allowCritical)
-                    ?? throw new SeikoException($"no version of {target.Name} found in any source", "source");
+                    ?? throw new SeikoException($"no version of {target.Name} found in any source", "source")
+                    {
+                        Hint = "check the name, run `sk source status`, or allow pre-releases with --pre",
+                    };
                 target.Version = $"[{version}]";
             }
         }
@@ -2436,7 +2439,10 @@ public sealed class SeikoClient
                 sei.Upstream is not null);
         }
 
-        throw new SeikoException($"sei '{name}' not found in any source", "source");
+        throw new SeikoException($"sei '{name}' not found in any source", "source")
+        {
+            Hint = "check the spelling, run `sk search <term>`, or add a source that carries it",
+        };
     }
 
     public IReadOnlyList<IReadOnlyList<string>> Why(string root, string name)

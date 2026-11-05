@@ -35,7 +35,7 @@ public sealed record RollbackData(int Generation, int Sei, int Files);
 
 public sealed record InitData(string Created);
 
-public sealed record ErrorData(string Code, string Message);
+public sealed record ErrorData(string Code, string Message, string? Hint = null);
 
 public sealed record ListEnvelope(int SchemaVersion, string Command, List<ListItem> Data);
 

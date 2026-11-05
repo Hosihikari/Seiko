@@ -914,7 +914,10 @@ public sealed class Resolver
             .Distinct(StringComparer.Ordinal);
         return new SeikoException(
             $"version conflict for {name} in source '{sourceId}': no version satisfies {string.Join(", ", parts)}",
-            "resolve");
+            "resolve")
+        {
+            Hint = "relax the version range, or add a source that carries a satisfying version",
+        };
     }
 
     private static string Describe(string? from) => from is null ? "direct" : from;

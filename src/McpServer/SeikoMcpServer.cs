@@ -685,6 +685,7 @@ public sealed class SeikoMcpServer
                 ["code"] = finding.Code,
                 ["message"] = finding.Message,
                 ["path"] = finding.Path,
+
             });
         }
 
@@ -981,6 +982,7 @@ public sealed class SeikoMcpServer
                 ["code"] = finding.Code,
                 ["message"] = finding.Message,
                 ["path"] = finding.Path,
+
             });
         }
 
@@ -1027,6 +1029,7 @@ public sealed class SeikoMcpServer
                 ["code"] = finding.Code,
                 ["message"] = finding.Message,
                 ["path"] = finding.Path,
+                ["hint"] = finding.Hint,
             });
         }
 

@@ -3,7 +3,7 @@ using NuGet.Versioning;
 
 namespace Seiko;
 
-public sealed record DoctorFinding(string Severity, string Code, string Message, string? Path);
+public sealed record DoctorFinding(string Severity, string Code, string Message, string? Path, string? Hint = null);
 
 public sealed record DoctorResult(IReadOnlyList<DoctorFinding> Findings, int CleanCount);
 
@@ -409,8 +409,22 @@ public sealed class Doctor
     }
 
     private static DoctorFinding Error(string code, string message, string? path)
-        => new("error", code, message, path);
+        => new("error", code, message, path, HintFor(code));
 
     private static DoctorFinding Warning(string code, string message, string? path)
-        => new("warning", code, message, path);
+        => new("warning", code, message, path, HintFor(code));
+
+    // A fixed map keeps hints short and consistent across the finding sites.
+    private static string? HintFor(string code) => code switch
+    {
+        "config" => "fix seiko.conf, then run `sk sync`",
+        "lock" or "lock-missing" => "run `sk sync` to rebuild the lock",
+        "lock-missing-entry" or "lock-direct" => "run `sk sync` so the lock matches the declaration",
+        "store-missing" or "store-digest" or "store-manifest" => "run `sk cache verify`, then `sk sync` to refetch",
+        "deploy-missing-state" or "deploy-missing-file" or "deploy-hash" =>
+            "run `sk sync --force` to restore the deployment, or `sk rollback` to go back",
+        "transaction" => "run `sk sync` or `sk rollback` to finish the interrupted transaction",
+        "root-busy" => "wait for the other process to finish, then run `sk doctor` again",
+        _ => null,
+    };
 }

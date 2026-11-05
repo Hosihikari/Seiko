@@ -717,7 +717,13 @@ static int Run(string command, bool json, Func<int> action)
     }
     catch (SeikoException ex)
     {
-        return Fail(command, json, ex.Code ?? "internal", ex.Message, ex.Code == "usage" ? 2 : 1);
+        return Fail(
+            command,
+            json,
+            ex.Code ?? "internal",
+            ex.Message,
+            ex.Code == "usage" ? 2 : 1,
+            ex.Hint);
     }
     catch (IOException ex)
     {
@@ -741,20 +747,25 @@ static int FailException(string command, bool json, string code, Exception ex)
         return 1;
     }
 
-    return Fail(command, json, code, ex.Message, 1);
+    var hint = (ex as SeikoException)?.Hint;
+    return Fail(command, json, code, ex.Message, 1, hint);
 }
 
-static int Fail(string command, bool json, string code, string message, int exitCode)
+static int Fail(string command, bool json, string code, string message, int exitCode, string? hint = null)
 {
     if (json)
     {
         WriteJson(
             CliJsonContext.Default.ErrorEnvelope,
-            new ErrorEnvelope(1, command, new ErrorData(code, message)));
+            new ErrorEnvelope(1, command, new ErrorData(code, message, hint)));
     }
     else
     {
         Console.Error.WriteLine($"sk: {message}");
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            Console.Error.WriteLine($"hint: {hint}");
+        }
     }
 
     return exitCode;
@@ -1869,6 +1880,10 @@ static int RunDoctor(string command, string? rootOption, string? store, bool cle
     {
         var path = finding.Path is null ? "" : $" ({finding.Path})";
         Console.WriteLine($"{finding.Severity} {finding.Code}: {finding.Message}{path}");
+        if (finding.Hint is not null)
+        {
+            Console.WriteLine($"  hint: {finding.Hint}");
+        }
     }
 
     if (result.CleanCount > 0)
