@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Xunit;
 
@@ -139,42 +140,73 @@ public sealed class SecurityTests
     }
 
     [Fact]
-    public void Sync_SendsTokensToTheIndexOnlyOverHttps()
+    public void HttpSource_SendsTokensOnlyToAllowedHttpsHosts()
     {
-        using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
-        using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
-        var host = new Uri(server.BaseUrl).Host;
-        var tokenVariable = HttpSource.TokenEnvironmentName(host);
-        Environment.SetEnvironmentVariable(tokenVariable, "secret-token");
+        const string IndexHost = "index.example";
+        const string CdnHost = "cdn.example";
+        var indexVariable = HttpSource.TokenEnvironmentName(IndexHost);
+        var cdnVariable = HttpSource.TokenEnvironmentName(CdnHost);
+        Environment.SetEnvironmentVariable(indexVariable, "index-token");
+        Environment.SetEnvironmentVariable(cdnVariable, "cdn-token");
         try
         {
-            using var https = new HttpSource(
-                new SourceConfig { Id = "https", Index = "https://" + host + "/index.json" },
+            var indexJson = JsonSerializer.SerializeToUtf8Bytes(
+                new IndexRoot { Sei = ["hello"] },
+                SeikoJsonContext.Default.IndexRoot);
+            var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(indexJson),
+            });
+            using var session = new DownloadSession(1, CancellationToken.None);
+
+            using var sameOrigin = new HttpSource(
+                new SourceConfig { Id = "https", Index = $"https://{IndexHost}/index.json" },
                 proxy: null,
-                new DownloadSession(1, CancellationToken.None),
-                metadataRoot: fixture.StoreDirectory,
-                offline: true);
-            Assert.Equal(
-                "secret-token",
-                Environment.GetEnvironmentVariable(tokenVariable));
-        }
-        catch (Exception ex) when (ex is HttpRequestException or SeikoException)
-        {
-            // The host is loopback, so a https entry cannot be reached in this
-            // test; the environment name mapping is covered separately.
+                session,
+                metadataRoot: null,
+                offline: false,
+                handler);
+
+            // The actual index request carried the token.
+            var request = Assert.Single(handler.Requests);
+            Assert.Equal($"Bearer index-token", request.Authorization);
+            Assert.Equal(IndexHost, request.Uri.Host);
+            Assert.Null(sameOrigin.TokenFor(new Uri($"https://{CdnHost}/artifact")));
+            Assert.Null(sameOrigin.TokenFor(new Uri($"http://{IndexHost}/index.json")));
+            Assert.Null(sameOrigin.TokenFor(new Uri($"https://{IndexHost}:8443/index.json")));
+
+            using var allowed = new HttpSource(
+                new SourceConfig
+                {
+                    Id = "https",
+                    Index = $"https://{IndexHost}/index.json",
+                    TokenHosts = [CdnHost],
+                },
+                proxy: null,
+                session,
+                metadataRoot: null,
+                offline: false,
+                handler);
+            Assert.Equal("cdn-token", allowed.TokenFor(new Uri($"https://{CdnHost}/artifact")));
         }
         finally
         {
-            Environment.SetEnvironmentVariable(tokenVariable, null);
+            Environment.SetEnvironmentVariable(indexVariable, null);
+            Environment.SetEnvironmentVariable(cdnVariable, null);
         }
+    }
 
-        Assert.Equal("secret-token", "secret-token");
+    private sealed class RecordingHandler(Func<HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        public List<(Uri Uri, string? Authorization)> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add((request.RequestUri!, request.Headers.Authorization?.ToString()));
+            return Task.FromResult(respond());
+        }
     }
 
     [Fact]

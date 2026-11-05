@@ -33,6 +33,19 @@ public sealed class HttpSource : ISeiSource, IDisposable
         DownloadSession session,
         string? metadataRoot = null,
         bool offline = false)
+        : this(config, proxy, session, metadataRoot, offline, handler: null)
+    {
+    }
+
+    // The handler seam lets tests observe which requests carry credentials
+    // without a real TLS endpoint.
+    internal HttpSource(
+        SourceConfig config,
+        string? proxy,
+        DownloadSession session,
+        string? metadataRoot,
+        bool offline,
+        HttpMessageHandler? handler)
     {
         Id = config.Id;
         _session = session;
@@ -44,6 +57,19 @@ public sealed class HttpSource : ISeiSource, IDisposable
             throw new SeikoException($"source '{Id}': invalid http index '{config.Index}'", "config");
         }
 
+        _client = handler is null
+            ? CreateClient(proxy)
+            : new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        _baseUri = new Uri(indexUri, ".");
+        _indexUri = indexUri;
+        _tokenHosts = new HashSet<string>(
+            config.TokenHosts ?? [],
+            StringComparer.OrdinalIgnoreCase);
+        Index = FetchIndex(indexUri);
+    }
+
+    private static HttpClient CreateClient(string? proxy)
+    {
         var handler = new SocketsHttpHandler
         {
             ConnectTimeout = ConnectTimeout,
@@ -55,16 +81,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
             handler.UseProxy = true;
         }
 
-        _client = new HttpClient(handler)
+        return new HttpClient(handler)
         {
             Timeout = Timeout.InfiniteTimeSpan,
         };
-        _baseUri = new Uri(indexUri, ".");
-        _indexUri = indexUri;
-        _tokenHosts = new HashSet<string>(
-            config.TokenHosts ?? [],
-            StringComparer.OrdinalIgnoreCase);
-        Index = FetchIndex(indexUri);
     }
 
     public SeiIndex? GetSei(string name) => GetSeiAsync(name).GetAwaiter().GetResult();
@@ -698,7 +718,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
     // The project owns seiko.conf, so it must not be able to name an arbitrary
     // environment variable. The destination host selects the token instead;
     // an attacker's index can only receive a token the user set for that host.
-    private string? TokenFor(Uri uri)
+    internal string? TokenFor(Uri uri)
     {
         if (uri.Scheme != Uri.UriSchemeHttps)
         {
