@@ -110,6 +110,22 @@ public sealed class IndexPackageVerifyTests
     }
 
     [Fact]
+    public void VerifyPath_AcceptsAnEmptyUpstreamPlaceholder()
+    {
+        using var fixture = new Fixture();
+        var index = Package();
+        index.Upstream = new UpstreamInfo { Url = "", Sha256 = "" };
+        index.Maintainers = ["github:someone"];
+        var path = WritePackage(fixture, index);
+
+        // A maintainer file never carries the side fields; only the mirror does.
+        var result = IndexVerifier.VerifyPath(path);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("sei-side-field", finding.Code);
+    }
+
+    [Fact]
     public void VerifyPath_StillValidatesTheDirectory()
     {
         using var fixture = new Fixture();

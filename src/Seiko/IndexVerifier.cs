@@ -617,6 +617,13 @@ public static class IndexVerifier
 
         if (upstream is null)
         {
+            // A freshly registered entry has no upstream yet; the fields are
+            // still written by the mirror so the shape never changes.
+            return;
+        }
+
+        if (string.IsNullOrEmpty(upstream.Url) && string.IsNullOrEmpty(upstream.Sha256))
+        {
             return;
         }
 
