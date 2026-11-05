@@ -22,6 +22,91 @@ public sealed record IndexVerifyResult(
 
 public static class IndexVerifier
 {
+    // A maintainer validates one sei-index.json before submitting it; a repo
+    // owner validates the whole index directory. Same rules, same result
+    // shape, so local and CI feedback cannot drift apart.
+    public static IndexVerifyResult VerifyPath(
+        string path,
+        bool checkArtifacts = false,
+        string? proxy = null,
+        Action<string>? log = null,
+        CancellationToken cancellationToken = default)
+    {
+        var full = Path.GetFullPath(path);
+        return File.Exists(full)
+            ? VerifyPackageFile(full, checkArtifacts, proxy, log, cancellationToken)
+            : Verify(full, checkArtifacts, proxy, log, cancellationToken);
+    }
+
+    private static IndexVerifyResult VerifyPackageFile(
+        string path,
+        bool checkArtifacts,
+        string? proxy,
+        Action<string>? log,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        var fileName = Path.GetFileName(path);
+        var context = new Context(directory);
+
+        SeiIndex? index;
+        try
+        {
+            index = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex);
+        }
+        catch (JsonException ex)
+        {
+            context.Error("sei-invalid", $"invalid {fileName}: {ex.Message}", fileName);
+            return context.ToResult(0);
+        }
+
+        if (index is null)
+        {
+            context.Error("sei-invalid", $"{fileName} is empty", fileName);
+            return context.ToResult(0);
+        }
+
+        if (!string.Equals(fileName, "sei-index.json", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Warning(
+                "sei-filename",
+                $"file name is '{fileName}'; the registered name must be sei-index.json",
+                fileName);
+        }
+
+        if (index.Upstream is not null || index.Maintainers is not null
+            || index.SourceUnlisted is not null || index.SourceDeprecated is not null)
+        {
+            context.Error(
+                "sei-side-field",
+                "a maintainer file must not declare upstream, maintainers, or source* fields",
+                fileName);
+        }
+
+        ValidateSeiBody(context, fileName, Path.GetFileNameWithoutExtension(fileName), index);
+        if (index.Versions is { } entries)
+        {
+            foreach (var entry in entries)
+            {
+                if (entry?.SourceYanked is not null || entry?.SourceAdvisories is not null)
+                {
+                    context.Error(
+                        "sei-side-field",
+                        $"version '{entry!.Version}' must not declare source* fields",
+                        fileName);
+                }
+            }
+        }
+
+        var checkedCount = 0;
+        if (checkArtifacts && context.Artifacts.Count > 0)
+        {
+            checkedCount = CheckArtifacts(context, proxy, log, cancellationToken);
+        }
+
+        return context.ToResult(checkedCount);
+    }
+
     public static IndexVerifyResult Verify(
         string directory,
         bool checkArtifacts = false,
@@ -202,6 +287,15 @@ public static class IndexVerifier
             return;
         }
 
+        ValidateSeiBody(context, relative, name, index);
+    }
+
+    private static void ValidateSeiBody(
+        Context context,
+        string relative,
+        string name,
+        SeiIndex index)
+    {
         context.Sei++;
         if (index.Deprecated is not null && string.IsNullOrWhiteSpace(index.Deprecated))
         {

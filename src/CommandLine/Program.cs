@@ -522,10 +522,10 @@ cache.Add(cacheVerify);
 cache.Add(cacheClean);
 
 var index = new Command("index", "Inspect static index repositories.");
-var indexVerify = new Command("verify", "Validate a static index directory.");
+var indexVerify = new Command("verify", "Validate an index directory or a sei-index.json file.");
 var indexVerifyPath = new Argument<string?>("path")
 {
-    Description = "Index directory (defaults to the current directory).",
+    Description = "Index directory or sei-index.json file (defaults to the current directory).",
     Arity = ArgumentArity.ZeroOrOne,
 };
 var indexVerifyArtifacts = new Option<bool>("--check-artifacts")
@@ -1510,7 +1510,7 @@ static int IndexVerifyCommand(
     bool json)
 {
     var directory = Path.GetFullPath(pathOption ?? Directory.GetCurrentDirectory());
-    var result = IndexVerifier.Verify(directory, checkArtifacts, proxy, Log.Debug);
+    var result = IndexVerifier.VerifyPath(directory, checkArtifacts, proxy, Log.Debug);
     var failed = result.Errors > 0 || (strict && result.Warnings > 0);
     if (json)
     {
