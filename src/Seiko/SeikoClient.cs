@@ -1966,7 +1966,14 @@ public sealed class SeikoClient
         var missing = new List<string>();
 
         var store = new Store(storePath);
-        var bySha = snapshotLock.Sei.ToDictionary(sei => sei.Artifact.Sha256, StringComparer.Ordinal);
+        // A real rollback ensures every artifact in the target lock, not the
+        // deployed file hashes: those are content digests inside the artifact,
+        // never store directory names. Map missing artifacts back to the files
+        // they own so the preview names the same downloads (ADR-0040).
+        var missingArtifacts = snapshotLock.Sei
+            .Where(sei => !StoreHas(store, sei.Artifact.Sha256))
+            .Select(sei => sei.Name)
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var (path, record) in targetFiles.OrderBy(item => item.Key, StringComparer.Ordinal))
         {
             if (record.Adopted)
@@ -1985,12 +1992,9 @@ public sealed class SeikoClient
                 replaced.Add(path);
             }
 
-            if (!existed || !string.Equals(current!.Sha256, record.Sha256, StringComparison.Ordinal))
+            if (record.Owners.Any(missingArtifacts.Contains))
             {
-                if (bySha.ContainsKey(record.Sha256) && !StoreHas(store, record.Sha256))
-                {
-                    missing.Add(path);
-                }
+                missing.Add(path);
             }
         }
 

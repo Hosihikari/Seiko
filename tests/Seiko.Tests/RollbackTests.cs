@@ -142,6 +142,32 @@ public sealed class RollbackTests
     }
 
     [Fact]
+    public void PreviewRollback_ReportsMissingStoreArtifact()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }] },
+            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }] });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var snapshot = LockFile.Read(
+            Path.Combine(fixture.Root, ".seiko", "generations", "1", "lock.json"))!;
+        var sha = snapshot.Sei.Single().Artifact.Sha256;
+        Directory.Delete(Path.Combine(fixture.StoreDirectory, sha), recursive: true);
+        File.Delete(Path.Combine(fixture.StoreDirectory, ".meta", sha + ".json"));
+
+        var preview = client.PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+        Assert.Equal(1, preview.ToGeneration);
+        Assert.Contains("hello.txt", preview.MissingStore);
+    }
+
+    [Fact]
     public void Rollback_RequiresPreviousGeneration()
     {
         using var fixture = new Fixture();
