@@ -2211,9 +2211,15 @@ public sealed class SeikoClient
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         if (offline)
         {
-            // search walks the root name list, so every listed entry needs a
-            // cached file; collect them before constructing sources.
-            OfflineMetadata.Verify(config, storePath, [], followIndexLists: true);
+            // A cached catalog answers every name it lists; only names that
+            // need the per-name fallback require their files to be cached.
+            OfflineMetadata.Verify(
+                config,
+                storePath,
+                [],
+                followIndexLists: true,
+                useCatalogs: true,
+                followRelations: false);
         }
 
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);

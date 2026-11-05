@@ -38,6 +38,34 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public void OfflineSearch_UsesTheCachedCatalogWithoutPerNameFiles()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        WriteCatalog(fixture, Read(fixture, "hello"));
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+
+        // The catalog answers the search, so the per-name file is never
+        // fetched or cached.
+        Assert.Single(new SeikoClient().Search(
+            fixture.Root,
+            "hello",
+            storeRoot: fixture.StoreDirectory));
+
+        var result = Assert.Single(new SeikoClient().Search(
+            fixture.Root,
+            "hello",
+            offline: true,
+            storeRoot: fixture.StoreDirectory));
+        Assert.Equal("hello", result.Name);
+    }
+
+    [Fact]
     public void Search_MatchesDescriptionAndTagsFromTheCatalog()
     {
         using var fixture = new Fixture();

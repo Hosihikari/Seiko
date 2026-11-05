@@ -12,13 +12,37 @@ internal static class OfflineMetadata
         string storePath,
         IEnumerable<string> initial,
         bool followIndexLists = false,
-        SeikoLock? lockedGraph = null)
+        SeikoLock? lockedGraph = null,
+        bool useCatalogs = false,
+        bool followRelations = true)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var httpSources = config.Sources
             .Where(IsHttp)
             .Select(source => (Source: source, IndexUri: new Uri(source.Index)))
             .ToList();
+        var catalogNames = new Dictionary<string, HashSet<string>?>(StringComparer.Ordinal);
+
+        HashSet<string>? CatalogNames(SourceConfig source)
+        {
+            if (!useCatalogs)
+            {
+                return null;
+            }
+
+            if (catalogNames.TryGetValue(source.Id, out var cached))
+            {
+                return cached;
+            }
+
+            var uri = new Uri(new Uri(source.Index), CatalogFile.FileName);
+            var catalog = CatalogFile.TryRead(MetadataCache.PathFor(storePath, uri.AbsoluteUri));
+            var names = catalog?.Sei
+                .Select(entry => entry.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            catalogNames[source.Id] = names;
+            return names;
+        }
         var pending = new Queue<string>(initial);
         if (lockedGraph is not null)
         {
@@ -70,10 +94,20 @@ internal static class OfflineMetadata
             }
 
             SeiIndex? found = null;
+            var answeredByCatalog = false;
             foreach (var source in config.Sources)
             {
                 if (IsHttp(source))
                 {
+                    // A valid cached catalog already lists every package the
+                    // source owns, including unlisted ones (ADR-0035), so that
+                    // name needs no per-package file.
+                    if (CatalogNames(source) is { } names && names.Contains(name))
+                    {
+                        answeredByCatalog = true;
+                        break;
+                    }
+
                     var uri = new Uri(new Uri(source.Index), $"sei/{name}.json");
                     var path = MetadataCache.PathFor(storePath, uri.AbsoluteUri);
                     // A recorded 404 is an answer, not a missing entry.
@@ -101,6 +135,11 @@ internal static class OfflineMetadata
                 break;
             }
 
+            if (answeredByCatalog)
+            {
+                continue;
+            }
+
             if (found is null)
             {
                 continue;
@@ -108,8 +147,9 @@ internal static class OfflineMetadata
 
             // A replay only needs the index of each locked name, not the
             // relations of its selected version: the lock already names every
-            // target that will be installed.
-            if (lockedGraph is not null)
+            // target that will be installed. Search reads only the root list,
+            // so it has no use for relations either.
+            if (!followRelations || lockedGraph is not null)
             {
                 continue;
             }
