@@ -31,17 +31,24 @@ var diagnosticsOption = new Option<bool>("--diagnostics")
     Description = "Show relation and constraint details.",
     Recursive = true,
 };
+var colorOption = new Option<string?>("--color")
+{
+    Description = "Colour output: auto (default), always, or never. NO_COLOR is honoured.",
+    Recursive = true,
+};
 rootCommand.Add(jsonOption);
 rootCommand.Add(verboseOption);
 rootCommand.Add(quietOption);
 rootCommand.Add(offlineOption);
 rootCommand.Add(diagnosticsOption);
+rootCommand.Add(colorOption);
 
 var init = new Command("init", "Write a seiko.conf template.\nExamples:\nsk init --root ./server" + "\n" + "Docs: https://hoshi.srcz.one/seiko/getting-started/");
 var initRoot = RootOption();
 init.Add(initRoot);
 init.SetAction(parseResult => Run(
     "init",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Init(parseResult.GetValue(initRoot), IsJson(parseResult))));
 
@@ -78,6 +85,7 @@ sync.Add(syncAdopt);
 sync.Add(syncForce);
 sync.SetAction(parseResult => Run(
     "sync",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Sync(
         parseResult.GetValue(syncRoot),
@@ -138,6 +146,7 @@ add.Add(addAdopt);
 add.Add(addForce);
 add.SetAction(parseResult => Run(
     "add",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Add(
         parseResult.GetValue(addRoot),
@@ -187,6 +196,7 @@ remove.Add(removeAdopt);
 remove.Add(removeForce);
 remove.SetAction(parseResult => Run(
     "remove",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Remove(
         parseResult.GetValue(removeRoot),
@@ -241,6 +251,7 @@ update.Add(updateAdopt);
 update.Add(updateForce);
 update.SetAction(parseResult => Run(
     "update",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Update(
         parseResult.GetValue(updateRoot),
@@ -264,6 +275,7 @@ var listRoot = RootOption();
 list.Add(listRoot);
 list.SetAction(parseResult => Run(
     "list",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => List(parseResult.GetValue(listRoot), IsJson(parseResult))));
 
@@ -283,6 +295,7 @@ rollback.Add(rollbackDryRun);
 rollback.Add(rollbackProxy);
 rollback.SetAction(parseResult => Run(
     "rollback",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Rollback(
         parseResult.GetValue(rollbackRoot),
@@ -302,6 +315,7 @@ generationList.Add(generationRoot);
 generationList.Add(generationStore);
 generationList.SetAction(parseResult => Run(
     "generation_list",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Generations(
         parseResult.GetValue(generationRoot),
@@ -328,6 +342,7 @@ search.Add(searchRoot);
 search.Add(searchProxy);
 search.SetAction(parseResult => Run(
     "search",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Search(
         parseResult.GetValue(searchRoot),
@@ -351,6 +366,7 @@ info.Add(infoRoot);
 info.Add(infoProxy);
 info.SetAction(parseResult => Run(
     "info",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Info(
         parseResult.GetValue(infoRoot),
@@ -370,6 +386,7 @@ doctor.Add(doctorStore);
 doctor.Add(doctorClean);
 doctor.SetAction(parseResult => Run(
     "doctor",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => RunDoctor(
         "doctor",
@@ -386,6 +403,7 @@ check.Add(checkRoot);
 check.Add(checkStore);
 check.SetAction(parseResult => Run(
     "check",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => RunDoctor(
         "check",
@@ -401,6 +419,7 @@ why.Add(whyName);
 why.Add(whyRoot);
 why.SetAction(parseResult => Run(
     "why",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Why(
         parseResult.GetValue(whyRoot),
@@ -416,6 +435,7 @@ outdated.Add(outdatedProxy);
 outdated.Add(outdatedPre);
 outdated.SetAction(parseResult => Run(
     "outdated",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Outdated(
         parseResult.GetValue(outdatedRoot),
@@ -442,6 +462,7 @@ audit.Add(auditSecurity);
 audit.Add(auditFailOn);
 audit.SetAction(parseResult => Run(
     "audit",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Audit(
         parseResult.GetValue(auditRoot),
@@ -457,6 +478,7 @@ var sourceListRoot = RootOption();
 sourceList.Add(sourceListRoot);
 sourceList.SetAction(parseResult => Run(
     "source_list",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => SourceListCommand(parseResult.GetValue(sourceListRoot), IsJson(parseResult))));
 
@@ -473,6 +495,7 @@ sourceStatus.Add(sourceStatusRoot);
 sourceStatus.Add(sourceStatusProxy);
 sourceStatus.SetAction(parseResult => Run(
     "source_status",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => SourceStatusCommand(
         parseResult.GetValue(sourceStatusRoot),
@@ -498,6 +521,7 @@ sourceAdd.Add(sourceAddRoot);
 sourceAdd.Add(sourceAddTokenHosts);
 sourceAdd.SetAction(parseResult => Run(
     "source_add",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => SourceAddCommand(
         parseResult.GetValue(sourceAddRoot),
@@ -513,6 +537,7 @@ sourceRemove.Add(sourceRemoveId);
 sourceRemove.Add(sourceRemoveRoot);
 sourceRemove.SetAction(parseResult => Run(
     "source_remove",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => SourceRemoveCommand(
         parseResult.GetValue(sourceRemoveRoot),
@@ -531,6 +556,7 @@ configGet.Add(configGetKey);
 configGet.Add(configGetRoot);
 configGet.SetAction(parseResult => Run(
     "config_get",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => ConfigGetCommand(
         parseResult.GetValue(configGetRoot),
@@ -546,6 +572,7 @@ configSet.Add(configSetValue);
 configSet.Add(configSetRoot);
 configSet.SetAction(parseResult => Run(
     "config_set",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => ConfigSetCommand(
         parseResult.GetValue(configSetRoot),
@@ -562,6 +589,7 @@ var cacheStatusStore = StoreOption();
 cacheStatus.Add(cacheStatusStore);
 cacheStatus.SetAction(parseResult => Run(
     "cache_status",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => CacheStatusCommand(parseResult.GetValue(cacheStatusStore), IsJson(parseResult))));
 
@@ -570,6 +598,7 @@ var cacheVerifyStore = StoreOption();
 cacheVerify.Add(cacheVerifyStore);
 cacheVerify.SetAction(parseResult => Run(
     "cache_verify",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => CacheVerifyCommand(parseResult.GetValue(cacheVerifyStore), IsJson(parseResult))));
 
@@ -580,6 +609,7 @@ cacheClean.Add(cacheCleanRoot);
 cacheClean.Add(cacheCleanStore);
 cacheClean.SetAction(parseResult => Run(
     "cache_clean",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => CacheCleanCommand(
         parseResult.GetValue(cacheCleanRoot),
@@ -612,6 +642,7 @@ indexVerify.Add(indexVerifyStrict);
 indexVerify.Add(indexVerifyProxy);
 indexVerify.SetAction(parseResult => Run(
     "index_verify",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => IndexVerifyCommand(
         parseResult.GetValue(indexVerifyPath),
@@ -635,6 +666,7 @@ indexCatalog.Add(indexCatalogPath);
 indexCatalog.Add(indexCatalogCheck);
 indexCatalog.SetAction(parseResult => Run(
     "index_catalog",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => IndexCatalogCommand(
         parseResult.GetValue(indexCatalogPath),
@@ -650,6 +682,7 @@ var completionShell = new Argument<string>("shell")
 completion.Add(completionShell);
 completion.SetAction(parseResult => Run(
     "completion",
+    parseResult.GetValue(colorOption) ?? "auto",
     IsJson(parseResult),
     () => Completion(parseResult.GetValue(completionShell)!, IsJson(parseResult))));
 
@@ -709,8 +742,9 @@ static bool IsOffline(ParseResult parseResult) => parseResult.GetValue<bool>("--
 
 static bool IsDiagnostics(ParseResult parseResult) => parseResult.GetValue<bool>("--diagnostics");
 
-static int Run(string command, bool json, Func<int> action)
+static int Run(string command, string color, bool json, Func<int> action)
 {
+    Color.Configure(json ? "never" : color);
     try
     {
         return action();
@@ -761,10 +795,10 @@ static int Fail(string command, bool json, string code, string message, int exit
     }
     else
     {
-        Console.Error.WriteLine($"sk: {message}");
+        Console.Error.WriteLine($"{Color.Error("sk: " + message)}");
         if (!string.IsNullOrWhiteSpace(hint))
         {
-            Console.Error.WriteLine($"hint: {hint}");
+            Console.Error.WriteLine(Color.Dim($"hint: {hint}"));
         }
     }
 
@@ -1303,7 +1337,7 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
 {
     foreach (var warning in result.Warnings)
     {
-        Log.Warning(warning);
+        Log.Warning(Color.Warning(warning));
     }
 
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
@@ -1879,7 +1913,8 @@ static int RunDoctor(string command, string? rootOption, string? store, bool cle
     foreach (var finding in result.Findings)
     {
         var path = finding.Path is null ? "" : $" ({finding.Path})";
-        Console.WriteLine($"{finding.Severity} {finding.Code}: {finding.Message}{path}");
+        var line = $"{finding.Severity} {finding.Code}: {finding.Message}{path}";
+        Console.WriteLine(finding.Severity == "error" ? Color.Error(line) : Color.Warning(line));
         if (finding.Hint is not null)
         {
             Console.WriteLine($"  hint: {finding.Hint}");
