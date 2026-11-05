@@ -53,7 +53,7 @@ public sealed class McpTests
         string[] expectedRead =
         [
             "list", "search", "info", "lock", "source_list", "config_get",
-            "cache_status", "cache_verify", "why", "outdated", "index_verify", "doctor", "check",
+            "cache_status", "cache_verify", "why", "outdated", "index_verify", "index_catalog", "doctor", "check",
         ];
         string[] expectedWrite =
         [

@@ -150,7 +150,8 @@ public sealed class SeikoMcpServer
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
-            Tool("index_verify", "Validate a static index directory.", IndexVerifySchema()),
+            Tool("index_verify", "Validate an index directory or a sei-index.json file.", IndexVerifySchema()),
+            Tool("index_catalog", "Generate catalog.json, or check it with check=true.", IndexCatalogSchema()),
             Tool("doctor", "Check the lock, store, deployment, and partial downloads.", DoctorSchema()),
             Tool("check", "Read-only doctor without cleaning.", RootSchema(required: true)));
 
@@ -195,6 +196,7 @@ public sealed class SeikoMcpServer
                 "why" => Why(arguments),
                 "outdated" => Outdated(arguments),
                 "index_verify" => IndexVerify(arguments),
+                "index_catalog" => IndexCatalog(arguments),
                 "doctor" => Doctor(arguments),
                 "check" => Check(arguments),
                 "add" => RequireMutations(() => Add(arguments)),
@@ -921,7 +923,7 @@ public sealed class SeikoMcpServer
     {
         var path = OptionalString(arguments, "path");
         var strict = Bool(arguments, "strict");
-        var result = IndexVerifier.Verify(
+        var result = IndexVerifier.VerifyPath(
             path ?? Directory.GetCurrentDirectory(),
             Bool(arguments, "checkArtifacts"),
             OptionalString(arguments, "proxy"));
@@ -1506,6 +1508,45 @@ public sealed class SeikoMcpServer
                 ["checkArtifacts"] = new JsonObject { ["type"] = "boolean" },
                 ["strict"] = new JsonObject { ["type"] = "boolean" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(),
+        };
+
+    private string IndexCatalog(JsonObject arguments)
+    {
+        var directory = Path.GetFullPath(
+            OptionalString(arguments, "path") ?? Directory.GetCurrentDirectory());
+        var path = Path.Combine(directory, CatalogFile.FileName);
+        var expected = CatalogFile.Build(CatalogFile.Load(directory));
+        var existing = CatalogFile.TryRead(path);
+        var stale = existing is null
+            || JsonSerializer.Serialize(existing, SeikoJsonContext.Default.SeiCatalog)
+                != JsonSerializer.Serialize(expected, SeikoJsonContext.Default.SeiCatalog);
+        var check = Bool(arguments, "check");
+        var wrote = false;
+        if (!check)
+        {
+            CatalogFile.Write(path, expected);
+            wrote = true;
+        }
+
+        return new JsonObject
+        {
+            ["root"] = directory,
+            ["sei"] = expected.Sei.Count,
+            ["wrote"] = wrote,
+            ["stale"] = stale,
+        }.ToJsonString();
+    }
+
+    private static JsonObject IndexCatalogSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["path"] = new JsonObject { ["type"] = "string" },
+                ["check"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(),
         };
