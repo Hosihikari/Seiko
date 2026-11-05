@@ -2578,12 +2578,21 @@ public sealed class SeikoClient
         var unknown = new List<string>();
         foreach (var locked in lockFile.Sei.OrderBy(sei => sei.Name, StringComparer.Ordinal))
         {
+            // The lock records which source supplied the installed version.
+            // Auditing another source that happens to carry the same name and
+            // version would hide an advisory the locked source already has.
             SeiIndex? index;
             try
             {
-                index = sources
-                    .Select(source => source.GetSei(locked.Name))
-                    .FirstOrDefault(found => found is not null);
+                var source = sources.FirstOrDefault(item =>
+                    string.Equals(item.Id, locked.Source, StringComparison.Ordinal));
+                if (source is null)
+                {
+                    unknown.Add(locked.Name);
+                    continue;
+                }
+
+                index = source.GetSei(locked.Name);
             }
             catch (SeikoException)
             {

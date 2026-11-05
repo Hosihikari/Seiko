@@ -129,6 +129,53 @@ public sealed class AuditTests
     }
 
     [Fact]
+    public void Audit_UsesTheSourceRecordedInTheLock()
+    {
+        using var fixture = Installed();
+        var index = Read(fixture);
+        index.Versions.Single(entry => entry.Version == "1.0.0").Advisory = new AdvisoryInfo
+        {
+            Severity = "high",
+            Url = "https://example.invalid/a",
+        };
+        Write(fixture, index);
+
+        // A later source first in the list carries the same version without
+        // the advisory; auditing it would falsely report a clean install.
+        var other = Path.Combine(fixture.Root, "other");
+        Directory.CreateDirectory(Path.Combine(other, "sei"));
+        var copy = System.Text.Json.JsonSerializer.Deserialize<SeiIndex>(
+            File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "hello.json")),
+            SeikoJsonContext.Default.SeiIndex)!;
+        copy.Versions.Single(entry => entry.Version == "1.0.0").Advisory = null;
+        File.WriteAllBytes(
+            Path.Combine(other, "index.json"),
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                new IndexRoot { Sei = ["hello"] },
+                SeikoJsonContext.Default.IndexRoot));
+        File.WriteAllBytes(
+            Path.Combine(other, "sei", "hello.json"),
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(copy, SeikoJsonContext.Default.SeiIndex));
+
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            "schemaVersion = 2\n"
+            + "sources = [\n"
+            + $"  {{ id = \"other\", index = \"{Path.Combine(other, "index.json").Replace('\\', '/')}\" }},\n"
+            + $"  {{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }}\n"
+            + "]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = [\n  { name = \"hello\", version = \"[1.0.0]\" }\n]\n");
+
+        var result = new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("advisory", finding.Kind);
+        Assert.Equal("high", finding.Severity);
+        Assert.Empty(result.Unknown);
+    }
+
+    [Fact]
     public void Audit_RequiresALock()
     {
         using var fixture = new Fixture();
