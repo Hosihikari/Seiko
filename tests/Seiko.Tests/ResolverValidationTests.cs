@@ -221,6 +221,8 @@ public sealed class ResolverValidationTests
 
         public SeiIndex? GetSei(string name) => _index;
 
+        public SeiCatalog? Catalog => null;
+
         public string ResolveArtifact(ArtifactLocation source)
             => throw new NotSupportedException();
 

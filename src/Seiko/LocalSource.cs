@@ -9,6 +9,7 @@ public sealed class LocalSource : ISeiSource
     public string IndexPath { get; }
     public string BaseDirectory { get; }
     public IndexRoot Index { get; }
+    private SeiCatalog? _catalog;
 
     public LocalSource(SourceConfig config, string root)
     {
@@ -58,6 +59,9 @@ public sealed class LocalSource : ISeiSource
 
         return IndexOverlay.Apply(sei);
     }
+
+    // A local index may or may not ship a catalog; read it once, lazily.
+    public SeiCatalog? Catalog => _catalog ??= CatalogFile.TryRead(Path.Combine(BaseDirectory, CatalogFile.FileName));
 
     public string ResolveArtifact(ArtifactLocation source) => ResolveArtifactPath(source);
 

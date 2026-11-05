@@ -1788,10 +1788,52 @@ public sealed class SeikoClient
 
         foreach (var source in sources)
         {
+            // One catalog read replaces one request per name. When the source
+            // has none, the per-name path below still runs unchanged.
+            var catalog = source.Catalog;
+            var catalogued = catalog?.Sei
+                .ToDictionary(entry => entry.Name, StringComparer.Ordinal);
             foreach (var name in source.Index.Sei ?? new List<string>())
             {
                 if (seen.Contains(name))
                 {
+                    continue;
+                }
+
+                if (catalogued is not null && catalogued.TryGetValue(name, out var cached))
+                {
+                    seen.Add(name);
+                    if (cached.Unlisted || cached.Version is null)
+                    {
+                        continue;
+                    }
+
+                    if (!Matches(term, name, cached.Description, cached.Tags, out var cachedRank))
+                    {
+                        continue;
+                    }
+
+                    if (tag is not null
+                        && !(cached.Tags ?? []).Contains(tag, StringComparer.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (license is not null
+                        && !string.Equals(cached.License, license, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    results.Add((cachedRank, new SeiSummary(
+                        name,
+                        cached.Version,
+                        source.Id,
+                        cached.Description,
+                        cached.Tags,
+                        cached.License,
+                        cached.Deprecated,
+                        cached.Advisory)));
                     continue;
                 }
 
@@ -1854,6 +1896,14 @@ public sealed class SeikoClient
     }
 
     private static bool Matches(string term, string name, ProjectMetadata? project, out int rank)
+        => Matches(term, name, project?.Description, project?.Tags, out rank);
+
+    private static bool Matches(
+        string term,
+        string name,
+        string? description,
+        IReadOnlyList<string>? tags,
+        out int rank)
     {
         if (string.Equals(name, term, StringComparison.OrdinalIgnoreCase))
         {
@@ -1873,13 +1923,13 @@ public sealed class SeikoClient
             return true;
         }
 
-        if ((project?.Tags ?? []).Any(tag => string.Equals(tag, term, StringComparison.OrdinalIgnoreCase)))
+        if ((tags ?? []).Any(tag => string.Equals(tag, term, StringComparison.OrdinalIgnoreCase)))
         {
             rank = 3;
             return true;
         }
 
-        if ((project?.Description ?? "").Contains(term, StringComparison.OrdinalIgnoreCase))
+        if ((description ?? "").Contains(term, StringComparison.OrdinalIgnoreCase))
         {
             rank = 4;
             return true;

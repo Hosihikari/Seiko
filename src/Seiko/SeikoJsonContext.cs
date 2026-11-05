@@ -13,6 +13,7 @@ namespace Seiko;
 [JsonSerializable(typeof(ExternalArchiveMember))]
 [JsonSerializable(typeof(IndexRoot))]
 [JsonSerializable(typeof(SeiIndex))]
+[JsonSerializable(typeof(SeiCatalog))]
 [JsonSerializable(typeof(SeikoLock))]
 [JsonSerializable(typeof(LocalState))]
 [JsonSerializable(typeof(PartialArtifactState))]

@@ -65,6 +65,8 @@ public sealed class ResolverDepthTests
 
         public SeiIndex? GetSei(string name) => _indexes.GetValueOrDefault(name);
 
+        public SeiCatalog? Catalog => null;
+
         public string ResolveArtifact(ArtifactLocation source)
             => throw new NotSupportedException();
 

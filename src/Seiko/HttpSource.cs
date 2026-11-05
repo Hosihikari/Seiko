@@ -20,6 +20,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private readonly Dictionary<string, SeiIndex?> _cache = new(StringComparer.Ordinal);
     private readonly string? _metadataRoot;
     private readonly bool _offline;
+    private SeiCatalog? _catalog;
 
     public string Id { get; }
     public IndexRoot Index { get; }
@@ -779,6 +780,64 @@ public sealed class HttpSource : ISeiSource, IDisposable
         }
 
         return index;
+    }
+
+    // The catalog is optional and derived; any failure yields null and the
+    // caller falls back to per-name reads.
+    public SeiCatalog? Catalog => _catalog ??= FetchCatalog();
+
+    private SeiCatalog? FetchCatalog()
+    {
+        try
+        {
+            var uri = new Uri(_baseUri, CatalogFile.FileName);
+            var cachePath = _metadataRoot is null
+                ? null
+                : MetadataCache.PathFor(_metadataRoot, uri.AbsoluteUri);
+            if (_offline)
+            {
+                return cachePath is null ? null : CatalogFile.TryRead(cachePath);
+            }
+
+            using var response = SendWithRetryAsync(
+                () => NewRequest(HttpMethod.Get, uri),
+                "source",
+                $"GET {SafeUri(uri)}",
+                CancellationToken.None).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var catalog = JsonSerializer.Deserialize(
+                ReadAllBytesAsync(response, CancellationToken.None).GetAwaiter().GetResult(),
+                SeikoJsonContext.Default.SeiCatalog);
+            if (catalog is not { SchemaVersion: SeiCatalog.CurrentSchemaVersion } || catalog.Sei is null)
+            {
+                return null;
+            }
+
+            if (cachePath is not null)
+            {
+                try
+                {
+                    MetadataCache.Write(cachePath, catalog, SeikoJsonContext.Default.SeiCatalog);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+
+            return catalog;
+        }
+        catch (SeikoException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private byte[] FetchBytes(Uri uri)
