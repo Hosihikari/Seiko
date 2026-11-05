@@ -5,6 +5,16 @@ using System.Text.Json.Serialization.Metadata;
 using Seiko;
 using Seiko.CommandLine;
 
+// Localised text may contain scripts the console codepage cannot encode
+// (Arabic on a GBK console); UTF-8 is the one encoding all catalogs share.
+try
+{
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+}
+catch (IOException)
+{
+}
+
 var rootCommand = new RootCommand("sk - Seiko general-purpose package manager (sk is short for Seiko)");
 var jsonOption = new Option<bool>("--json")
 {
@@ -745,6 +755,7 @@ static bool IsDiagnostics(ParseResult parseResult) => parseResult.GetValue<bool>
 static int Run(string command, string color, bool json, Func<int> action)
 {
     Color.Configure(json ? "never" : color);
+    Loc.Configure(null);
     try
     {
         return action();
@@ -757,7 +768,8 @@ static int Run(string command, string color, bool json, Func<int> action)
             ex.Code ?? "internal",
             ex.Message,
             ex.Code == "usage" ? 2 : 1,
-            ex.Hint);
+            ex.Hint,
+            ex.HintKey);
     }
     catch (IOException ex)
     {
@@ -785,7 +797,14 @@ static int FailException(string command, bool json, string code, Exception ex)
     return Fail(command, json, code, ex.Message, 1, hint);
 }
 
-static int Fail(string command, bool json, string code, string message, int exitCode, string? hint = null)
+static int Fail(
+    string command,
+    bool json,
+    string code,
+    string message,
+    int exitCode,
+    string? hint = null,
+    string? hintKey = null)
 {
     if (json)
     {
@@ -798,7 +817,7 @@ static int Fail(string command, bool json, string code, string message, int exit
         Console.Error.WriteLine($"{Color.Error("sk: " + message)}");
         if (!string.IsNullOrWhiteSpace(hint))
         {
-            Console.Error.WriteLine(Color.Dim($"hint: {hint}"));
+            Console.Error.WriteLine(Color.Dim("  " + Loc.Get("hint", Loc.Get(hintKey ?? "hint", hint))));
         }
     }
 
@@ -983,7 +1002,7 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
             + string.Join(", ", preview.ExternalHosts));
     }
 
-    Console.WriteLine("no files were downloaded or deployed; run without --dry-run to apply");
+    Console.WriteLine(Loc.Get("preview-done"));
     return 0;
 }
 
@@ -1268,7 +1287,7 @@ static int CacheVerifyCommand(string? store, bool json)
 
     if (findings.Count == 0)
     {
-        Console.WriteLine("no problems found");
+        Console.WriteLine(Loc.Get("no-problems"));
     }
 
     return hasError ? 1 : 0;
@@ -1340,11 +1359,11 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
         Log.Warning(Color.Warning(warning));
     }
 
-    Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
+    Console.WriteLine(Loc.Get("sync-done", result.SeiInstalled, result.FilesDeployed));
     if (result.ExternalItems > 0)
     {
         Console.WriteLine(
-            $"external: {result.ExternalItems} item(s) from {string.Join(", ", result.ExternalHosts)}");
+            Loc.Get("external", result.ExternalItems, string.Join(", ", result.ExternalHosts)));
     }
 
     foreach (var sei in result.Lock.Sei)
@@ -1712,7 +1731,7 @@ static int Audit(
 
     foreach (var name in result.Unknown)
     {
-        Console.WriteLine($"{name}  unknown: not found in any source");
+        Console.WriteLine(Loc.Get("unknown", name));
     }
 
     Console.WriteLine(
@@ -1757,7 +1776,7 @@ static int Rollback(
         WritePreviewList(preview.Replaced.Select(path => $"~ replace {path}"));
         WritePreviewList(preview.Adopted.Select(path => $"= adopted {path}"));
         WritePreviewList(preview.MissingStore.Select(path => $"! store entry missing, download needed: {path}"));
-        Console.WriteLine("no files were changed; run without --dry-run to apply");
+        Console.WriteLine(Loc.Get("preview-done"));
         return 0;
     }
 
@@ -1917,7 +1936,7 @@ static int RunDoctor(string command, string? rootOption, string? store, bool cle
         Console.WriteLine(finding.Severity == "error" ? Color.Error(line) : Color.Warning(line));
         if (finding.Hint is not null)
         {
-            Console.WriteLine($"  hint: {finding.Hint}");
+            Console.WriteLine("  " + Loc.Get("hint", Loc.Get(finding.HintKey ?? "hint", finding.Hint!)));
         }
     }
 
@@ -1928,7 +1947,7 @@ static int RunDoctor(string command, string? rootOption, string? store, bool cle
 
     if (result.Findings.Count == 0)
     {
-        Console.WriteLine("no problems found");
+        Console.WriteLine(Loc.Get("no-problems"));
     }
 
     return hasError ? 1 : 0;

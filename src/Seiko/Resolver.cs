@@ -917,6 +917,7 @@ public sealed class Resolver
             "resolve")
         {
             Hint = "relax the version range, or add a source that carries a satisfying version",
+            HintKey = "hint.resolve",
         };
     }
 

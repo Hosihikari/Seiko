@@ -3,7 +3,7 @@ using NuGet.Versioning;
 
 namespace Seiko;
 
-public sealed record DoctorFinding(string Severity, string Code, string Message, string? Path, string? Hint = null);
+public sealed record DoctorFinding(string Severity, string Code, string Message, string? Path, string? Hint = null, string? HintKey = null);
 
 public sealed record DoctorResult(IReadOnlyList<DoctorFinding> Findings, int CleanCount);
 
@@ -409,12 +409,26 @@ public sealed class Doctor
     }
 
     private static DoctorFinding Error(string code, string message, string? path)
-        => new("error", code, message, path, HintFor(code));
+        => new("error", code, message, path, HintFor(code), HintKeyFor(code));
 
     private static DoctorFinding Warning(string code, string message, string? path)
-        => new("warning", code, message, path, HintFor(code));
+        => new("warning", code, message, path, HintFor(code), HintKeyFor(code));
 
     // A fixed map keeps hints short and consistent across the finding sites.
+    // The key lets the CLI show the hint in the UI language while the JSON
+    // keeps the English text.
+    private static string? HintKeyFor(string code) => code switch
+    {
+        "config" => "hint.config",
+        "lock" or "lock-missing" => "hint.lock",
+        "lock-missing-entry" or "lock-direct" => "hint.lock-mismatch",
+        "store-missing" or "store-digest" or "store-manifest" => "hint.store",
+        "deploy-missing-state" or "deploy-missing-file" or "deploy-hash" => "hint.deploy",
+        "transaction" => "hint.transaction",
+        "root-busy" => "hint.root-busy",
+        _ => null,
+    };
+
     private static string? HintFor(string code) => code switch
     {
         "config" => "fix seiko.conf, then run `sk sync`",

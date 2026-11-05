@@ -1045,6 +1045,7 @@ public sealed class SeikoClient
                     ?? throw new SeikoException($"no version of {target.Name} found in any source", "source")
                     {
                         Hint = "check the name, run `sk source status`, or allow pre-releases with --pre",
+                        HintKey = "hint.source",
                     };
                 target.Version = $"[{version}]";
             }
@@ -2442,6 +2443,7 @@ public sealed class SeikoClient
         throw new SeikoException($"sei '{name}' not found in any source", "source")
         {
             Hint = "check the spelling, run `sk search <term>`, or add a source that carries it",
+            HintKey = "hint.source",
         };
     }
 

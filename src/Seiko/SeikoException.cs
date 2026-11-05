@@ -5,8 +5,11 @@ public sealed class SeikoException : Exception
     public string? Code { get; }
 
     // An actionable next step, shown after the message. It never changes the
-    // exit code and never repairs anything by itself.
+    // exit code and never repairs anything by itself. HintKey is the
+    // localisable form; Hint stays the English JSON text.
     public string? Hint { get; init; }
+
+    public string? HintKey { get; init; }
 
     public SeikoException(string message) : base(message)
     {
