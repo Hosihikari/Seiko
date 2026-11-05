@@ -1021,7 +1021,8 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
                 diagnostics ? preview.Diagnostics.ToList() : null,
                 preview.ExternalItems,
                 preview.ExternalBytes,
-                preview.ExternalHosts.ToList())));
+                preview.ExternalHosts.ToList(),
+                preview.ExternalUnknown.ToList())));
         return 0;
     }
 
@@ -1058,6 +1059,11 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
         Console.WriteLine(
             $"external	{preview.ExternalItems} item(s), ~{preview.ExternalBytes} byte(s) from "
             + string.Join(", ", preview.ExternalHosts));
+    }
+
+    if (preview.ExternalUnknown.Count > 0)
+    {
+        Console.WriteLine(Loc.Get("external-unknown", string.Join(", ", preview.ExternalUnknown)));
     }
 
     Console.WriteLine(Loc.Get("preview-done"));
@@ -1659,7 +1665,11 @@ static int Info(
         foreach (var artifact in version.Artifacts)
         {
             Console.WriteLine($"    artifact rid={artifact.Rid ?? "*"}");
-            if (artifact.ExternalCount > 0)
+            if (!artifact.ExternalKnown)
+            {
+                Console.WriteLine("      external: unknown (index has no summary)");
+            }
+            else if (artifact.ExternalCount > 0)
             {
                 Console.WriteLine(
                     $"      external: {artifact.ExternalCount} item(s) from {string.Join(", ", artifact.ExternalHosts)}");

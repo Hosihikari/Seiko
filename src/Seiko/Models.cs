@@ -354,7 +354,8 @@ public sealed record SeiArtifactInfo(
     IReadOnlyList<SeiDependency> OptionalPeers,
     IReadOnlyList<SeiDependency> Conflicts,
     int ExternalCount,
-    IReadOnlyList<string> ExternalHosts);
+    IReadOnlyList<string> ExternalHosts,
+    bool ExternalKnown = true);
 
 public sealed record SeiVersionInfo(
     string Version,

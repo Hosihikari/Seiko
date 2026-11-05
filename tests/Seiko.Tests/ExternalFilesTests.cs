@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -309,6 +310,69 @@ public sealed class ExternalFilesTests
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
         Assert.Contains("same digest, format, and size", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExternalSummaryFallsBackToTheManifestAndWarnsOnMismatch()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture(
+                            "server/server.bin",
+                            server.BaseUrl + "external/vendor/server.bin",
+                            "payload"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        // An old index has neither the derived summary nor the declarations,
+        // but the manifest inside the artifact still declares the file.
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "proprietary.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        var artifact = node["versions"]![0]!["artifacts"]![0]!.AsObject();
+        artifact.Remove("externalFiles");
+        artifact.Remove("externalArchives");
+        artifact.Remove("external");
+        File.WriteAllText(path, node.ToJsonString());
+
+        var preview = new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            dryRun: true).Preview!;
+        Assert.Equal(0, preview.ExternalItems);
+        Assert.Contains("proprietary", preview.ExternalUnknown);
+
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal(1, result.ExternalItems);
+        Assert.Contains(new Uri(server.BaseUrl).Host, result.ExternalHosts);
+
+        // A present but wrong summary does not block the install; it warns and
+        // the manifest remains the reported value.
+        artifact["external"] = new JsonObject
+        {
+            ["files"] = 0,
+            ["archives"] = 0,
+            ["size"] = 0,
+            ["hosts"] = new JsonArray(),
+        };
+        File.WriteAllText(path, node.ToJsonString());
+
+        var again = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Contains(again.Warnings, warning => warning.Contains("does not match", StringComparison.Ordinal));
+        Assert.Equal(1, again.ExternalItems);
     }
 
     [Fact]

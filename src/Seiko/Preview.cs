@@ -21,7 +21,10 @@ public sealed class PreviewResult
 
     // External payload of the planned changes: hosts and item count, so the
     // user sees third-party downloads before applying. Never fetched here.
+    // A resolved artifact whose index entry carries no external summary is
+    // unknown, not zero (ADR-0037); it is listed rather than silently counted.
     public IReadOnlyList<string> ExternalHosts { get; init; } = [];
+    public IReadOnlyList<string> ExternalUnknown { get; init; } = [];
     public int ExternalItems { get; init; }
     public long ExternalBytes { get; init; }
 }

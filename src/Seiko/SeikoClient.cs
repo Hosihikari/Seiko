@@ -277,15 +277,33 @@ public sealed class SeikoClient
             Describe(sei, described);
         }
 
-        // The same external summary the preview computes, so a real sync
-        // reports what came from third-party hosts.
-        var external = SummarizeExternal(resolved);
+        // The real sync reports the materialized manifests, not the index's
+        // derived summary: the manifest is the authority (ADR-0037). A summary
+        // that disagrees is surfaced as a warning, not a block.
+        var resultWarnings = warnings;
+        var externalWarnings = new List<string>();
+        foreach (var (sei, storedSei) in stored)
+        {
+            var entry = IndexArtifactFor(sei);
+            if (entry.External is { } declared
+                && !ExternalSummaryMatches(declared, storedSei.Manifest.Artifact))
+            {
+                externalWarnings.Add(
+                    $"{sei.Name}: index external summary does not match sei.json; using the manifest");
+            }
+        }
 
+        if (externalWarnings.Count > 0)
+        {
+            resultWarnings = warnings.Concat(externalWarnings).ToList();
+        }
+
+        var external = SummarizeExternal(stored.Select(item => item.Stored.Manifest));
         return new SyncResult
         {
             Lock = lockFile,
             FilesDeployed = deployment.FileCount,
-            Warnings = warnings,
+            Warnings = resultWarnings,
             Diagnostics = described,
             ExternalItems = external.Items,
             ExternalHosts = external.Hosts,
@@ -293,36 +311,14 @@ public sealed class SeikoClient
     }
 
     private static (int Items, IReadOnlyList<string> Hosts) SummarizeExternal(
-        IEnumerable<ResolvedSei> resolved)
+        IEnumerable<SeiManifest> manifests)
     {
         var hosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var items = 0;
-        foreach (var sei in resolved)
+        foreach (var manifest in manifests)
         {
-            var entry = sei.Entry.Artifacts?
-                .FirstOrDefault(artifact => artifact is not null
-                    && string.Equals(
-                        artifact.Source?.Sha256,
-                        sei.Artifact.Source.Sha256,
-                        StringComparison.OrdinalIgnoreCase)) ?? sei.Artifact;
-            if (entry.External is { } summary)
-            {
-                items += summary.Files + summary.Archives;
-                foreach (var host in summary.Hosts)
-                {
-                    hosts.Add(host);
-                }
-
-                continue;
-            }
-
-            var manifest = new ArtifactManifest
-            {
-                ExternalFiles = entry.ExternalFiles,
-                ExternalArchives = entry.ExternalArchives,
-            };
-            items += ExternalFiles.Count(manifest);
-            foreach (var host in ExternalFiles.Hosts(manifest))
+            items += ExternalFiles.Count(manifest.Artifact);
+            foreach (var host in ExternalFiles.Hosts(manifest.Artifact))
             {
                 hosts.Add(host);
             }
@@ -478,15 +474,14 @@ public sealed class SeikoClient
 
         // External payload comes from index summaries when present, or from
         // the entry's own declarations; nothing is downloaded for the plan.
+        // With neither, the index cannot tell us and zero would be a lie.
         var externalHosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var externalUnknown = new List<string>();
         var externalItems = 0;
         var externalBytes = 0L;
         foreach (var sei in resolved)
         {
-            var entry = sei.Entry.Artifacts?
-                .FirstOrDefault(artifact => artifact is not null
-                    && string.Equals(artifact.Source?.Sha256, sei.Artifact.Source.Sha256, StringComparison.OrdinalIgnoreCase));
-            var artifact = entry ?? sei.Artifact;
+            var artifact = IndexArtifactFor(sei);
             if (artifact.External is { } summary)
             {
                 externalItems += summary.Files + summary.Archives;
@@ -496,6 +491,12 @@ public sealed class SeikoClient
                     externalHosts.Add(host);
                 }
 
+                continue;
+            }
+
+            if (artifact.ExternalFiles is null && artifact.ExternalArchives is null)
+            {
+                externalUnknown.Add(sei.Name);
                 continue;
             }
 
@@ -525,7 +526,32 @@ public sealed class SeikoClient
             ExternalItems = externalItems,
             ExternalBytes = externalBytes,
             ExternalHosts = externalHosts.ToList(),
+            ExternalUnknown = externalUnknown,
         };
+    }
+
+    private static ArtifactEntry IndexArtifactFor(ResolvedSei sei)
+        => sei.Entry.Artifacts?
+            .FirstOrDefault(artifact => artifact is not null
+                && string.Equals(
+                    artifact.Source?.Sha256,
+                    sei.Artifact.Source.Sha256,
+                    StringComparison.OrdinalIgnoreCase))
+            ?? sei.Artifact;
+
+    private static bool ExternalSummaryMatches(ExternalSummary declared, ArtifactManifest? manifest)
+    {
+        var files = manifest?.ExternalFiles?.Count ?? 0;
+        var archives = manifest?.ExternalArchives?.Count ?? 0;
+        if (declared.Files != files || declared.Archives != archives)
+        {
+            return false;
+        }
+
+        // Size is optional metadata (a declaration may leave it at 0).
+        var size = (manifest?.ExternalFiles ?? []).Sum(file => file.Size)
+            + (manifest?.ExternalArchives ?? []).Sum(archive => archive.Size);
+        return declared.Size == 0 || declared.Size == size;
     }
 
     private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(
@@ -2481,7 +2507,10 @@ public sealed class SeikoClient
                             {
                                 ExternalFiles = artifact.ExternalFiles,
                                 ExternalArchives = artifact.ExternalArchives,
-                            }).ToList()))
+                            }).ToList(),
+                            artifact.External is not null
+                                || artifact.ExternalFiles is not null
+                                || artifact.ExternalArchives is not null))
                         .ToList(),
                     IndexOverlay.IsSourceOrigin(entry)))
                 .ToList();

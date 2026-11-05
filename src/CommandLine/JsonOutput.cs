@@ -27,7 +27,8 @@ public sealed record PreviewData(
     List<PreviewDiagnostic>? Diagnostics,
     int External,
     long ExternalBytes,
-    List<string> ExternalHosts);
+    List<string> ExternalHosts,
+    List<string> ExternalUnknown);
 
 public sealed record PreviewEnvelope(int SchemaVersion, string Command, PreviewData Data);
 
