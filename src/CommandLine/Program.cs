@@ -37,7 +37,7 @@ rootCommand.Add(quietOption);
 rootCommand.Add(offlineOption);
 rootCommand.Add(diagnosticsOption);
 
-var init = new Command("init", "Write a seiko.conf template.");
+var init = new Command("init", "Write a seiko.conf template.\nExamples:\nsk init --root ./server" + "\n" + "Docs: https://hoshi.srcz.one/seiko/getting-started/");
 var initRoot = RootOption();
 init.Add(initRoot);
 init.SetAction(parseResult => Run(
@@ -45,7 +45,7 @@ init.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => Init(parseResult.GetValue(initRoot), IsJson(parseResult))));
 
-var sync = new Command("sync", "Resolve sei and deploy files into the install root.");
+var sync = new Command("sync", "Resolve sei and deploy files into the install root.\nExamples:\nsk sync --dry-run\nsk sync --frozen" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var syncRoot = RootOption();
 var syncStore = StoreOption();
 var syncPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
@@ -97,7 +97,7 @@ sync.SetAction(parseResult => Run(
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
-var add = new Command("add", "Add a direct sei declaration and sync.");
+var add = new Command("add", "Add a direct sei declaration and sync.\nExamples:\nsk add hello\nsk add hello@[1.2.0,2.0.0) --dry-run" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var addRoot = RootOption();
 var addStore = StoreOption();
 var addPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
@@ -156,7 +156,7 @@ add.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var remove = new Command("remove", "Remove a direct sei declaration and sync.");
+var remove = new Command("remove", "Remove a direct sei declaration and sync.\nExamples:\nsk remove hello" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var removeRoot = RootOption();
 var removeStore = StoreOption();
 var removePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
@@ -204,7 +204,7 @@ remove.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var update = new Command("update", "Update direct declarations and sync.");
+var update = new Command("update", "Update direct declarations and sync.\nExamples:\nsk update --dry-run\nsk update hello --latest" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var updateRoot = RootOption();
 var updateStore = StoreOption();
 var updatePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
@@ -267,7 +267,7 @@ list.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => List(parseResult.GetValue(listRoot), IsJson(parseResult))));
 
-var rollback = new Command("rollback", "Restore a previous generation.");
+var rollback = new Command("rollback", "Restore a previous generation.\nExamples:\nsk generation list\nsk rollback --dry-run\nsk rollback --to 3" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var rollbackRoot = RootOption();
 var rollbackStore = StoreOption();
 var rollbackTo = new Option<int?>("--to") { Description = "Generation number to roll back to." };
@@ -309,7 +309,7 @@ generationList.SetAction(parseResult => Run(
         IsJson(parseResult))));
 generation.Add(generationList);
 
-var search = new Command("search", "Search sei names, descriptions, and tags in the configured indexes.");
+var search = new Command("search", "Search sei names, descriptions, and tags in the configured indexes.\nExamples:\nsk search server\nsk search server --tag hosting --limit 10" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var searchRoot = RootOption();
 var searchProxy = ProxyOption();
 var searchTerms = new Argument<string[]>("terms")
@@ -340,7 +340,7 @@ search.SetAction(parseResult => Run(
         parseResult.GetValue(searchLicense),
         parseResult.GetValue(searchLimit))));
 
-var info = new Command("info", "Show project, versions, dependencies, and artifact counts.");
+var info = new Command("info", "Show project, versions, dependencies, and artifact counts.\nExamples:\nsk info hello\nsk info hello --versions" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
 var infoRoot = RootOption();
 var infoProxy = ProxyOption();
 var infoVersions = new Option<bool>("--versions") { Description = "Show every version, not only notable ones." };
@@ -361,7 +361,7 @@ info.SetAction(parseResult => Run(
         IsJson(parseResult),
         parseResult.GetValue(infoVersions))));
 
-var doctor = new Command("doctor", "Check the lock, store, deployment, and partial downloads.");
+var doctor = new Command("doctor", "Check the lock, store, deployment, and partial downloads.\nExamples:\nsk doctor\nsk doctor --clean" + "\n" + "Docs: https://hoshi.srcz.one/seiko/troubleshooting/");
 var doctorRoot = RootOption();
 var doctorStore = StoreOption();
 var doctorClean = new Option<bool>("--clean") { Description = "Delete all partial downloads." };
@@ -425,7 +425,7 @@ outdated.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var audit = new Command("audit", "Check installed sei against advisories and retirement.");
+var audit = new Command("audit", "Check installed sei against advisories and retirement.\nExamples:\nsk audit\nsk audit --security-only --fail-on high" + "\n" + "Docs: https://hoshi.srcz.one/seiko/troubleshooting/");
 var auditRoot = RootOption();
 var auditProxy = ProxyOption();
 var auditSecurity = new Option<bool>("--security-only")
