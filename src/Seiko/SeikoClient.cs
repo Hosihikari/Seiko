@@ -2646,7 +2646,18 @@ public sealed class SeikoClient
                 continue;
             }
 
-            var entry = index?.Versions
+            // A syntactically valid but structurally broken mirror (null
+            // version list or null entries) cannot answer the audit; treat it
+            // as unknown rather than letting it throw outside the boundary.
+            if (index is null
+                || index.Versions is null
+                || index.Versions.Any(item => item is null))
+            {
+                unknown.Add(locked.Name);
+                continue;
+            }
+
+            var entry = index.Versions
                 .FirstOrDefault(item => string.Equals(item.Version, locked.Version, StringComparison.Ordinal));
             if (entry is null)
             {
@@ -2654,7 +2665,7 @@ public sealed class SeikoClient
                 continue;
             }
 
-            var fix = index!.Versions
+            var fix = index.Versions
                 .Where(item => !item.Yanked && item.Advisory is null
                     && NuGetVersion.TryParse(item.Version, out var parsed)
                     && parsed.CompareTo(locked.Version) > 0)

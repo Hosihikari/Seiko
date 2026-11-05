@@ -236,6 +236,35 @@ public sealed class AuditTests
     }
 
     [Fact]
+    public void Audit_ReportsUnknownWhenVersionEntriesAreInvalid()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        foreach (var body in new[]
+        {
+            "{\"schemaVersion\":2,\"name\":\"hello\",\"versions\":[null]}",
+            "{\"schemaVersion\":2,\"name\":\"hello\",\"versions\":null}",
+        })
+        {
+            File.WriteAllText(path, body);
+
+            var result = new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+            Assert.Empty(result.Findings);
+            Assert.Equal(["hello"], result.Unknown);
+        }
+    }
+
+    [Fact]
     public void Audit_SkipsAnUnavailableSourceNoLockEntryUses()
     {
         using var fixture = new Fixture();
