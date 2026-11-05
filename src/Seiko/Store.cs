@@ -118,6 +118,7 @@ public sealed class Store
                         sei,
                         manifest,
                         temp,
+                        Root,
                         extracted,
                         session,
                         cancellationToken);

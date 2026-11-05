@@ -153,6 +153,42 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void Sync_KeepsArtifactFilesUnderDotExternal()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [".external/hosted.txt"] = "hosted",
+                    },
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture(
+                            ".external/extra.txt",
+                            server.BaseUrl + "external/vendor/extra.txt",
+                            "extra"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("hosted", File.ReadAllText(Path.Combine(fixture.Root, ".external", "hosted.txt")));
+        Assert.Equal("extra", File.ReadAllText(Path.Combine(fixture.Root, ".external", "extra.txt")));
+    }
+
+    [Fact]
     public void Sync_SameArchiveFeedsSeveralTargetsOnce()
     {
         var (fixture, server) = Setup();
@@ -189,6 +225,130 @@ public sealed class ExternalFilesTests
         var archiveRequests = server.Authorizations.Count(header =>
             header is null) + 0;
         Assert.True(archiveRequests >= 2);
+    }
+
+    [Fact]
+    public void Sync_MergesRepeatedArchiveDeclarations()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        var archive = Fixture.Zip(new Dictionary<string, byte[]>
+        {
+            ["a.txt"] = "a"u8.ToArray(),
+            ["b.txt"] = "b"u8.ToArray(),
+        });
+        fixture.WriteExternal("vendor/ab.zip", archive);
+        var url = server.BaseUrl + "external/vendor/ab.zip";
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalArchives =
+                    [
+                        new ExternalArchiveFixture(
+                            url,
+                            "zip",
+                            archive,
+                            new ExternalMemberFixture("a.txt", "a.txt")),
+                        new ExternalArchiveFixture(
+                            url,
+                            "zip",
+                            archive,
+                            new ExternalMemberFixture("b.txt", "b.txt")),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Equal("b", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
+    }
+
+    [Fact]
+    public void Sync_RejectsRepeatedArchiveWithDifferentIdentity()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        var archive = Fixture.Zip(new Dictionary<string, byte[]> { ["a.txt"] = "a"u8.ToArray() });
+        fixture.WriteExternal("vendor/a.zip", archive);
+        var url = server.BaseUrl + "external/vendor/a.zip";
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalArchives =
+                    [
+                        new ExternalArchiveFixture(
+                            url,
+                            "zip",
+                            archive,
+                            new ExternalMemberFixture("a.txt", "a.txt")),
+                        new ExternalArchiveFixture(
+                            url,
+                            "tar",
+                            archive,
+                            new ExternalMemberFixture("a.txt", "b.txt")),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("same digest, format, and size", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sync_LimitsTarEntryCount()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        var entries = new Dictionary<string, byte[]>(ArchiveLimits.MaxEntries + 1, StringComparer.Ordinal);
+        for (var i = 0; i <= ArchiveLimits.MaxEntries; i++)
+        {
+            entries[$"f{i}"] = [];
+        }
+
+        var tarGz = Fixture.Gzip(Fixture.Tar(entries));
+        fixture.WriteExternal("vendor/many.tar.gz", tarGz);
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalArchives =
+                    [
+                        new ExternalArchiveFixture(
+                            server.BaseUrl + "external/vendor/many.tar.gz",
+                            "tar.gz",
+                            tarGz,
+                            new ExternalMemberFixture("f0", "f0")),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains($"limit is {ArchiveLimits.MaxEntries}", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

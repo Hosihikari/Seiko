@@ -13,6 +13,7 @@ internal static class ExternalMaterializer
         ResolvedSei sei,
         SeiManifest manifest,
         string directory,
+        string stagingRoot,
         List<StoreFileDigest> digests,
         DownloadSession session,
         CancellationToken cancellationToken)
@@ -34,7 +35,10 @@ internal static class ExternalMaterializer
                 "source");
         }
 
-        var staging = Path.Combine(directory, ".external");
+        // The artifact content tree may legitimately contain ".external/...";
+        // staging inside it would let the cleanup delete real files. Keep the
+        // download slots beside the store entry instead (ADR-0005, ADR-0024).
+        var staging = Path.Combine(stagingRoot, ".external-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(staging);
         try
         {
@@ -62,43 +66,50 @@ internal static class ExternalMaterializer
                 Delete(slot);
             }
 
-            var done = new HashSet<string>(StringComparer.Ordinal);
+            // Repeated declarations of one URL describe the same download with
+            // more members (ADR-0032: one archive is downloaded once), so merge
+            // them before fetching.
+            var groups = new Dictionary<string, List<ExternalArchiveMember>>(StringComparer.Ordinal);
+            var identities = new Dictionary<string, ExternalArchive>(StringComparer.Ordinal);
             foreach (var archive in archives)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var slot = Path.Combine(staging, Guid.NewGuid().ToString("N"));
-                Directory.CreateDirectory(slot);
-                if (done.Add(archive.Url))
+                if (!groups.TryGetValue(archive.Url, out var members))
                 {
-                    var location = new ArtifactLocation
-                    {
-                        Url = archive.Url,
-                        Sha256 = archive.Sha256,
-                        Size = archive.Size,
-                    };
-                    session.Log?.Invoke($"{sei.Name}: fetching external archive {archive.Url}");
-                    sei.Source.DownloadAsync(sei.Name, location, slot, session, cancellationToken)
-                        .GetAwaiter().GetResult();
-                    var downloaded = Path.Combine(slot, "artifact");
-                    Verify(downloaded, archive.Sha256, archive.Size, sei.Name, archive.Url);
-                    ExtractMembers(downloaded, archive, directory, sei, digests, cancellationToken);
-                }
-                else
-                {
-                    // Same URL and digest: targets were already written, so
-                    // only re-record them instead of downloading again.
-                    foreach (var member in archive.Members)
-                    {
-                        var source = Path.Combine(directory, member.Path);
-                        digests.Add(new StoreFileDigest
-                        {
-                            Path = member.Path,
-                            Sha256 = Hashing.Sha256File(source),
-                            Size = new FileInfo(source).Length,
-                        });
-                    }
+                    members = [];
+                    groups[archive.Url] = members;
+                    identities[archive.Url] = archive;
                 }
 
+                members.AddRange(archive.Members);
+            }
+
+            foreach (var (url, members) in groups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var identity = identities[url];
+                var slot = Path.Combine(staging, Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(slot);
+                var location = new ArtifactLocation
+                {
+                    Url = identity.Url,
+                    Sha256 = identity.Sha256,
+                    Size = identity.Size,
+                };
+                session.Log?.Invoke($"{sei.Name}: fetching external archive {identity.Url}");
+                sei.Source.DownloadAsync(sei.Name, location, slot, session, cancellationToken)
+                    .GetAwaiter().GetResult();
+                var downloaded = Path.Combine(slot, "artifact");
+                Verify(downloaded, identity.Sha256, identity.Size, sei.Name, identity.Url);
+
+                var merged = new ExternalArchive
+                {
+                    Url = identity.Url,
+                    Sha256 = identity.Sha256,
+                    Format = identity.Format,
+                    Size = identity.Size,
+                    Members = members,
+                };
+                ExtractMembers(downloaded, merged, directory, sei, digests, cancellationToken);
                 Delete(slot);
             }
         }
@@ -118,20 +129,86 @@ internal static class ExternalMaterializer
     {
         var wanted = archive.Members
             .GroupBy(member => ExternalFiles.NormalizeMember(member.Member), StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(member => member.Path).ToList(),
+                StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var state = new ArchiveReadState();
 
-        foreach (var (name, bytes) in ReadArchive(downloaded, archive.Format, cancellationToken))
+        if (archive.Format == "zip")
         {
-            if (!wanted.TryGetValue(name, out var targets))
+            using var zip = ZipFile.OpenRead(downloaded);
+            ArchiveLimits.EnsureEntryCount(zip.Entries.Count);
+            foreach (var entry in zip.Entries)
             {
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                var name = ExternalFiles.NormalizeMember(entry.FullName);
+                if (name.Length == 0 || name.EndsWith('/'))
+                {
+                    continue;
+                }
 
-            seen.Add(name);
-            foreach (var target in targets)
+                EnsureUniqueMember(state, name, sei);
+                ArchiveLimits.EnsureEntrySize(entry.Length);
+                state.Declared += entry.Length;
+                ArchiveLimits.EnsureTotal(state.Declared);
+                if (!wanted.TryGetValue(name, out var targets))
+                {
+                    continue;
+                }
+
+                seen.Add(name);
+                using var input = entry.Open();
+                WriteTargets(input, targets, directory, digests, state, cancellationToken);
+            }
+        }
+        else
+        {
+            using var file = File.OpenRead(downloaded);
+            using Stream tarStream = archive.Format == "tar.gz"
+                ? new GZipStream(file, CompressionMode.Decompress)
+                : file;
+            using var reader = new TarReader(tarStream);
+            while (reader.GetNextEntry(copyData: false) is { } entry)
             {
-                digests.Add(WriteTarget(directory, target.Path, bytes, sei, target.Member));
+                cancellationToken.ThrowIfCancellationRequested();
+                state.Count++;
+                ArchiveLimits.EnsureEntryCount(state.Count);
+
+                var name = ExternalFiles.NormalizeMember(entry.Name);
+                if (name.Length > 0)
+                {
+                    EnsureUniqueMember(state, name, sei);
+                }
+
+                if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile)
+                    || entry.DataStream is null)
+                {
+                    // Directories, links and other non-files are never
+                    // materialized; the next GetNextEntry advances past them.
+                    continue;
+                }
+
+                ArchiveLimits.EnsureEntrySize(entry.Length);
+                state.Declared += entry.Length;
+                ArchiveLimits.EnsureTotal(state.Declared);
+                if (name.Length == 0)
+                {
+                    continue;
+                }
+
+                if (wanted.TryGetValue(name, out var targets))
+                {
+                    seen.Add(name);
+                    WriteTargets(entry.DataStream, targets, directory, digests, state, cancellationToken);
+                }
+                else
+                {
+                    // Skipped members still consume decompression budget; a
+                    // tar.gz cannot seek past them for free.
+                    Drain(entry.DataStream, state, cancellationToken);
+                }
             }
         }
 
@@ -146,94 +223,90 @@ internal static class ExternalMaterializer
         }
     }
 
-    private static IEnumerable<(string Name, byte[] Bytes)> ReadArchive(
-        string path,
-        string format,
-        CancellationToken cancellationToken)
+    private static void EnsureUniqueMember(ArchiveReadState state, string name, ResolvedSei sei)
     {
-        if (format == "zip")
-        {
-            using var archive = ZipFile.OpenRead(path);
-            ArchiveLimits.EnsureEntryCount(archive.Entries.Count);
-            foreach (var entry in archive.Entries)
-            {
-                var name = ExternalFiles.NormalizeMember(entry.FullName);
-                if (name.Length == 0 || name.EndsWith('/'))
-                {
-                    continue;
-                }
-
-                ArchiveLimits.EnsureEntrySize(entry.Length);
-                using var stream = entry.Open();
-                yield return (name, ReadAll(stream, cancellationToken));
-            }
-
-            yield break;
-        }
-
-        using var file = File.OpenRead(path);
-        using Stream tarStream = format == "tar.gz"
-            ? new GZipStream(file, CompressionMode.Decompress)
-            : file;
-        using var reader = new TarReader(tarStream);
-        while (reader.GetNextEntry(copyData: true) is { } entry)
-        {
-            if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile)
-                || entry.DataStream is null)
-            {
-                continue;
-            }
-
-            var name = ExternalFiles.NormalizeMember(entry.Name);
-            if (name.Length == 0)
-            {
-                continue;
-            }
-
-            yield return (name, ReadAll(entry.DataStream, cancellationToken));
-        }
-    }
-
-    private static byte[] ReadAll(Stream stream, CancellationToken cancellationToken)
-    {
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        long total = 0;
-        int read;
-        while ((read = stream.Read(chunk, 0, chunk.Length)) > 0)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            total += read;
-            ArchiveLimits.EnsureEntrySize(total);
-            buffer.Write(chunk, 0, read);
-        }
-
-        return buffer.ToArray();
-    }
-
-    private static StoreFileDigest WriteTarget(
-        string directory,
-        string path,
-        byte[] bytes,
-        ResolvedSei sei,
-        string member)
-    {
-        if (bytes.Length > ArchiveLimits.MaxEntryBytes)
+        if (!state.Names.Add(name))
         {
             throw new SeikoException(
-                $"{sei.Name}: external member '{member}' exceeds the {ArchiveLimits.MaxEntryBytes}-byte limit",
+                $"{sei.Name}: external archive contains duplicate member '{name}'",
                 "checksum");
         }
+    }
 
-        var destination = Path.Combine(directory, path);
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        File.WriteAllBytes(destination, bytes);
-        return new StoreFileDigest
+    private static void WriteTargets(
+        Stream input,
+        IReadOnlyList<string> targets,
+        string directory,
+        List<StoreFileDigest> digests,
+        ArchiveReadState state,
+        CancellationToken cancellationToken)
+    {
+        var firstDestination = Path.Combine(directory, targets[0]);
+        Directory.CreateDirectory(Path.GetDirectoryName(firstDestination)!);
+
+        long size = 0;
+        string sha256;
+        using (var output = new FileStream(
+            firstDestination,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None))
+        using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
         {
-            Path = path,
-            Sha256 = Hashing.Sha256Bytes(bytes),
-            Size = bytes.Length,
-        };
+            var buffer = new byte[81920];
+            int read;
+            while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                output.Write(buffer, 0, read);
+                hash.AppendData(buffer, 0, read);
+                size += read;
+                ArchiveLimits.EnsureEntrySize(size);
+                state.Written += read;
+                ArchiveLimits.EnsureTotal(state.Written);
+            }
+
+            sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        }
+
+        // One member may feed several targets; copy the extracted file rather
+        // than holding the whole member in memory.
+        for (var index = 0; index < targets.Count; index++)
+        {
+            if (index > 0)
+            {
+                var destination = Path.Combine(directory, targets[index]);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(firstDestination, destination);
+            }
+
+            digests.Add(new StoreFileDigest
+            {
+                Path = targets[index],
+                Sha256 = sha256,
+                Size = size,
+            });
+        }
+    }
+
+    private static void Drain(Stream stream, ArchiveReadState state, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            state.Written += read;
+            ArchiveLimits.EnsureTotal(state.Written);
+        }
+    }
+
+    private sealed class ArchiveReadState
+    {
+        public int Count { get; set; }
+        public long Declared { get; set; }
+        public long Written { get; set; }
+        public HashSet<string> Names { get; } = new(StringComparer.Ordinal);
     }
 
     private static void Verify(string path, string sha256, long size, string name, string label)

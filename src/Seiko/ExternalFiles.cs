@@ -30,6 +30,7 @@ internal static class ExternalFiles
             EnsureSize(file.Size, $"external file '{file.Path}'", name, code);
         }
 
+        var archiveIdentities = new Dictionary<string, ExternalArchive>(StringComparer.Ordinal);
         foreach (var archive in archives)
         {
             EnsureHttps(archive.Url, "external archive", name, code);
@@ -40,6 +41,24 @@ internal static class ExternalFiles
                 throw new SeikoException(
                     $"{name}: external archive format must be one of {string.Join(", ", Formats)}",
                     code);
+            }
+
+            // One URL pins one blob (ADR-0013). Repeated declarations may add
+            // members, but they must describe the same download.
+            if (archiveIdentities.TryGetValue(archive.Url, out var first))
+            {
+                if (!string.Equals(first.Sha256, archive.Sha256, StringComparison.Ordinal)
+                    || !string.Equals(first.Format, archive.Format, StringComparison.Ordinal)
+                    || (first.Size > 0 && archive.Size > 0 && first.Size != archive.Size))
+                {
+                    throw new SeikoException(
+                        $"{name}: repeated external archive '{archive.Url}' must keep the same digest, format, and size",
+                        code);
+                }
+            }
+            else
+            {
+                archiveIdentities[archive.Url] = archive;
             }
 
             if (archive.Members.Count == 0)
