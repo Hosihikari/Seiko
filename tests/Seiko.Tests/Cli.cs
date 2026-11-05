@@ -7,28 +7,43 @@ namespace Seiko.Tests;
 // repo root.
 internal static class Cli
 {
-    private static string? Path()
+    private static string Path()
     {
+        // The test assembly lives under bin/<configuration>; CI builds Release
+        // while a local run is usually Debug, so try the matching one first.
+        var configuration = AppContext.BaseDirectory.Contains(
+            $"{System.IO.Path.DirectorySeparatorChar}Release{System.IO.Path.DirectorySeparatorChar}",
+            StringComparison.Ordinal)
+            ? "Release"
+            : "Debug";
+        var configurations = configuration == "Release"
+            ? new[] { "Release", "Debug" }
+            : new[] { "Debug", "Release" };
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            var candidate = System.IO.Path.Combine(
-                directory.FullName,
-                "src",
-                "CommandLine",
-                "bin",
-                "Debug",
-                "net10.0",
-                OperatingSystem.IsWindows() ? "sk.exe" : "sk");
-            if (File.Exists(candidate))
+            foreach (var candidateConfiguration in configurations)
             {
-                return candidate;
+                var candidate = System.IO.Path.Combine(
+                    directory.FullName,
+                    "src",
+                    "CommandLine",
+                    "bin",
+                    candidateConfiguration,
+                    "net10.0",
+                    OperatingSystem.IsWindows() ? "sk.exe" : "sk");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
             }
 
             directory = directory.Parent;
         }
 
-        return null;
+        // Returning empty output made every CLI assertion pass vacuously.
+        throw new InvalidOperationException(
+            "sk was not found; build src/CommandLine before running the CLI tests");
     }
 
     public static (string Stdout, string Stderr, int ExitCode) Run(
@@ -36,11 +51,6 @@ internal static class Cli
         IDictionary<string, string>? environment = null)
     {
         var path = Path();
-        if (path is null)
-        {
-            return ("", "", 0);
-        }
-
         var start = new ProcessStartInfo(path)
         {
             RedirectStandardOutput = true,
