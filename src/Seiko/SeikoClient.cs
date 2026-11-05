@@ -429,12 +429,55 @@ public sealed class SeikoClient
             Describe(sei, diagnostics);
         }
 
+        // External payload comes from index summaries when present, or from
+        // the entry's own declarations; nothing is downloaded for the plan.
+        var externalHosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var externalItems = 0;
+        var externalBytes = 0L;
+        foreach (var sei in resolved)
+        {
+            var entry = sei.Entry.Artifacts?
+                .FirstOrDefault(artifact => artifact is not null
+                    && string.Equals(artifact.Source?.Sha256, sei.Artifact.Source.Sha256, StringComparison.OrdinalIgnoreCase));
+            var artifact = entry ?? sei.Artifact;
+            if (artifact.External is { } summary)
+            {
+                externalItems += summary.Files + summary.Archives;
+                externalBytes += summary.Size;
+                foreach (var host in summary.Hosts)
+                {
+                    externalHosts.Add(host);
+                }
+
+                continue;
+            }
+
+            externalItems += ExternalFiles.Count(new ArtifactManifest
+            {
+                ExternalFiles = artifact.ExternalFiles,
+                ExternalArchives = artifact.ExternalArchives,
+            });
+            externalBytes += (artifact.ExternalFiles ?? []).Sum(file => file.Size)
+                + (artifact.ExternalArchives ?? []).Sum(archive => archive.Size);
+            foreach (var host in ExternalFiles.Hosts(new ArtifactManifest
+            {
+                ExternalFiles = artifact.ExternalFiles,
+                ExternalArchives = artifact.ExternalArchives,
+            }))
+            {
+                externalHosts.Add(host);
+            }
+        }
+
         return new PreviewResult
         {
             Changes = changes,
             Blocked = blocked,
             Diagnostics = diagnostics,
             Warnings = warnings,
+            ExternalItems = externalItems,
+            ExternalBytes = externalBytes,
+            ExternalHosts = externalHosts.ToList(),
         };
     }
 

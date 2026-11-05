@@ -894,7 +894,10 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
                 preview.Blocked.ToList(),
                 preview.Warnings.ToList(),
                 false,
-                diagnostics ? preview.Diagnostics.ToList() : null)));
+                diagnostics ? preview.Diagnostics.ToList() : null,
+                preview.ExternalItems,
+                preview.ExternalBytes,
+                preview.ExternalHosts.ToList())));
         return 0;
     }
 
@@ -924,6 +927,13 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
         {
             Console.WriteLine($"diagnostic\t{diagnostic.Name}\t{diagnostic.Kind}: {diagnostic.Message}");
         }
+    }
+
+    if (preview.ExternalItems > 0)
+    {
+        Console.WriteLine(
+            $"external	{preview.ExternalItems} item(s), ~{preview.ExternalBytes} byte(s) from "
+            + string.Join(", ", preview.ExternalHosts));
     }
 
     Console.WriteLine("no files were downloaded or deployed; run without --dry-run to apply");

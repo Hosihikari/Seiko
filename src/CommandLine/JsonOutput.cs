@@ -22,7 +22,10 @@ public sealed record PreviewData(
     List<PreviewBlock> Blocked,
     List<string> Warnings,
     bool Downloaded,
-    List<PreviewDiagnostic>? Diagnostics);
+    List<PreviewDiagnostic>? Diagnostics,
+    int External,
+    long ExternalBytes,
+    List<string> ExternalHosts);
 
 public sealed record PreviewEnvelope(int SchemaVersion, string Command, PreviewData Data);
 

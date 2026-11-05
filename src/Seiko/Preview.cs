@@ -18,4 +18,10 @@ public sealed class PreviewResult
     public IReadOnlyList<PreviewBlock> Blocked { get; init; } = [];
     public IReadOnlyList<PreviewDiagnostic> Diagnostics { get; init; } = [];
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    // External payload of the planned changes: hosts and item count, so the
+    // user sees third-party downloads before applying. Never fetched here.
+    public IReadOnlyList<string> ExternalHosts { get; init; } = [];
+    public int ExternalItems { get; init; }
+    public long ExternalBytes { get; init; }
 }

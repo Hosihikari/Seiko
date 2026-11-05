@@ -371,6 +371,40 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void DryRun_ReportsExternalWithoutDownloading()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        // Never written to the server root: a dry-run that fetched would fail.
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture(
+                            "extra.txt",
+                            server.BaseUrl + "external/vendor/extra.txt",
+                            "extra"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        var preview = new SeikoClient()
+            .Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+            .Preview!;
+
+        Assert.Equal(1, preview.ExternalItems);
+        Assert.Equal(["127.0.0.1"], preview.ExternalHosts);
+    }
+
+    [Fact]
     public void Info_ReportsExternalHostsAndCount()
     {
         var (fixture, server) = Setup();
