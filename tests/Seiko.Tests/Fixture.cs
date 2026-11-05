@@ -364,10 +364,39 @@ internal sealed class Fixture : IDisposable
         }
     }
 
+    /// <summary>
+    /// Tests that edit a sei file directly must regenerate the catalog, as the
+    /// index bot does for every change. Regenerates from disk, not from the
+    /// in-memory copy, so direct file edits are picked up.
+    /// </summary>
+    public void RefreshCatalog()
+    {
+        var indexes = Directory
+            .EnumerateFiles(Path.Combine(SourceDirectory, "sei"), "*.json")
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .Select(path => JsonSerializer.Deserialize<SeiIndex>(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.SeiIndex)!)
+            .Where(index => index is not null);
+        File.WriteAllBytes(
+            Path.Combine(SourceDirectory, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                CatalogFile.Build(indexes),
+                SeikoJsonContext.Default.SeiCatalog));
+    }
+
     private void WriteSei(string name)
     {
         var path = Path.Combine(SourceDirectory, "sei", name + ".json");
         File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(_indexes[name], SeikoJsonContext.Default.SeiIndex));
+
+        // The real index bot regenerates the catalog on every change; mirror
+        // that so verifier tests do not see a stale catalog by default.
+        File.WriteAllBytes(
+            Path.Combine(SourceDirectory, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                CatalogFile.Build(_indexes.Values),
+                SeikoJsonContext.Default.SeiCatalog));
     }
 
     private static List<SeiDependency> ToDependencies(IEnumerable<DepFixture> dependencies)

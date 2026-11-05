@@ -161,7 +161,9 @@ public sealed class CatalogTests
 
         var entry = Assert.Single(CatalogFile.Build([index]).Sei);
 
-        Assert.Equal("2.0.0", entry.Version);
+        // Critical versions are skipped like yanked ones; the advisory column
+        // still reports the most severe finding in the package.
+        Assert.Equal("1.0.0", entry.Version);
         Assert.Equal("critical", entry.Advisory!.Severity);
     }
 }

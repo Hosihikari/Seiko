@@ -428,6 +428,9 @@ public sealed class WorkflowTests
         });
         first.WriteConfig("win-x64");
         File.Delete(Path.Combine(first.SourceDirectory, "sei", "foo.json"));
+        // Without the catalog the name list is walked, which is what this
+        // test needs: a listed name whose file the source cannot serve.
+        File.Delete(Path.Combine(first.SourceDirectory, "catalog.json"));
 
         using var second = new Fixture();
         second.AddSei("foo", new VersionFixture

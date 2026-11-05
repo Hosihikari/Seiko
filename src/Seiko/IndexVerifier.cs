@@ -112,7 +112,8 @@ public static class IndexVerifier
         bool checkArtifacts = false,
         string? proxy = null,
         Action<string>? log = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool checkCatalog = true)
     {
         var root = Path.GetFullPath(directory);
         var context = new Context(root);
@@ -202,7 +203,63 @@ public static class IndexVerifier
             checkedCount = CheckArtifacts(context, proxy, log, cancellationToken);
         }
 
+        if (checkCatalog)
+        {
+            CheckCatalog(context, root);
+        }
+
         return context.ToResult(checkedCount);
+    }
+
+    // The catalog is derived; a missing one is a warning unless --strict.
+    // A present one must match what the mirrors say, or a hand edit can make
+    // search disagree with installation.
+    private static void CheckCatalog(Context context, string root)
+    {
+        var path = Path.Combine(root, CatalogFile.FileName);
+        var existing = CatalogFile.TryRead(path);
+        if (existing is null)
+        {
+            context.Warning(
+                "catalog-missing",
+                "catalog.json is missing or unreadable; search will fall back to per-name reads",
+                CatalogFile.FileName);
+            return;
+        }
+
+        var expected = CatalogFile.Build(LoadAllSei(root));
+        if (Serialize(existing) != Serialize(expected))
+        {
+            context.Error(
+                "catalog-stale",
+                "catalog.json does not match the index; regenerate it",
+                CatalogFile.FileName);
+        }
+    }
+
+    private static string Serialize(SeiCatalog catalog)
+        => JsonSerializer.Serialize(catalog, SeikoJsonContext.Default.SeiCatalog);
+
+    private static IEnumerable<SeiIndex> LoadAllSei(string root)
+    {
+        foreach (var file in EnumerateSeiFiles(root))
+        {
+            SeiIndex? index = null;
+            try
+            {
+                index = JsonSerializer.Deserialize(
+                    File.ReadAllBytes(file),
+                    SeikoJsonContext.Default.SeiIndex);
+            }
+            catch (JsonException)
+            {
+            }
+
+            if (index is not null)
+            {
+                yield return index;
+            }
+        }
     }
 
     private static IndexRoot? ReadIndex(Context context, string path)

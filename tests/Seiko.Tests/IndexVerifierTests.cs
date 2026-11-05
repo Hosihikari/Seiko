@@ -47,6 +47,7 @@ public sealed class IndexVerifierTests
             Url = "https://example.com/advisories/1",
         };
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -60,6 +61,7 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Advisory = new AdvisoryInfo { Severity = " CRITICAL " };
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -145,6 +147,7 @@ public sealed class IndexVerifierTests
             Url = "not a url",
         };
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -377,6 +380,7 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Artifacts[0].Source.Url = url;
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -391,6 +395,7 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Advisory = new AdvisoryInfo { Severity = "low", Url = "https://" };
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -650,6 +655,7 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions.Add(new SeiVersionEntry { Version = "1.0" });
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -686,6 +692,7 @@ public sealed class IndexVerifierTests
         source.Sha256 = "ABC";
         source.Size = 0;
         WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 

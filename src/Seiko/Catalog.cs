@@ -35,26 +35,29 @@ internal static class CatalogFile
         var entries = new List<CatalogEntry>();
         foreach (var item in sei)
         {
-            var latest = item.Versions
-                .Where(entry => !entry.Yanked)
+            // Build from the effective state: the catalog is what search sees,
+            // so a source-side yank or advisory must already be merged in.
+            var effective = IndexOverlay.Apply(item);
+            var latest = effective.Versions
+                .Where(entry => !entry.Yanked && !Retirement.IsCritical(entry))
                 .OrderByDescending(entry => Parse(entry.Version))
                 .FirstOrDefault();
-            var advisory = item.Versions
+            var advisory = effective.Versions
                 .Select(entry => entry.Advisory)
                 .Where(entry => entry is not null)
                 .OrderByDescending(Rank)
                 .FirstOrDefault();
             entries.Add(new CatalogEntry
             {
-                Name = item.Name,
+                Name = effective.Name,
                 Version = latest?.Version,
-                Description = item.Project?.Description,
-                Tags = item.Project?.Tags is { } tags
+                Description = effective.Project?.Description,
+                Tags = effective.Project?.Tags is { } tags
                     ? tags.OrderBy(tag => tag, StringComparer.Ordinal).ToList()
                     : null,
-                License = item.Project?.License,
-                Unlisted = item.Unlisted,
-                Deprecated = item.Deprecated,
+                License = effective.Project?.License,
+                Unlisted = effective.Unlisted,
+                Deprecated = effective.Deprecated,
                 Advisory = advisory,
             });
         }

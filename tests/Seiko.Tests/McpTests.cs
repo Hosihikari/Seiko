@@ -165,6 +165,7 @@ public sealed class McpTests
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
             JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+        fixture.RefreshCatalog();
         var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
 
         var result = CallTool(

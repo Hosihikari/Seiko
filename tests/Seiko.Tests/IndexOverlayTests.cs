@@ -42,6 +42,7 @@ public sealed class IndexOverlayTests
         var sei = Read(fixture);
         sei.Versions.Single(entry => entry.Version == "2.0.0").SourceYanked = true;
         Write(fixture, sei);
+        fixture.RefreshCatalog();
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -60,6 +61,7 @@ public sealed class IndexOverlayTests
         entry.Yanked = true;
         entry.SourceYanked = false;
         Write(fixture, sei);
+        fixture.RefreshCatalog();
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -80,6 +82,7 @@ public sealed class IndexOverlayTests
             new AdvisoryInfo { Severity = "critical", Url = "https://example.invalid/c" },
         ];
         Write(fixture, sei);
+        fixture.RefreshCatalog();
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -100,6 +103,7 @@ public sealed class IndexOverlayTests
             new AdvisoryInfo { Severity = "low", Url = "https://example.invalid/l" },
         ];
         Write(fixture, sei);
+        fixture.RefreshCatalog();
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
         // Critical blocks a fresh resolution; it does not fail the sync. The
@@ -117,6 +121,7 @@ public sealed class IndexOverlayTests
         sei.Unlisted = false;
         sei.SourceUnlisted = true;
         Write(fixture, sei);
+        fixture.RefreshCatalog();
 
         var results = new SeikoClient().Search(fixture.Root, "hello");
 
@@ -131,6 +136,7 @@ public sealed class IndexOverlayTests
         sei.Deprecated = "maintainer text";
         sei.SourceDeprecated = "source text";
         Write(fixture, sei);
+        fixture.RefreshCatalog();
 
         var info = new SeikoClient().Info(fixture.Root, "hello");
 
@@ -149,6 +155,7 @@ public sealed class IndexOverlayTests
         };
         sei.Versions.Single(item => item.Version == "2.0.0").SourceYanked = true;
         Write(fixture, sei);
+        fixture.RefreshCatalog();
 
         var info = new SeikoClient().Info(fixture.Root, "hello");
 
@@ -171,6 +178,7 @@ public sealed class IndexOverlayTests
             Tags = ["greeting"],
         };
         Write(fixture, sei);
+        fixture.RefreshCatalog();
 
         var result = Assert.Single(new SeikoClient().Search(fixture.Root, "world"));
         Assert.Equal("hello world", result.Description);
