@@ -35,21 +35,29 @@ public static class CatalogFile
         var entries = new List<CatalogEntry>();
         foreach (var item in sei)
         {
+            if (item is null)
+            {
+                continue;
+            }
+
             // Build from the effective state: the catalog is what search sees,
-            // so a source-side yank or advisory must already be merged in.
+            // so a source-side yank or advisory must already be merged in. A
+            // malformed mirror has no usable version list; the verifier
+            // reports that separately, and generation must not crash on it.
             var effective = IndexOverlay.Apply(item);
-            var latest = effective.Versions
-                .Where(entry => !entry.Yanked && !Retirement.IsCritical(entry))
+            var versions = effective.Versions ?? [];
+            var latest = versions
+                .Where(entry => entry is not null && !entry.Yanked && !Retirement.IsCritical(entry))
                 .OrderByDescending(entry => Parse(entry.Version))
                 .FirstOrDefault();
-            var advisory = effective.Versions
-                .Select(entry => entry.Advisory)
+            var advisory = versions
+                .Select(entry => entry?.Advisory)
                 .Where(entry => entry is not null)
                 .OrderByDescending(Rank)
                 .FirstOrDefault();
             entries.Add(new CatalogEntry
             {
-                Name = effective.Name,
+                Name = effective.Name ?? "",
                 Version = latest?.Version,
                 Description = effective.Project?.Description,
                 Tags = effective.Project?.Tags is { } tags

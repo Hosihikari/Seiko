@@ -227,7 +227,17 @@ public static class IndexVerifier
             return;
         }
 
-        var expected = CatalogFile.Build(LoadAllSei(root));
+        // A mirror with a null version list (or no name) cannot produce a
+        // trustworthy catalog. The structural findings above already describe
+        // the problem; comparing against a derived catalog would only crash or
+        // add noise.
+        var mirrors = LoadAllSei(root).ToList();
+        if (mirrors.Any(sei => sei.Versions is null || string.IsNullOrWhiteSpace(sei.Name)))
+        {
+            return;
+        }
+
+        var expected = CatalogFile.Build(mirrors);
         if (Serialize(existing) != Serialize(expected))
         {
             context.Error(

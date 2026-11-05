@@ -22,6 +22,23 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_ReportsNullVersionListInsteadOfCrashingOnTheCatalogCheck()
+    {
+        using var fixture = NewFixture();
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["versions"] = null;
+        File.WriteAllText(path, node.ToJsonString());
+
+        // The existing catalog stays valid; the verifier must report the
+        // malformed mirror and skip the comparison instead of throwing.
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "sei-empty");
+        Assert.DoesNotContain(result.Findings, finding => finding.Code == "catalog-stale");
+    }
+
+    [Fact]
     public void Verify_RejectsAnOldIndexSchema()
     {
         using var fixture = NewFixture();
