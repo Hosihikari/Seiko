@@ -758,6 +758,11 @@ public static class Deployer
         var directory = Path.Combine(stateDirectory, "generations", state.Generation.ToString());
         Directory.CreateDirectory(directory);
         WriteAtomic(
+            Path.Combine(directory, "meta.json"),
+            JsonSerializer.Serialize(
+                new GenerationMeta { CreatedAt = DateTimeOffset.UtcNow },
+                SeikoJsonContext.Default.GenerationMeta));
+        WriteAtomic(
             Path.Combine(directory, "state.json"),
             JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState));
         LockFile.Write(Path.Combine(directory, "lock.json"), lockFile);

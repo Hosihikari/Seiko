@@ -245,6 +245,37 @@ public sealed class DeployedFile
     public bool Adopted { get; set; }
 }
 
+// Generation snapshots have no timestamp of their own; this sidecar records
+// one so `generation list` can order them. Old generations simply lack it.
+public sealed class GenerationMeta
+{
+    public int SchemaVersion { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+// One row of `generation list`. Valid is false when the snapshot cannot be
+// rolled back; the row still appears so the gap is visible.
+public sealed record GenerationInfo(
+    int Generation,
+    DateTimeOffset? CreatedAt,
+    bool Current,
+    int SeiCount,
+    int FileCount,
+    bool Valid);
+
+// The read-only diff `rollback --dry-run` prints. It never changes state and
+// never downloads; a missing store entry is reported, not fetched.
+public sealed record RollbackPreview(
+    int FromGeneration,
+    int ToGeneration,
+    IReadOnlyList<string> ConfigChanges,
+    IReadOnlyList<string> LockChanges,
+    IReadOnlyList<string> Added,
+    IReadOnlyList<string> Removed,
+    IReadOnlyList<string> Replaced,
+    IReadOnlyList<string> Adopted,
+    IReadOnlyList<string> MissingStore);
+
 public sealed class RootRegistryState
 {
     public int SchemaVersion { get; set; } = 1;

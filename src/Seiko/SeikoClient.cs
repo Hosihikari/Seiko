@@ -1760,6 +1760,288 @@ public sealed class SeikoClient
         };
     }
 
+    public RollbackPreview PreviewRollback(string root, int? toGeneration = null, string? storeRoot = null)
+    {
+        root = Path.GetFullPath(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        var stateDirectory = Path.Combine(root, ".seiko");
+        var statePath = Path.Combine(stateDirectory, "state.json");
+        if (!File.Exists(statePath))
+        {
+            throw new SeikoException("no local state; run `sk sync` first", "lock");
+        }
+
+        var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
+            ?? throw new SeikoException("invalid local state", "lock");
+        var target = toGeneration ?? state.Generation - 1;
+        if (target < 1)
+        {
+            throw new SeikoException("no previous generation to roll back to", "lock");
+        }
+
+        var generationDirectory = Path.Combine(stateDirectory, "generations", target.ToString());
+        var snapshotLockPath = Path.Combine(generationDirectory, "lock.json");
+        var snapshotConfigPath = Path.Combine(generationDirectory, "seiko.conf");
+        var snapshotStatePath = Path.Combine(generationDirectory, "state.json");
+        if (!File.Exists(snapshotLockPath) || !File.Exists(snapshotConfigPath) || !File.Exists(snapshotStatePath))
+        {
+            throw new SeikoException($"generation {target} is incomplete", "lock");
+        }
+
+        // Reuse the real rollback's target validation so a preview cannot be
+        // greener than the operation it describes.
+        var snapshotLock = LockFile.Read(snapshotLockPath)
+            ?? throw new SeikoException($"generation {target} has no lock", "lock");
+        var snapshotState = JsonSerializer.Deserialize(
+            File.ReadAllBytes(snapshotStatePath),
+            SeikoJsonContext.Default.LocalState)
+            ?? throw new SeikoException($"generation {target} has no state", "io");
+
+        var currentConfig = File.Exists(Path.Combine(root, "seiko.conf"))
+            ? File.ReadAllText(Path.Combine(root, "seiko.conf"))
+            : "";
+        var snapshotConfig = File.ReadAllText(snapshotConfigPath);
+        var configChanges = DiffLines(currentConfig, snapshotConfig, "config");
+
+        var currentLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+            ?? throw new SeikoException("no lock; run `sk sync`", "lock");
+        var lockChanges = DiffSei(currentLock, snapshotLock);
+
+        var currentFiles = state.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        var targetFiles = snapshotState.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        var added = new List<string>();
+        var removed = new List<string>();
+        var replaced = new List<string>();
+        var adopted = new List<string>();
+        var missing = new List<string>();
+
+        var store = new Store(storePath);
+        var bySha = snapshotLock.Sei.ToDictionary(sei => sei.Artifact.Sha256, StringComparer.Ordinal);
+        foreach (var (path, record) in targetFiles.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            if (record.Adopted)
+            {
+                adopted.Add(path);
+                continue;
+            }
+
+            var existed = currentFiles.TryGetValue(path, out var current);
+            if (!existed)
+            {
+                added.Add(path);
+            }
+            else if (!string.Equals(current!.Sha256, record.Sha256, StringComparison.Ordinal))
+            {
+                replaced.Add(path);
+            }
+
+            if (!existed || !string.Equals(current!.Sha256, record.Sha256, StringComparison.Ordinal))
+            {
+                if (bySha.ContainsKey(record.Sha256) && !StoreHas(store, record.Sha256))
+                {
+                    missing.Add(path);
+                }
+            }
+        }
+
+        foreach (var path in currentFiles.Keys.OrderBy(item => item, StringComparer.Ordinal))
+        {
+            if (!targetFiles.ContainsKey(path))
+            {
+                removed.Add(path);
+            }
+        }
+
+        return new RollbackPreview(
+            state.Generation,
+            target,
+            configChanges,
+            lockChanges,
+            added,
+            removed,
+            replaced,
+            adopted,
+            missing.Distinct(StringComparer.Ordinal).ToList());
+    }
+
+    private static bool StoreHas(Store store, string sha256)
+    {
+        try
+        {
+            return store.TryGet(sha256) is not null;
+        }
+        catch (SeikoException)
+        {
+            return false;
+        }
+    }
+
+    private static List<string> DiffLines(string current, string target, string label)
+    {
+        var before = current.Split('\n').Select(line => line.TrimEnd('\r')).ToList();
+        var after = target.Split('\n').Select(line => line.TrimEnd('\r')).ToList();
+        var changes = new List<string>();
+        foreach (var line in after.Except(before, StringComparer.Ordinal))
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                changes.Add($"+ {label}: {line}");
+            }
+        }
+
+        foreach (var line in before.Except(after, StringComparer.Ordinal))
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                changes.Add($"- {label}: {line}");
+            }
+        }
+
+        return changes;
+    }
+
+    private static List<string> DiffSei(SeikoLock current, SeikoLock target)
+    {
+        var changes = new List<string>();
+        var before = current.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
+        var after = target.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
+        foreach (var (name, locked) in after.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            if (!before.TryGetValue(name, out var old))
+            {
+                changes.Add($"+ sei: {name} {locked.Version}");
+            }
+            else if (!string.Equals(old.Version, locked.Version, StringComparison.Ordinal)
+                || !string.Equals(old.Artifact.Sha256, locked.Artifact.Sha256, StringComparison.Ordinal))
+            {
+                changes.Add($"~ sei: {name} {old.Version} -> {locked.Version}");
+            }
+        }
+
+        foreach (var name in before.Keys.OrderBy(item => item, StringComparer.Ordinal))
+        {
+            if (!after.ContainsKey(name))
+            {
+                changes.Add($"- sei: {name}");
+            }
+        }
+
+        return changes;
+    }
+
+    public IReadOnlyList<GenerationInfo> Generations(string root, string? storeRoot = null)
+    {
+        root = Path.GetFullPath(root);
+        var stateDirectory = Path.Combine(root, ".seiko");
+        var statePath = Path.Combine(stateDirectory, "state.json");
+        LocalState? state = null;
+        if (File.Exists(statePath))
+        {
+            try
+            {
+                state = JsonSerializer.Deserialize(
+                    File.ReadAllBytes(statePath),
+                    SeikoJsonContext.Default.LocalState);
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        var current = state?.Generation ?? 0;
+        var files = state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        var generations = new List<GenerationInfo>();
+        var directory = Path.Combine(stateDirectory, "generations");
+        if (!Directory.Exists(directory))
+        {
+            return generations;
+        }
+
+        foreach (var path in Directory.EnumerateDirectories(directory))
+        {
+            if (!int.TryParse(Path.GetFileName(path), out var number))
+            {
+                continue;
+            }
+
+            var createdAt = ReadGenerationMeta(path);
+            var snapshotStatePath = Path.Combine(path, "state.json");
+            var valid = File.Exists(snapshotStatePath)
+                && File.Exists(Path.Combine(path, "lock.json"))
+                && File.Exists(Path.Combine(path, "seiko.conf"));
+            LocalState? snapshotState = null;
+            if (valid)
+            {
+                try
+                {
+                    snapshotState = JsonSerializer.Deserialize(
+                        File.ReadAllBytes(snapshotStatePath),
+                        SeikoJsonContext.Default.LocalState);
+                    valid = snapshotState is not null
+                        && snapshotState.SchemaVersion == LocalState.CurrentSchemaVersion
+                        && snapshotState.Files is not null;
+                }
+                catch (JsonException)
+                {
+                    valid = false;
+                }
+            }
+
+            // The file count of the current generation comes from live state;
+            // older ones from their own snapshot.
+            var fileCount = number == current
+                ? files.Count
+                : snapshotState?.Files?.Count ?? 0;
+            generations.Add(new GenerationInfo(
+                number,
+                createdAt,
+                number == current,
+                ReadLockCount(path),
+                fileCount,
+                valid));
+        }
+
+        return generations.OrderByDescending(item => item.Generation).ToList();
+    }
+
+    private int ReadLockCount(string generationDirectory)
+    {
+        var lockPath = Path.Combine(generationDirectory, "lock.json");
+        if (!File.Exists(lockPath))
+        {
+            return 0;
+        }
+
+        try
+        {
+            return LockFile.Read(lockPath)?.Sei.Count ?? 0;
+        }
+        catch (SeikoException)
+        {
+            return 0;
+        }
+    }
+
+    private static DateTimeOffset? ReadGenerationMeta(string directory)
+    {
+        var path = Path.Combine(directory, "meta.json");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.GenerationMeta)?.CreatedAt;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public IReadOnlyList<SeiSummary> Search(
         string root,
         string term,
