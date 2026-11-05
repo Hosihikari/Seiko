@@ -13,6 +13,8 @@ public sealed class SyncResult
     public int SeiInstalled => Lock.Sei.Count;
     public PreviewResult? Preview { get; init; }
     public IReadOnlyList<PreviewDiagnostic> Diagnostics { get; init; } = [];
+    public int ExternalItems { get; init; }
+    public IReadOnlyList<string> ExternalHosts { get; init; } = [];
 }
 
 public sealed class RollbackResult
@@ -275,13 +277,58 @@ public sealed class SeikoClient
             Describe(sei, described);
         }
 
+        // The same external summary the preview computes, so a real sync
+        // reports what came from third-party hosts.
+        var external = SummarizeExternal(resolved);
+
         return new SyncResult
         {
             Lock = lockFile,
             FilesDeployed = deployment.FileCount,
             Warnings = warnings,
             Diagnostics = described,
+            ExternalItems = external.Items,
+            ExternalHosts = external.Hosts,
         };
+    }
+
+    private static (int Items, IReadOnlyList<string> Hosts) SummarizeExternal(
+        IEnumerable<ResolvedSei> resolved)
+    {
+        var hosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var items = 0;
+        foreach (var sei in resolved)
+        {
+            var entry = sei.Entry.Artifacts?
+                .FirstOrDefault(artifact => artifact is not null
+                    && string.Equals(
+                        artifact.Source?.Sha256,
+                        sei.Artifact.Source.Sha256,
+                        StringComparison.OrdinalIgnoreCase)) ?? sei.Artifact;
+            if (entry.External is { } summary)
+            {
+                items += summary.Files + summary.Archives;
+                foreach (var host in summary.Hosts)
+                {
+                    hosts.Add(host);
+                }
+
+                continue;
+            }
+
+            var manifest = new ArtifactManifest
+            {
+                ExternalFiles = entry.ExternalFiles,
+                ExternalArchives = entry.ExternalArchives,
+            };
+            items += ExternalFiles.Count(manifest);
+            foreach (var host in ExternalFiles.Hosts(manifest))
+            {
+                hosts.Add(host);
+            }
+        }
+
+        return (items, hosts.ToList());
     }
 
     private static void Describe(ResolvedSei sei, List<PreviewDiagnostic> diagnostics)

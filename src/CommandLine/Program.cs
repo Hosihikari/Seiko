@@ -875,7 +875,9 @@ static int Sync(
                 result.FilesDeployed,
                 mode.ToString(),
                 result.Warnings.ToList(),
-                diagnostics ? result.Diagnostics.ToList() : null)));
+                diagnostics ? result.Diagnostics.ToList() : null,
+                result.ExternalItems,
+                result.ExternalHosts.ToList())));
         return 0;
     }
 
@@ -1274,7 +1276,9 @@ static int RunMutation(
                 result.FilesDeployed,
                 SyncMode.Normal.ToString(),
                 result.Warnings.ToList(),
-                diagnostics ? result.Diagnostics.ToList() : null)));
+                diagnostics ? result.Diagnostics.ToList() : null,
+                result.ExternalItems,
+                result.ExternalHosts.ToList())));
     }
     else
     {
@@ -1292,6 +1296,12 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
     }
 
     Console.WriteLine($"resolved {result.SeiInstalled} sei, deployed {result.FilesDeployed} file(s)");
+    if (result.ExternalItems > 0)
+    {
+        Console.WriteLine(
+            $"external: {result.ExternalItems} item(s) from {string.Join(", ", result.ExternalHosts)}");
+    }
+
     foreach (var sei in result.Lock.Sei)
     {
         Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}");

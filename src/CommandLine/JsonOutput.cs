@@ -15,7 +15,9 @@ public sealed record SyncData(
     int Files,
     string Mode,
     List<string> Warnings,
-    List<PreviewDiagnostic>? Diagnostics);
+    List<PreviewDiagnostic>? Diagnostics,
+    int External,
+    List<string> ExternalHosts);
 
 public sealed record PreviewData(
     List<PlannedChange> Changes,
