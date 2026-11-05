@@ -55,7 +55,8 @@ public sealed record InfoArtifact(
     List<SeiDependency> OptionalPeers,
     List<SeiDependency> Conflicts,
     int External,
-    List<string> ExternalHosts);
+    List<string> ExternalHosts,
+    bool ExternalKnown);
 
 public sealed record InfoVersion(
     string Version,

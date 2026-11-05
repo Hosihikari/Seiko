@@ -1567,7 +1567,8 @@ static int Info(
                             artifact.OptionalPeers.ToList(),
                             artifact.Conflicts.ToList(),
                             artifact.ExternalCount,
-                            artifact.ExternalHosts.ToList()))
+                            artifact.ExternalHosts.ToList(),
+                            artifact.ExternalKnown))
                         .ToList(),
                     version.SourceRetired))
                 .ToList(),

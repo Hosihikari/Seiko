@@ -692,5 +692,33 @@ public sealed class ExternalFilesTests
         var artifact = Assert.Single(Assert.Single(info.Versions).Artifacts);
         Assert.Equal(1, artifact.ExternalCount);
         Assert.Equal(["127.0.0.1"], artifact.ExternalHosts);
+        Assert.True(artifact.ExternalKnown);
+    }
+
+    [Fact]
+    public void InfoJson_ReportsUnknownExternal()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "proprietary.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        var artifact = node["versions"]![0]!["artifacts"]![0]!.AsObject();
+        artifact.Remove("externalFiles");
+        artifact.Remove("externalArchives");
+        artifact.Remove("external");
+        File.WriteAllText(path, node.ToJsonString());
+
+        var (stdout, stderr, _) = Cli.Run(
+            ["info", "proprietary", "--root", fixture.Root, "--json"],
+            new Dictionary<string, string> { ["SEIKO_STORE"] = fixture.StoreDirectory });
+
+        Assert.Contains("\"externalKnown\":false", stdout + stderr, StringComparison.Ordinal);
     }
 }
