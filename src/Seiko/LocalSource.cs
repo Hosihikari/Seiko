@@ -56,7 +56,7 @@ public sealed class LocalSource : ISeiSource
             throw new SeikoException($"source '{Config.Id}': sei file for {name} declares name '{sei.Name}'", "source");
         }
 
-        return sei;
+        return IndexOverlay.Apply(sei);
     }
 
     public string ResolveArtifact(ArtifactLocation source) => ResolveArtifactPath(source);

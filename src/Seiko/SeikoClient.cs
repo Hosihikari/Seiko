@@ -1776,14 +1776,13 @@ public sealed class SeikoClient
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var results = new List<SeiSummary>();
+        var results = new List<(int Rank, SeiSummary Summary)>();
 
         foreach (var source in sources)
         {
             foreach (var name in source.Index.Sei ?? new List<string>())
             {
-                if (!name.Contains(term, StringComparison.OrdinalIgnoreCase)
-                    || seen.Contains(name))
+                if (seen.Contains(name))
                 {
                     continue;
                 }
@@ -1808,11 +1807,66 @@ public sealed class SeikoClient
                     continue;
                 }
 
-                results.Add(new SeiSummary(name, latest.Version, source.Id));
+                if (!Matches(term, name, sei.Project, out var rank))
+                {
+                    continue;
+                }
+
+                results.Add((rank, new SeiSummary(
+                    name,
+                    latest.Version,
+                    source.Id,
+                    sei.Project?.Description,
+                    sei.Project?.Tags,
+                    sei.Project?.License,
+                    sei.Deprecated,
+                    latest.Advisory)));
             }
         }
 
-        return results.OrderBy(result => result.Name, StringComparer.Ordinal).ToList();
+        // Exact name beats a prefix, a prefix beats a substring, and project
+        // text is the weakest signal; ties stay alphabetical.
+        return results
+            .OrderBy(item => item.Rank)
+            .ThenBy(item => item.Summary.Name, StringComparer.Ordinal)
+            .Select(item => item.Summary)
+            .ToList();
+    }
+
+    private static bool Matches(string term, string name, ProjectMetadata? project, out int rank)
+    {
+        if (string.Equals(name, term, StringComparison.OrdinalIgnoreCase))
+        {
+            rank = 0;
+            return true;
+        }
+
+        if (name.StartsWith(term, StringComparison.OrdinalIgnoreCase))
+        {
+            rank = 1;
+            return true;
+        }
+
+        if (name.Contains(term, StringComparison.OrdinalIgnoreCase))
+        {
+            rank = 2;
+            return true;
+        }
+
+        if ((project?.Tags ?? []).Any(tag => string.Equals(tag, term, StringComparison.OrdinalIgnoreCase)))
+        {
+            rank = 3;
+            return true;
+        }
+
+        if ((project?.Description ?? "").Contains(term, StringComparison.OrdinalIgnoreCase))
+        {
+            rank = 4;
+            return true;
+        }
+
+        rank = int.MaxValue;
+        return false;
     }
 
     public SeiInfo Info(string root, string name, string? proxy = null, bool offline = false, string? storeRoot = null)
@@ -1868,9 +1922,20 @@ public sealed class SeikoClient
                                 ExternalFiles = artifact.ExternalFiles,
                                 ExternalArchives = artifact.ExternalArchives,
                             }).ToList()))
-                        .ToList()))
+                        .ToList(),
+                    IndexOverlay.IsSourceOrigin(entry)))
                 .ToList();
-            return new SeiInfo(name, source.Id, sei.Unlisted, sei.Deprecated, versions);
+            return new SeiInfo(
+                name,
+                source.Id,
+                sei.Unlisted,
+                sei.Deprecated,
+                versions,
+                sei.Project,
+                sei.Upstream is null || !Uri.TryCreate(sei.Upstream.Url, UriKind.Absolute, out var upstream)
+                    ? null
+                    : upstream.Host,
+                sei.Upstream is not null);
         }
 
         throw new SeikoException($"sei '{name}' not found in any source", "source");

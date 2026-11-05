@@ -80,7 +80,38 @@ public sealed class SeiIndex
     public string Name { get; set; } = "";
     public bool Unlisted { get; set; }
     public string? Deprecated { get; set; }
+
+    // Maintainer-published project metadata. Ignored by old clients; only
+    // shown by newer ones. The manifest stays the identity source.
+    public ProjectMetadata? Project { get; set; }
+
+    // Index-side bookkeeping. Clients ignore both; `audit`/`info` may show
+    // the origin of a retirement state.
+    public UpstreamInfo? Upstream { get; set; }
+    public List<string>? Maintainers { get; set; }
+
+    // Index-side overlay, applied on top of the maintainer's fields.
+    public bool? SourceUnlisted { get; set; }
+    public string? SourceDeprecated { get; set; }
+
     public List<SeiVersionEntry> Versions { get; set; } = [];
+}
+
+public sealed class ProjectMetadata
+{
+    public string Description { get; set; } = "";
+    public List<string> Authors { get; set; } = [];
+    public string License { get; set; } = "";
+    public List<string>? Tags { get; set; }
+    public string? ProjectUrl { get; set; }
+    public string? RepositoryUrl { get; set; }
+    public string? RepositoryType { get; set; }
+}
+
+public sealed class UpstreamInfo
+{
+    public string Url { get; set; } = "";
+    public string Sha256 { get; set; } = "";
 }
 
 public sealed class SeiVersionEntry
@@ -94,6 +125,8 @@ public sealed class SeiVersionEntry
     public bool Yanked { get; set; }
     public string? Deprecated { get; set; }
     public AdvisoryInfo? Advisory { get; set; }
+    public bool? SourceYanked { get; set; }
+    public List<AdvisoryInfo>? SourceAdvisories { get; set; }
 }
 
 public sealed class AdvisoryInfo
@@ -247,7 +280,15 @@ public sealed class PartialArtifactState
     public long SegmentSize { get; set; }
 }
 
-public sealed record SeiSummary(string Name, string Version, string Source);
+public sealed record SeiSummary(
+    string Name,
+    string Version,
+    string Source,
+    string? Description = null,
+    IReadOnlyList<string>? Tags = null,
+    string? License = null,
+    string? Deprecated = null,
+    AdvisoryInfo? Advisory = null);
 
 // A link of a `why` chain; the kind names the relation that made the edge.
 public sealed record WhyLink(string Name, string Kind);
@@ -270,7 +311,8 @@ public sealed record SeiVersionInfo(
     IReadOnlyList<SeiDependency> Prerequisites,
     IReadOnlyList<SeiDependency> OptionalPeers,
     IReadOnlyList<SeiDependency> Conflicts,
-    IReadOnlyList<SeiArtifactInfo> Artifacts)
+    IReadOnlyList<SeiArtifactInfo> Artifacts,
+    bool SourceRetired = false)
 {
     public int ArtifactCount => Artifacts.Count;
 }
@@ -280,4 +322,7 @@ public sealed record SeiInfo(
     string Source,
     bool Unlisted,
     string? Deprecated,
-    IReadOnlyList<SeiVersionInfo> Versions);
+    IReadOnlyList<SeiVersionInfo> Versions,
+    ProjectMetadata? Project = null,
+    string? UpstreamHost = null,
+    bool MaintainedHere = false);

@@ -127,7 +127,14 @@ internal sealed class Fixture : IDisposable
         var index = _indexes.TryGetValue(name, out var existing)
             ? existing
             : new SeiIndex { Name = name };
-        foreach (var version in versions)
+        // Verifiers require project metadata; the fixture fills a minimal
+        // record so tests that do not care about display fields stay terse.
+        index.Project ??= new ProjectMetadata
+        {
+            Description = $"{name} test package",
+            Authors = ["fixture"],
+            License = "MIT",
+        };        foreach (var version in versions)
         {
             var artifacts = new List<ArtifactEntry>();
             for (var i = 0; i < version.Artifacts.Count; i++)

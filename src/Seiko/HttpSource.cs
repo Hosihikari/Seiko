@@ -173,6 +173,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
         {
             throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
         }
+
+        // The overlay is merged once on read; the cached copy keeps the raw
+        // document so a later overlay rule change does not need a refetch.
+        IndexOverlay.Apply(sei);
     }
 
     public string ResolveArtifact(ArtifactLocation source) => new Uri(_baseUri, source.Url).AbsoluteUri;

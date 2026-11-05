@@ -211,6 +211,16 @@ public static class IndexVerifier
                 relative);
         }
 
+        ValidateProject(context, relative, name, index.Project);
+        ValidateUpstream(context, relative, name, index.Upstream, index.Maintainers);
+        if (index.SourceUnlisted == false)
+        {
+            context.Warning(
+                "source-overlay",
+                $"sei '{name}' records sourceUnlisted false; it only ever ORs with unlisted",
+                relative);
+        }
+
         var versions = index.Versions ?? [];
         if (versions.Count == 0)
         {
@@ -384,6 +394,119 @@ public static class IndexVerifier
 
         return version;
     }
+
+    // Project metadata is display-only; keep the requirements shallow but
+    // enforced, because search and info read these fields.
+    private static void ValidateProject(
+        Context context,
+        string path,
+        string name,
+        ProjectMetadata? project)
+    {
+        if (project is null)
+        {
+            context.Warning(
+                "project-missing",
+                $"sei '{name}' has no project metadata",
+                path);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(project.Description))
+        {
+            context.Error("project-field", $"sei '{name}' has no project description", path);
+        }
+
+        if (project.Authors is null || project.Authors.Count == 0
+            || project.Authors.Any(author => string.IsNullOrWhiteSpace(author)))
+        {
+            context.Error("project-field", $"sei '{name}' has an empty project author list", path);
+        }
+
+        if (!SpdxExpression.IsValid(project.License))
+        {
+            context.Error(
+                "project-license",
+                $"sei '{name}' has an invalid SPDX license expression '{project.License}'",
+                path);
+        }
+
+        foreach (var tag in project.Tags ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(tag) || !string.Equals(tag, tag.Trim(), StringComparison.Ordinal))
+            {
+                context.Error("project-tag", $"sei '{name}' has an invalid tag '{tag}'", path);
+            }
+        }
+
+        foreach (var (field, url) in new[]
+        {
+            ("projectUrl", project.ProjectUrl),
+            ("repositoryUrl", project.RepositoryUrl),
+        })
+        {
+            if (url is not null && !IsHttps(url))
+            {
+                context.Error("project-url", $"sei '{name}' {field} must be an absolute https URL", path);
+            }
+        }
+
+        if (project.RepositoryUrl is not null && string.IsNullOrWhiteSpace(project.RepositoryType))
+        {
+            context.Warning(
+                "project-field",
+                $"sei '{name}' has a repositoryUrl without repositoryType",
+                path);
+        }
+    }
+
+    private static void ValidateUpstream(
+        Context context,
+        string path,
+        string name,
+        UpstreamInfo? upstream,
+        List<string>? maintainers)
+    {
+        if (maintainers is not null)
+        {
+            if (maintainers.Count == 0 || maintainers.Any(item => string.IsNullOrWhiteSpace(item)))
+            {
+                context.Error("maintainer", $"sei '{name}' has an empty maintainer entry", path);
+            }
+
+            if (maintainers.Count > 0 && !maintainers.Any(item => item.StartsWith("github:", StringComparison.Ordinal)))
+            {
+                context.Warning(
+                    "maintainer",
+                    $"sei '{name}' has no GitHub maintainer",
+                    path);
+            }
+        }
+
+        if (upstream is null)
+        {
+            return;
+        }
+
+        if (!IsHttps(upstream.Url) || !new Uri(upstream.Url).AbsolutePath.EndsWith("/sei-index.json", StringComparison.Ordinal))
+        {
+            context.Error(
+                "upstream",
+                $"sei '{name}' upstream must be an https URL ending in /sei-index.json",
+                path);
+        }
+
+        if (!Hashing.IsSha256(upstream.Sha256))
+        {
+            context.Error("upstream", $"sei '{name}' upstream has no file digest", path);
+        }
+    }
+
+    private static bool IsHttps(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Scheme == Uri.UriSchemeHttps
+            && !string.IsNullOrWhiteSpace(uri.Host)
+            && string.IsNullOrEmpty(uri.UserInfo);
 
     private static void ValidateRelations(
         Context context,
