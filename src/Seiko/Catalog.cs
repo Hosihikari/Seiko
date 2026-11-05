@@ -46,10 +46,9 @@ public static class CatalogFile
             // reports that separately, and generation must not crash on it.
             var effective = IndexOverlay.Apply(item);
             var versions = effective.Versions ?? [];
-            var latest = versions
-                .Where(entry => entry is not null && !entry.Yanked && !Retirement.IsCritical(entry))
-                .OrderByDescending(entry => Parse(entry.Version))
-                .FirstOrDefault();
+            // Search uses the same helper for its per-name fallback, so the
+            // derived catalog cannot change the displayed version.
+            var latest = SeikoClient.LatestVersion(effective);
             var advisory = versions
                 .Select(entry => entry?.Advisory)
                 .Where(entry => entry is not null)
@@ -156,11 +155,6 @@ public static class CatalogFile
             }
         }
     }
-
-    private static NuGet.Versioning.NuGetVersion Parse(string version)
-        => NuGet.Versioning.NuGetVersion.TryParse(version, out var parsed)
-            ? parsed
-            : new NuGet.Versioning.NuGetVersion(0, 0, 0);
 
     private static int Rank(AdvisoryInfo? advisory)
         => advisory?.Severity?.Trim().ToLowerInvariant() switch

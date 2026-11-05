@@ -38,6 +38,24 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public void Search_CatalogAndFallbackChooseTheSameVersion()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
+            new VersionFixture { Version = "2.0.0-beta", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+
+        var fallback = Assert.Single(new SeikoClient().Search(fixture.Root, "hello")).Version;
+        WriteCatalog(fixture, Read(fixture, "hello"));
+        var catalogued = Assert.Single(new SeikoClient().Search(fixture.Root, "hello")).Version;
+
+        Assert.Equal("1.0.0", fallback);
+        Assert.Equal(fallback, catalogued);
+    }
+
+    [Fact]
     public void OfflineSearch_KeepsEachNamesSource()
     {
         using var fixture = new Fixture();

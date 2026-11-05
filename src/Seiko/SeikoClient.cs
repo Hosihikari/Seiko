@@ -3031,9 +3031,13 @@ public sealed class SeikoClient
         }
     }
 
-    private static SeiVersionEntry? LatestVersion(SeiIndex sei)
+    // The one "latest" rule shared by search (with or without a catalog) and
+    // the catalog generator: stable wins over a numerically higher prerelease
+    // (ADR-0004).
+    internal static SeiVersionEntry? LatestVersion(SeiIndex sei)
     {
-        var candidates = sei.Versions
+        var candidates = (sei.Versions ?? [])
+            .Where(entry => entry is not null)
             .Select(entry => new
             {
                 Entry = entry,
