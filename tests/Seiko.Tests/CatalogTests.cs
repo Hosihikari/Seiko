@@ -38,6 +38,64 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public void OfflineSearch_KeepsEachNamesSource()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.Root);
+        var first = Path.Combine(fixture.Root, "sources", "a");
+        var second = Path.Combine(fixture.Root, "sources", "b");
+        WriteSource(first, "hello");
+        WriteSource(second, "world");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            "schemaVersion = 2\n"
+            + "sources = [\n"
+            + $"  {{ id = \"a\", index = \"{server.BaseUrl}sources/a/index.json\" }},\n"
+            + $"  {{ id = \"b\", index = \"{server.BaseUrl}sources/b/index.json\" }}\n"
+            + "]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = []\n");
+
+        // Online caches each source's index and catalog, but neither source
+        // lists the other's package, so no per-name file is fetched.
+        var online = new SeikoClient().Search(fixture.Root, "o", storeRoot: fixture.StoreDirectory);
+        Assert.Equal(2, online.Count);
+
+        var offline = new SeikoClient().Search(
+            fixture.Root,
+            "o",
+            offline: true,
+            storeRoot: fixture.StoreDirectory);
+        Assert.Equal(2, offline.Count);
+    }
+
+    private static void WriteSource(string directory, string name)
+    {
+        Directory.CreateDirectory(Path.Combine(directory, "sei"));
+        File.WriteAllBytes(
+            Path.Combine(directory, "index.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new IndexRoot { Sei = [name] },
+                SeikoJsonContext.Default.IndexRoot));
+        var catalog = CatalogFile.Build([
+            new SeiIndex
+            {
+                Name = name,
+                Project = new ProjectMetadata
+                {
+                    Description = $"{name} package",
+                    Authors = ["fixture"],
+                    License = "MIT",
+                },
+                Versions = [new SeiVersionEntry { Version = "1.0.0" }],
+            },
+        ]);
+        File.WriteAllBytes(
+            Path.Combine(directory, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog));
+    }
+
+    [Fact]
     public void OfflineSearch_UsesTheCachedCatalogWithoutPerNameFiles()
     {
         using var fixture = new Fixture();

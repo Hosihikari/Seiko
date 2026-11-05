@@ -2285,15 +2285,9 @@ public sealed class SeikoClient
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         if (offline)
         {
-            // A cached catalog answers every name it lists; only names that
-            // need the per-name fallback require their files to be cached.
-            OfflineMetadata.Verify(
-                config,
-                storePath,
-                [],
-                followIndexLists: true,
-                useCatalogs: true,
-                followRelations: false);
+            // Search visits each source's own list; keep that association so a
+            // source that never lists a name is not required to cache it.
+            OfflineMetadata.VerifySearch(config, storePath, root);
         }
 
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
