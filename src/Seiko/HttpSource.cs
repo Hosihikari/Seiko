@@ -812,7 +812,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
             var catalog = JsonSerializer.Deserialize(
                 ReadAllBytesAsync(response, CancellationToken.None).GetAwaiter().GetResult(),
                 SeikoJsonContext.Default.SeiCatalog);
-            if (catalog is not { SchemaVersion: SeiCatalog.CurrentSchemaVersion } || catalog.Sei is null)
+            if (!CatalogFile.IsValid(catalog))
             {
                 return null;
             }

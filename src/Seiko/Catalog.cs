@@ -68,6 +68,28 @@ public static class CatalogFile
         };
     }
 
+    // A catalog is derived data; anything structurally wrong makes the whole
+    // file unusable and the caller falls back to per-name reads (ADR-0035).
+    // Duplicate names would otherwise crash search.
+    public static bool IsValid(SeiCatalog? catalog)
+    {
+        if (catalog is not { SchemaVersion: SeiCatalog.CurrentSchemaVersion } || catalog.Sei is null)
+        {
+            return false;
+        }
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in catalog.Sei)
+        {
+            if (entry is null || !SeiName.IsValid(entry.Name) || !names.Add(entry.Name))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static SeiCatalog? TryRead(string path)
     {
         if (!File.Exists(path))
@@ -80,12 +102,7 @@ public static class CatalogFile
             var catalog = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
                 SeikoJsonContext.Default.SeiCatalog);
-            if (catalog is not { SchemaVersion: SeiCatalog.CurrentSchemaVersion } || catalog.Sei is null)
-            {
-                return null;
-            }
-
-            return catalog;
+            return IsValid(catalog) ? catalog : null;
         }
         catch (JsonException)
         {

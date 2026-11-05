@@ -96,6 +96,75 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public void Search_FallsBackWhenTheCatalogHasDuplicateNames()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteConfig("win-x64");
+        var entry = new CatalogEntry { Name = "hello", Version = "1.0.0" };
+        File.WriteAllBytes(
+            Path.Combine(fixture.SourceDirectory, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new SeiCatalog { Sei = [entry, entry] },
+                SeikoJsonContext.Default.SeiCatalog));
+
+        var result = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
+
+        Assert.Equal("hello", result.Name);
+    }
+
+    [Fact]
+    public void Search_FallsBackWhenTheCatalogHasANullEntry()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteConfig("win-x64");
+        File.WriteAllBytes(
+            Path.Combine(fixture.SourceDirectory, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new SeiCatalog { Sei = [null!] },
+                SeikoJsonContext.Default.SeiCatalog));
+
+        var result = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
+
+        Assert.Equal("hello", result.Name);
+    }
+
+    [Fact]
+    public void Search_FallsBackWhenTheHttpCatalogHasDuplicateNames()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var entry = new CatalogEntry { Name = "hello", Version = "1.0.0" };
+        File.WriteAllBytes(
+            Path.Combine(fixture.SourceDirectory, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new SeiCatalog { Sei = [entry, entry] },
+                SeikoJsonContext.Default.SeiCatalog));
+
+        var result = Assert.Single(new SeikoClient().Search(
+            fixture.Root,
+            "hello",
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("hello", result.Name);
+    }
+
+    [Fact]
     public void Search_FallsBackWhenTheCatalogIsBroken()
     {
         using var fixture = new Fixture();
