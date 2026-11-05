@@ -425,7 +425,7 @@ public static class IndexVerifier
                     continue;
                 }
 
-                if (conditions.Any(existing => EquivalentConditions(existing, artifact)))
+                if (conditions.Any(existing => ArtifactConditions.Equivalent(existing, artifact)))
                 {
                     context.Error(
                         "artifact-ambiguous",
@@ -1361,10 +1361,6 @@ public static class IndexVerifier
             .ToList();
         return left.SequenceEqual(right, StringComparer.Ordinal);
     }
-
-    private static bool EquivalentConditions(ArtifactEntry left, ArtifactEntry right)
-        => string.Equals(left.Rid ?? "", right.Rid ?? "", StringComparison.OrdinalIgnoreCase)
-            && DependenciesEqual(left.Prerequisites, right.Prerequisites ?? []);
 
     private static bool ModesEqual(
         IReadOnlyDictionary<string, string>? left,

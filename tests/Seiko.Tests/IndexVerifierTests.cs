@@ -700,6 +700,39 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_NormalizesEquivalentPrerequisiteRanges()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("marker", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["a.txt"] = "a" },
+                    Prerequisites = [new DepFixture("marker", null)],
+                },
+                new ArtifactFixture
+                {
+                    Files = { ["b.txt"] = "b" },
+                    Prerequisites = [new DepFixture("marker", "*")],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-ambiguous");
+    }
+
+    [Fact]
     public void Verify_RejectsInvalidArtifactFields()
     {
         using var fixture = NewFixture();

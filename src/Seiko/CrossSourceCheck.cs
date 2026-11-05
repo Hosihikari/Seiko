@@ -61,7 +61,7 @@ internal static class CrossSourceCheck
                             code);
                     }
 
-                    if (!EquivalentConditions(sei.Artifact, artifact))
+                    if (!ArtifactConditions.Equivalent(sei.Artifact, artifact))
                     {
                         continue;
                     }
@@ -82,35 +82,4 @@ internal static class CrossSourceCheck
         }
     }
 
-    private static bool EquivalentConditions(ArtifactEntry left, ArtifactEntry right)
-        => string.Equals(
-                NormalizeRid(left.Rid),
-                NormalizeRid(right.Rid),
-                StringComparison.OrdinalIgnoreCase)
-            && string.Equals(
-                NormalizePrerequisites(left.Prerequisites),
-                NormalizePrerequisites(right.Prerequisites),
-                StringComparison.Ordinal);
-
-    private static string NormalizeRid(string? rid)
-        => string.IsNullOrWhiteSpace(rid) ? "*" : rid.Trim();
-
-    private static string NormalizePrerequisites(List<SeiDependency>? prerequisites)
-        => string.Join(
-            "\n",
-            (prerequisites ?? [])
-                .Select(relation => $"{relation.Name}\n{NormalizeRange(relation.Version)}")
-                .OrderBy(text => text, StringComparer.Ordinal));
-
-    private static string NormalizeRange(string? range)
-    {
-        if (string.IsNullOrWhiteSpace(range) || range.Trim() == "*")
-        {
-            return "*";
-        }
-
-        return VersionRange.TryParse(range, out var parsed)
-            ? parsed.ToNormalizedString()
-            : range;
-    }
 }
