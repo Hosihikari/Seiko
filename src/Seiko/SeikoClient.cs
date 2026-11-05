@@ -2119,61 +2119,109 @@ public sealed class SeikoClient
             }
 
             var createdAt = ReadGenerationMeta(path);
-            var snapshotStatePath = Path.Combine(path, "state.json");
-            var valid = File.Exists(snapshotStatePath)
-                && File.Exists(Path.Combine(path, "lock.json"))
-                && File.Exists(Path.Combine(path, "seiko.conf"));
-            LocalState? snapshotState = null;
-            if (valid)
-            {
-                try
-                {
-                    snapshotState = JsonSerializer.Deserialize(
-                        File.ReadAllBytes(snapshotStatePath),
-                        SeikoJsonContext.Default.LocalState);
-                    valid = snapshotState is not null
-                        && snapshotState.SchemaVersion == LocalState.CurrentSchemaVersion
-                        && snapshotState.Files is not null;
-                }
-                catch (JsonException)
-                {
-                    valid = false;
-                }
-            }
+            var snapshot = ReadGenerationSnapshot(path);
 
             // The file count of the current generation comes from live state;
             // older ones from their own snapshot.
-            var fileCount = number == current
-                ? files.Count
-                : snapshotState?.Files?.Count ?? 0;
+            var fileCount = number == current ? files.Count : snapshot.FileCount;
             generations.Add(new GenerationInfo(
                 number,
                 createdAt,
                 number == current,
-                ReadLockCount(path),
+                snapshot.SeiCount,
                 fileCount,
-                valid));
+                snapshot.Valid));
         }
 
         return generations.OrderByDescending(item => item.Generation).ToList();
     }
 
-    private int ReadLockCount(string generationDirectory)
+    // Valid means "rollback could restore this generation": the same checks
+    // the real rollback performs on the target, except store presence, which
+    // can be repaired online (ADR-0040).
+    private static GenerationSnapshot ReadGenerationSnapshot(string directory)
     {
-        var lockPath = Path.Combine(generationDirectory, "lock.json");
-        if (!File.Exists(lockPath))
-        {
-            return 0;
-        }
-
         try
         {
-            return LockFile.Read(lockPath)?.Sei.Count ?? 0;
+            var statePath = Path.Combine(directory, "state.json");
+            if (!File.Exists(statePath))
+            {
+                return GenerationSnapshot.Invalid;
+            }
+
+            var state = JsonSerializer.Deserialize(
+                File.ReadAllBytes(statePath),
+                SeikoJsonContext.Default.LocalState);
+            if (state is null
+                || state.SchemaVersion != LocalState.CurrentSchemaVersion
+                || state.Files is null)
+            {
+                return GenerationSnapshot.Invalid;
+            }
+
+            var lockFile = LockFile.Read(Path.Combine(directory, "lock.json"));
+            if (lockFile is null)
+            {
+                return GenerationSnapshot.Invalid;
+            }
+
+            var configPath = Path.Combine(directory, "seiko.conf");
+            if (!File.Exists(configPath))
+            {
+                return GenerationSnapshot.Invalid;
+            }
+
+            var config = ConfigLoader.LoadPath(configPath);
+            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+            if (!string.Equals(lockFile.Target.Rid, rid, StringComparison.Ordinal))
+            {
+                return GenerationSnapshot.Invalid;
+            }
+
+            foreach (var (relative, record) in state.Files)
+            {
+                if (record is null)
+                {
+                    return GenerationSnapshot.Invalid;
+                }
+
+                if (!record.Adopted)
+                {
+                    continue;
+                }
+
+                var snapshot = Path.Combine(directory, "adopted", relative);
+                if (!File.Exists(snapshot)
+                    || !string.Equals(
+                        Hashing.Sha256File(snapshot),
+                        record.Sha256,
+                        StringComparison.Ordinal))
+                {
+                    return GenerationSnapshot.Invalid;
+                }
+            }
+
+            return new GenerationSnapshot(true, lockFile.Sei.Count, state.Files.Count);
         }
         catch (SeikoException)
         {
-            return 0;
         }
+        catch (JsonException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        return GenerationSnapshot.Invalid;
+    }
+
+    private readonly record struct GenerationSnapshot(bool Valid, int SeiCount, int FileCount)
+    {
+        public static GenerationSnapshot Invalid => new(false, 0, 0);
     }
 
     private static DateTimeOffset? ReadGenerationMeta(string directory)

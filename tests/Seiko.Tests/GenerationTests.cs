@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -61,6 +62,24 @@ public sealed class GenerationTests
         var generations = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory);
 
         Assert.False(Assert.Single(generations).Valid);
+    }
+
+    [Fact]
+    public void Generations_MarksAnUnsupportedLockInvalid()
+    {
+        using var fixture = Installed();
+        Upgrade(fixture);
+        var path = Path.Combine(fixture.Root, ".seiko", "generations", "1", "lock.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["schemaVersion"] = 999;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var generations = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory);
+
+        var broken = generations.Single(item => item.Generation == 1);
+        Assert.False(broken.Valid);
+        Assert.Equal(0, broken.SeiCount);
+        Assert.True(generations.Single(item => item.Generation == 2).Valid);
     }
 
     [Fact]
