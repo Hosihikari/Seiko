@@ -425,6 +425,32 @@ outdated.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
+var audit = new Command("audit", "Check installed sei against advisories and retirement.");
+var auditRoot = RootOption();
+var auditProxy = ProxyOption();
+var auditSecurity = new Option<bool>("--security-only")
+{
+    Description = "Only report advisories, not yank or deprecation.",
+};
+var auditFailOn = new Option<string?>("--fail-on")
+{
+    Description = "Exit 1 at this severity or worse: low, moderate, high, critical.",
+};
+audit.Add(auditRoot);
+audit.Add(auditProxy);
+audit.Add(auditSecurity);
+audit.Add(auditFailOn);
+audit.SetAction(parseResult => Run(
+    "audit",
+    IsJson(parseResult),
+    () => Audit(
+        parseResult.GetValue(auditRoot),
+        parseResult.GetValue(auditProxy),
+        parseResult.GetValue(auditSecurity),
+        parseResult.GetValue(auditFailOn),
+        IsOffline(parseResult),
+        IsJson(parseResult))));
+
 var source = new Command("source", "Manage configured sources.");
 var sourceList = new Command("list", "List configured sources.");
 var sourceListRoot = RootOption();
@@ -615,6 +641,7 @@ rootCommand.Add(remove);
 rootCommand.Add(update);
 rootCommand.Add(why);
 rootCommand.Add(outdated);
+rootCommand.Add(audit);
 rootCommand.Add(list);
 rootCommand.Add(rollback);
 rootCommand.Add(generation);
@@ -1502,6 +1529,74 @@ static void WriteRelations(IReadOnlyList<SeiDependency> relations, string kind, 
     {
         Console.WriteLine($"{pad}{kind}: {relation.Name} {relation.Version ?? "*"}");
     }
+}
+
+static int Audit(
+    string? rootOption,
+    string? proxy,
+    bool securityOnly,
+    string? failOn,
+    bool offline,
+    bool json)
+{
+    var threshold = 0;
+    if (failOn is not null)
+    {
+        threshold = failOn.ToLowerInvariant() switch
+        {
+            "low" => 1,
+            "moderate" => 2,
+            "high" => 3,
+            "critical" => 4,
+            _ => throw new SeikoException(
+                "--fail-on requires low, moderate, high, or critical",
+                "usage"),
+        };
+    }
+
+    var root = ResolveRoot(rootOption);
+    var result = new SeikoClient().Audit(root, proxy, offline, securityOnly: securityOnly);
+
+    static int Rank(string? severity) => severity?.ToLowerInvariant() switch
+    {
+        "critical" => 4,
+        "high" => 3,
+        "moderate" => 2,
+        "low" => 1,
+        _ => 0,
+    };
+
+    var failed = threshold > 0 && result.Findings.Any(finding => Rank(finding.Severity) >= threshold);
+    // Unknown is not safe: a source that could not answer fails the command.
+    failed |= result.Unknown.Count > 0;
+
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.AuditEnvelope,
+            new AuditEnvelope(1, "audit", new AuditData(
+                result.Findings.ToList(),
+                result.Unknown.ToList())));
+        return failed ? 1 : 0;
+    }
+
+    foreach (var finding in result.Findings)
+    {
+        var detail = finding.Url is null ? "" : $" ({finding.Url})";
+        var fix = finding.Fix is null ? "no clean version found" : $"fix: {finding.Fix}";
+        var severity = finding.Severity is null ? "" : $"[{finding.Severity}] ";
+        Console.WriteLine($"{finding.Name} {finding.Version}  {severity}{finding.Kind}{detail}  {fix}");
+    }
+
+    foreach (var name in result.Unknown)
+    {
+        Console.WriteLine($"{name}  unknown: not found in any source");
+    }
+
+    Console.WriteLine(
+        $"{result.Findings.Count} finding(s), {result.Unknown.Count} unknown; "
+        + "`sk update` applies fixes");
+    return failed ? 1 : 0;
 }
 
 static int Rollback(

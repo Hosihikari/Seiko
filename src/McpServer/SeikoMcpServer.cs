@@ -150,6 +150,7 @@ public sealed class SeikoMcpServer
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
+            Tool("audit", "Check installed sei against advisories and retirement.", AuditSchema()),
             Tool("index_verify", "Validate an index directory or a sei-index.json file.", IndexVerifySchema()),
             Tool("index_catalog", "Generate catalog.json, or check it with check=true.", IndexCatalogSchema()),
             Tool("generation_list", "List deployment generations, newest first.", GenerationListSchema()),
@@ -196,6 +197,7 @@ public sealed class SeikoMcpServer
                 "cache_verify" => CacheVerify(arguments),
                 "why" => Why(arguments),
                 "outdated" => Outdated(arguments),
+                "audit" => Audit(arguments),
                 "index_verify" => IndexVerify(arguments),
                 "index_catalog" => IndexCatalog(arguments),
                 "doctor" => Doctor(arguments),
@@ -1067,6 +1069,51 @@ public sealed class SeikoMcpServer
             {
                 ["root"] = new JsonObject { ["type"] = "string" },
                 ["store"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(),
+        };
+
+    private string Audit(JsonObject arguments)
+    {
+        var root = Root(arguments, required: false);
+        var result = _client.Audit(
+            root,
+            OptionalString(arguments, "proxy"),
+            Bool(arguments, "offline"),
+            StorePath(arguments),
+            Bool(arguments, "securityOnly"));
+        var findings = new JsonArray();
+        foreach (var finding in result.Findings)
+        {
+            findings.Add((JsonNode)new JsonObject
+            {
+                ["name"] = finding.Name,
+                ["version"] = finding.Version,
+                ["kind"] = finding.Kind,
+                ["severity"] = finding.Severity,
+                ["url"] = finding.Url,
+                ["fix"] = finding.Fix,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["findings"] = findings,
+            ["unknown"] = Strings(result.Unknown),
+        }.ToJsonString();
+    }
+
+    private static JsonObject AuditSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+                ["offline"] = new JsonObject { ["type"] = "boolean" },
+                ["securityOnly"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(),
         };

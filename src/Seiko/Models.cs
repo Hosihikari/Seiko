@@ -276,6 +276,20 @@ public sealed record RollbackPreview(
     IReadOnlyList<string> Adopted,
     IReadOnlyList<string> MissingStore);
 
+// One audit finding. `fix` is the newest version without that advisory, or
+// null when none is known; `unknown` marks a package the audit could not read.
+public sealed record AuditFinding(
+    string Name,
+    string Version,
+    string Kind,
+    string? Severity,
+    string? Url,
+    string? Fix);
+
+public sealed record AuditResult(
+    IReadOnlyList<AuditFinding> Findings,
+    IReadOnlyList<string> Unknown);
+
 public sealed class RootRegistryState
 {
     public int SchemaVersion { get; set; } = 1;

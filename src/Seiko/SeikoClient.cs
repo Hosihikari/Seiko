@@ -2401,6 +2401,92 @@ public sealed class SeikoClient
         public bool Entered { get; set; }
     }
 
+    // Audit reads the per-version mirror entries, not the catalog: only a
+    // version entry knows whether the installed version is affected. A source
+    // that cannot answer makes the package `unknown`, never "clean".
+    public AuditResult Audit(
+        string root,
+        string? proxy = null,
+        bool offline = false,
+        string? storeRoot = null,
+        bool securityOnly = false)
+    {
+        root = Path.GetFullPath(root);
+        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+            ?? throw new SeikoException("no lock; run `sk sync`", "lock");
+        var config = ConfigLoader.Load(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        var sources = LoadSources(config, root, proxy, session, storePath, offline);
+        using var sourceScope = new SourceScope(sources);
+
+        var findings = new List<AuditFinding>();
+        var unknown = new List<string>();
+        foreach (var locked in lockFile.Sei.OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        {
+            SeiIndex? index;
+            try
+            {
+                index = sources
+                    .Select(source => source.GetSei(locked.Name))
+                    .FirstOrDefault(found => found is not null);
+            }
+            catch (SeikoException)
+            {
+                unknown.Add(locked.Name);
+                continue;
+            }
+
+            var entry = index?.Versions
+                .FirstOrDefault(item => string.Equals(item.Version, locked.Version, StringComparison.Ordinal));
+            if (entry is null)
+            {
+                unknown.Add(locked.Name);
+                continue;
+            }
+
+            var fix = index!.Versions
+                .Where(item => !item.Yanked && item.Advisory is null
+                    && NuGetVersion.TryParse(item.Version, out var parsed)
+                    && parsed.CompareTo(locked.Version) > 0)
+                .OrderByDescending(item => NuGetVersion.Parse(item.Version))
+                .Select(item => item.Version)
+                .FirstOrDefault();
+
+            if (entry.Advisory is { } advisory)
+            {
+                findings.Add(new AuditFinding(
+                    locked.Name,
+                    locked.Version,
+                    "advisory",
+                    advisory.Severity,
+                    advisory.Url,
+                    fix));
+            }
+
+            if (!securityOnly)
+            {
+                if (entry.Yanked)
+                {
+                    findings.Add(new AuditFinding(locked.Name, locked.Version, "yanked", null, null, fix));
+                }
+
+                if (!string.IsNullOrWhiteSpace(entry.Deprecated))
+                {
+                    findings.Add(new AuditFinding(
+                        locked.Name,
+                        locked.Version,
+                        "deprecated",
+                        null,
+                        null,
+                        fix));
+                }
+            }
+        }
+
+        return new AuditResult(findings, unknown);
+    }
+
     public IReadOnlyList<OutdatedSei> Outdated(
         string root,
         string? proxy = null,
