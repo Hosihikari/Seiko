@@ -190,6 +190,80 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void Validate_RejectsCumulativeExternalPayloadOverBudget()
+    {
+        var files = new List<ExternalFile>();
+        for (var i = 0; i < 5; i++)
+        {
+            files.Add(new ExternalFile
+            {
+                Path = $"f{i}.bin",
+                Url = $"https://example.invalid/f{i}.bin",
+                Sha256 = new string('a', 64),
+                Size = ArchiveLimits.MaxEntryBytes,
+            });
+        }
+
+        var error = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
+            new ArtifactManifest { ExternalFiles = files },
+            "hello"));
+
+        Assert.Contains("external payloads declare", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_RejectsRepeatedFileWithDifferentIdentity()
+    {
+        const string Url = "https://example.invalid/extra.bin";
+        var error = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
+            new ArtifactManifest
+            {
+                ExternalFiles =
+                [
+                    new ExternalFile { Path = "one.bin", Url = Url, Sha256 = new string('a', 64), Size = 1 },
+                    new ExternalFile { Path = "two.bin", Url = Url, Sha256 = new string('b', 64), Size = 1 },
+                ],
+            },
+            "hello"));
+
+        Assert.Contains("repeated external file", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sync_DownloadsARepeatedFileUrlOnce()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
+        var url = server.BaseUrl + "external/vendor/extra.txt";
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture("one.txt", url, "extra"),
+                        new ExternalFileFixture("two.txt", url, "extra"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("extra", File.ReadAllText(Path.Combine(fixture.Root, "one.txt")));
+        Assert.Equal("extra", File.ReadAllText(Path.Combine(fixture.Root, "two.txt")));
+        var downloads = server.Requests.Count(request =>
+            request.Method == "GET" && request.Path == "/external/vendor/extra.txt");
+        Assert.Equal(1, downloads);
+    }
+
+    [Fact]
     public void Sync_SameArchiveFeedsSeveralTargetsOnce()
     {
         var (fixture, server) = Setup();

@@ -12,6 +12,7 @@ internal sealed class TestHttpServer : IDisposable
     private readonly Task _loop;
     private readonly string _root;
     private readonly List<string?> _authorizations = [];
+    private readonly List<(string Method, string Path)> _requests = [];
 
     public TestHttpServer(string root)
     {
@@ -38,6 +39,17 @@ internal sealed class TestHttpServer : IDisposable
             lock (_authorizations)
             {
                 return _authorizations.ToList();
+            }
+        }
+    }
+
+    public IReadOnlyList<(string Method, string Path)> Requests
+    {
+        get
+        {
+            lock (_requests)
+            {
+                return _requests.ToList();
             }
         }
     }
@@ -100,6 +112,11 @@ internal sealed class TestHttpServer : IDisposable
             if (path == "/")
             {
                 path = "/index.json";
+            }
+
+            lock (_requests)
+            {
+                _requests.Add((method, path));
             }
 
             var relative = Uri.UnescapeDataString(path.TrimStart('/')).Replace('/', Path.DirectorySeparatorChar);

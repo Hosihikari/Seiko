@@ -17,6 +17,8 @@ internal static class ExternalFiles
         }
 
         var paths = new HashSet<string>(StringComparer.Ordinal);
+        var fileIdentities = new Dictionary<string, ExternalFile>(StringComparer.Ordinal);
+        var declaredBytes = 0L;
         foreach (var file in files)
         {
             ValidateTarget(file.Path, name, code);
@@ -28,6 +30,24 @@ internal static class ExternalFiles
             EnsureHttps(file.Url, $"external file '{file.Path}'", name, code);
             EnsureDigest(file.Sha256, $"external file '{file.Path}'", name, code);
             EnsureSize(file.Size, $"external file '{file.Path}'", name, code);
+
+            // One URL is downloaded once (ADR-0032); repeated declarations may
+            // fan out to more targets but must describe the same blob.
+            if (fileIdentities.TryGetValue(file.Url, out var firstFile))
+            {
+                if (!string.Equals(firstFile.Sha256, file.Sha256, StringComparison.Ordinal)
+                    || (firstFile.Size > 0 && file.Size > 0 && firstFile.Size != file.Size))
+                {
+                    throw new SeikoException(
+                        $"{name}: repeated external file '{file.Url}' must keep the same digest and size",
+                        code);
+                }
+            }
+            else
+            {
+                fileIdentities[file.Url] = file;
+                declaredBytes += file.Size;
+            }
         }
 
         var archiveIdentities = new Dictionary<string, ExternalArchive>(StringComparer.Ordinal);
@@ -59,6 +79,7 @@ internal static class ExternalFiles
             else
             {
                 archiveIdentities[archive.Url] = archive;
+                declaredBytes += archive.Size;
             }
 
             if (archive.Members.Count == 0)
@@ -82,6 +103,15 @@ internal static class ExternalFiles
                         code);
                 }
             }
+        }
+
+        // The same layered budget as artifact extraction (ADR-0024): many
+        // individually valid declarations must not add up past 4 GiB.
+        if (declaredBytes > ArchiveLimits.MaxTotalBytes)
+        {
+            throw new SeikoException(
+                $"{name}: external payloads declare {declaredBytes} bytes; the limit is {ArchiveLimits.MaxTotalBytes}",
+                code);
         }
     }
 
