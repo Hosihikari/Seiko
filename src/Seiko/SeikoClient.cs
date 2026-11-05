@@ -2652,8 +2652,23 @@ public sealed class SeikoClient
         var config = ConfigLoader.Load(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
-        var sources = LoadSources(config, root, proxy, session, storePath, offline);
+        // One unavailable source must not abort the whole audit: a locked
+        // package whose source cannot be opened is `unknown`, and sources that
+        // no lock entry uses are irrelevant (ADR-0039).
+        var sources = new List<ISeiSource>();
+        foreach (var sourceConfig in config.Sources)
+        {
+            try
+            {
+                sources.Add(CreateSource(sourceConfig, root, proxy, session, storePath, offline));
+            }
+            catch (SeikoException)
+            {
+            }
+        }
+
         using var sourceScope = new SourceScope(sources);
+        var sourcesById = sources.ToDictionary(source => source.Id, StringComparer.Ordinal);
 
         var findings = new List<AuditFinding>();
         var unknown = new List<string>();
@@ -2665,9 +2680,7 @@ public sealed class SeikoClient
             SeiIndex? index;
             try
             {
-                var source = sources.FirstOrDefault(item =>
-                    string.Equals(item.Id, locked.Source, StringComparison.Ordinal));
-                if (source is null)
+                if (!sourcesById.TryGetValue(locked.Source, out var source))
                 {
                     unknown.Add(locked.Name);
                     continue;
