@@ -535,7 +535,7 @@ public sealed class Doctor
         "lock-missing-entry" or "lock-direct" => "hint.lock-mismatch",
         "store-missing" or "store-digest" or "store-manifest" => "hint.store",
         "deploy-missing-state" or "deploy-missing-file" or "deploy-hash" => "hint.deploy",
-        "transaction" => "hint.transaction",
+        "deploy-transaction" => "hint.transaction",
         "root-busy" => "hint.root-busy",
         _ => null,
     };
@@ -548,7 +548,7 @@ public sealed class Doctor
         "store-missing" or "store-digest" or "store-manifest" => "run `sk cache verify`, then `sk sync` to refetch",
         "deploy-missing-state" or "deploy-missing-file" or "deploy-hash" =>
             "run `sk sync --force` to restore the deployment, or `sk rollback` to go back",
-        "transaction" => "run `sk sync` or `sk rollback` to finish the interrupted transaction",
+        "deploy-transaction" => "run `sk sync` or `sk rollback` to finish the interrupted transaction",
         "root-busy" => "wait for the other process to finish, then run `sk doctor` again",
         _ => null,
     };

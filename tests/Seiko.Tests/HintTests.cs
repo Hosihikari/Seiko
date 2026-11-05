@@ -41,4 +41,20 @@ public sealed class HintTests
 
         Assert.All(result.Findings, finding => Assert.False(string.IsNullOrWhiteSpace(finding.Hint)));
     }
+
+    [Fact]
+    public void TransactionFindingCarriesAHint()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var state = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(state);
+        File.WriteAllText(Path.Combine(state, "transaction.json"), "{}");
+
+        var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
+
+        var finding = Assert.Single(result.Findings, item => item.Code == "deploy-transaction");
+        Assert.False(string.IsNullOrWhiteSpace(finding.Hint));
+        Assert.Equal("hint.transaction", finding.HintKey);
+    }
 }
