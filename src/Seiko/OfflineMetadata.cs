@@ -214,6 +214,12 @@ internal static class OfflineMetadata
             }
 
             var baseDirectory = Path.GetDirectoryName(localIndexPath) ?? root;
+            // Search asks the local catalog before the per-name file, so a
+            // catalog hit answers the name and later sources need no cache.
+            var localCatalogNames = CatalogFile.TryRead(
+                    Path.Combine(baseDirectory, CatalogFile.FileName))?
+                .Sei.Select(entry => entry.Name)
+                .ToHashSet(StringComparer.Ordinal);
             foreach (var name in localIndex.Sei ?? [])
             {
                 if (!SeiName.IsValid(name) || seen.Contains(name))
@@ -221,7 +227,8 @@ internal static class OfflineMetadata
                     continue;
                 }
 
-                if (File.Exists(Path.Combine(baseDirectory, "sei", name + ".json")))
+                if (localCatalogNames?.Contains(name) == true
+                    || File.Exists(Path.Combine(baseDirectory, "sei", name + ".json")))
                 {
                     seen.Add(name);
                 }

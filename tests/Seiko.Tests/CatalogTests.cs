@@ -69,6 +69,62 @@ public sealed class CatalogTests
         Assert.Equal(2, offline.Count);
     }
 
+    [Fact]
+    public void OfflineSearch_LocalCatalogAnswersBeforeLaterSources()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.Root);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        WriteCatalog(fixture, Read(fixture, "hello"));
+        File.Delete(Path.Combine(fixture.SourceDirectory, "sei", "hello.json"));
+        File.WriteAllBytes(
+            Path.Combine(fixture.SourceDirectory, "index.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new IndexRoot { Sei = ["hello"] },
+                SeikoJsonContext.Default.IndexRoot));
+
+        // The HTTP source lists the name but its catalog is empty; online
+        // search never asks it because the local catalog already answered.
+        var second = Path.Combine(fixture.Root, "sources", "b");
+        Directory.CreateDirectory(second);
+        File.WriteAllBytes(
+            Path.Combine(second, "index.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new IndexRoot { Sei = ["hello"] },
+                SeikoJsonContext.Default.IndexRoot));
+        File.WriteAllBytes(
+            Path.Combine(second, "catalog.json"),
+            JsonSerializer.SerializeToUtf8Bytes(
+                new SeiCatalog { Sei = [] },
+                SeikoJsonContext.Default.SeiCatalog));
+
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            "schemaVersion = 2\n"
+            + "sources = [\n"
+            + $"  {{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }},\n"
+            + $"  {{ id = \"b\", index = \"{server.BaseUrl}sources/b/index.json\" }}\n"
+            + "]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = []\n");
+
+        Assert.Single(new SeikoClient().Search(
+            fixture.Root,
+            "hello",
+            storeRoot: fixture.StoreDirectory));
+
+        var offline = Assert.Single(new SeikoClient().Search(
+            fixture.Root,
+            "hello",
+            offline: true,
+            storeRoot: fixture.StoreDirectory));
+        Assert.Equal("hello", offline.Name);
+    }
+
     private static void WriteSource(string directory, string name)
     {
         Directory.CreateDirectory(Path.Combine(directory, "sei"));
