@@ -2613,8 +2613,9 @@ public sealed class SeikoClient
             {
                 sources.Add(CreateSource(sourceConfig, root, proxy, session, storePath, offline));
             }
-            catch (SeikoException)
+            catch (Exception ex) when (ex is SeikoException or JsonException)
             {
+                // A malformed index is as unusable as an unreachable one.
             }
         }
 
@@ -2639,7 +2640,7 @@ public sealed class SeikoClient
 
                 index = source.GetSei(locked.Name);
             }
-            catch (SeikoException)
+            catch (Exception ex) when (ex is SeikoException or JsonException)
             {
                 unknown.Add(locked.Name);
                 continue;

@@ -196,6 +196,46 @@ public sealed class AuditTests
     }
 
     [Fact]
+    public void Audit_ReportsUnknownWhenTheSourceIndexIsMalformed()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        File.WriteAllText(Path.Combine(fixture.SourceDirectory, "index.json"), "{invalid");
+
+        var result = new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+        Assert.Empty(result.Findings);
+        Assert.Equal(["hello"], result.Unknown);
+    }
+
+    [Fact]
+    public void Audit_ReportsUnknownWhenThePackageIndexIsMalformed()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        File.WriteAllText(Path.Combine(fixture.SourceDirectory, "sei", "hello.json"), "{invalid");
+
+        var result = new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+        Assert.Empty(result.Findings);
+        Assert.Equal(["hello"], result.Unknown);
+    }
+
+    [Fact]
     public void Audit_SkipsAnUnavailableSourceNoLockEntryUses()
     {
         using var fixture = new Fixture();
