@@ -271,10 +271,15 @@ var rollback = new Command("rollback", "Restore a previous generation.");
 var rollbackRoot = RootOption();
 var rollbackStore = StoreOption();
 var rollbackTo = new Option<int?>("--to") { Description = "Generation number to roll back to." };
+var rollbackDryRun = new Option<bool>("--dry-run")
+{
+    Description = "Show the diff to the target generation without changing anything.",
+};
 var rollbackProxy = ProxyOption();
 rollback.Add(rollbackRoot);
 rollback.Add(rollbackStore);
 rollback.Add(rollbackTo);
+rollback.Add(rollbackDryRun);
 rollback.Add(rollbackProxy);
 rollback.SetAction(parseResult => Run(
     "rollback",
@@ -286,7 +291,23 @@ rollback.SetAction(parseResult => Run(
         parseResult.GetValue(rollbackProxy),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
+        IsJson(parseResult),
+        parseResult.GetValue(rollbackDryRun))));
+
+var generation = new Command("generation", "Inspect deployment generations.");
+var generationList = new Command("list", "List generations, newest first.");
+var generationRoot = RootOption();
+var generationStore = StoreOption();
+generationList.Add(generationRoot);
+generationList.Add(generationStore);
+generationList.SetAction(parseResult => Run(
+    "generation_list",
+    IsJson(parseResult),
+    () => Generations(
+        parseResult.GetValue(generationRoot),
+        parseResult.GetValue(generationStore),
         IsJson(parseResult))));
+generation.Add(generationList);
 
 var search = new Command("search", "Search sei names, descriptions, and tags in the configured indexes.");
 var searchRoot = RootOption();
@@ -596,6 +617,7 @@ rootCommand.Add(why);
 rootCommand.Add(outdated);
 rootCommand.Add(list);
 rootCommand.Add(rollback);
+rootCommand.Add(generation);
 rootCommand.Add(search);
 rootCommand.Add(info);
 rootCommand.Add(doctor);
@@ -1489,7 +1511,8 @@ static int Rollback(
     string? proxy,
     bool offline,
     bool diagnostics,
-    bool json)
+    bool json,
+    bool dryRun)
 {
     if (toGeneration is < 1)
     {
@@ -1497,6 +1520,30 @@ static int Rollback(
     }
 
     var root = ResolveRoot(rootOption);
+    if (dryRun)
+    {
+        // Preview never fetches; --offline is implied and accepted.
+        var preview = new SeikoClient().PreviewRollback(root, toGeneration, store);
+        if (json)
+        {
+            WriteJson(
+                CliJsonContext.Default.RollbackPreviewEnvelope,
+                new RollbackPreviewEnvelope(1, "rollback", preview));
+            return 0;
+        }
+
+        Console.WriteLine($"rollback preview: generation {preview.FromGeneration} -> {preview.ToGeneration}");
+        WritePreviewList(preview.ConfigChanges);
+        WritePreviewList(preview.LockChanges);
+        WritePreviewList(preview.Added.Select(path => $"+ add {path}"));
+        WritePreviewList(preview.Removed.Select(path => $"- remove {path}"));
+        WritePreviewList(preview.Replaced.Select(path => $"~ replace {path}"));
+        WritePreviewList(preview.Adopted.Select(path => $"= adopted {path}"));
+        WritePreviewList(preview.MissingStore.Select(path => $"! store entry missing, download needed: {path}"));
+        Console.WriteLine("no files were changed; run without --dry-run to apply");
+        return 0;
+    }
+
     var result = new SeikoClient().Rollback(root, store, toGeneration, proxy, offline);
     if (json)
     {
@@ -1507,6 +1554,38 @@ static int Rollback(
     }
 
     Console.WriteLine($"rolled back to generation {result.Generation}: {result.SeiInstalled} sei, {result.FilesDeployed} file(s)");
+    return 0;
+}
+
+static void WritePreviewList(IEnumerable<string> lines)
+{
+    foreach (var line in lines)
+    {
+        Console.WriteLine($"  {line}");
+    }
+}
+
+static int Generations(string? rootOption, string? store, bool json)
+{
+    var root = ResolveRoot(rootOption);
+    var generations = new SeikoClient().Generations(root, store);
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.GenerationEnvelope,
+            new GenerationEnvelope(1, "generation_list", new GenerationData(generations.ToList())));
+        return 0;
+    }
+
+    Console.WriteLine("GENERATION\tCREATED\tCURRENT\tSEI\tFILES\tROLLBACKABLE");
+    foreach (var generation in generations)
+    {
+        Console.WriteLine(
+            $"{generation.Generation}\t{generation.CreatedAt?.UtcDateTime.ToString("u") ?? "unknown"}\t"
+            + $"{(generation.Current ? "yes" : "")}\t{generation.SeiCount}\t{generation.FileCount}\t"
+            + $"{(generation.Valid ? "yes" : "no")}");
+    }
+
     return 0;
 }
 

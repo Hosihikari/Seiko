@@ -98,6 +98,12 @@ public sealed record CacheCleanEnvelope(int SchemaVersion, string Command, Cache
 
 public sealed record DoctorEnvelope(int SchemaVersion, string Command, DoctorResult Data);
 
+public sealed record RollbackPreviewEnvelope(int SchemaVersion, string Command, RollbackPreview Data);
+
+public sealed record GenerationData(List<GenerationInfo> Generations);
+
+public sealed record GenerationEnvelope(int SchemaVersion, string Command, GenerationData Data);
+
 public sealed record IndexCatalogData(int Sei, bool Wrote, bool Stale);
 
 public sealed record IndexCatalogEnvelope(int SchemaVersion, string Command, IndexCatalogData Data);
@@ -138,6 +144,8 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(DoctorEnvelope))]
 [JsonSerializable(typeof(IndexVerifyEnvelope))]
 [JsonSerializable(typeof(IndexCatalogEnvelope))]
+[JsonSerializable(typeof(RollbackPreviewEnvelope))]
+[JsonSerializable(typeof(GenerationEnvelope))]
 [JsonSerializable(typeof(IndexVerifyResult))]
 [JsonSerializable(typeof(IndexFinding))]
 [JsonSerializable(typeof(ErrorEnvelope))]

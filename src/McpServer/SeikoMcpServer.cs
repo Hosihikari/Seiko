@@ -152,6 +152,7 @@ public sealed class SeikoMcpServer
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
             Tool("index_verify", "Validate an index directory or a sei-index.json file.", IndexVerifySchema()),
             Tool("index_catalog", "Generate catalog.json, or check it with check=true.", IndexCatalogSchema()),
+            Tool("generation_list", "List deployment generations, newest first.", GenerationListSchema()),
             Tool("doctor", "Check the lock, store, deployment, and partial downloads.", DoctorSchema()),
             Tool("check", "Read-only doctor without cleaning.", RootSchema(required: true)));
 
@@ -165,7 +166,7 @@ public sealed class SeikoMcpServer
             tools.Add((JsonNode)Tool("config_set", "Write an install-root configuration value.", ConfigSetSchema()));
             tools.Add((JsonNode)Tool("cache_clean", "Remove artifacts not referenced by this root.", CacheCleanSchema()));
             tools.Add((JsonNode)Tool("sync", "Resolve and deploy sei.", SyncSchema()));
-            tools.Add((JsonNode)Tool("rollback", "Restore a previous generation.", RollbackSchema()));
+            tools.Add((JsonNode)Tool("rollback", "Restore a previous generation, or preview it with dryRun.", RollbackSchema()));
             tools.Add((JsonNode)Tool("init", "Write a minimal seiko.conf.", RootSchema(required: true)));
         }
 
@@ -207,6 +208,7 @@ public sealed class SeikoMcpServer
                 "config_set" => RequireMutations(() => ConfigSet(arguments)),
                 "cache_clean" => RequireMutations(() => CacheClean(arguments)),
                 "sync" => RequireMutations(() => Sync(arguments)),
+                "generation_list" => GenerationList(arguments),
                 "rollback" => RequireMutations(() => Rollback(arguments)),
                 "init" => RequireMutations(() => Init(arguments)),
                 _ => throw new SeikoException($"unknown tool '{name}'"),
@@ -995,6 +997,23 @@ public sealed class SeikoMcpServer
     private string Rollback(JsonObject arguments)
     {
         var root = Root(arguments, required: true);
+        if (Bool(arguments, "dryRun"))
+        {
+            var preview = _client.PreviewRollback(root, Int(arguments, "to"), StorePath(arguments));
+            return new JsonObject
+            {
+                ["from"] = preview.FromGeneration,
+                ["to"] = preview.ToGeneration,
+                ["config"] = new JsonArray(Strings(preview.ConfigChanges).ToArray()),
+                ["lock"] = new JsonArray(Strings(preview.LockChanges).ToArray()),
+                ["added"] = new JsonArray(Strings(preview.Added).ToArray()),
+                ["removed"] = new JsonArray(Strings(preview.Removed).ToArray()),
+                ["replaced"] = new JsonArray(Strings(preview.Replaced).ToArray()),
+                ["adopted"] = new JsonArray(Strings(preview.Adopted).ToArray()),
+                ["missingStore"] = new JsonArray(Strings(preview.MissingStore).ToArray()),
+            }.ToJsonString();
+        }
+
         var result = _client.Rollback(
             root,
             StorePath(arguments),
@@ -1008,6 +1027,49 @@ public sealed class SeikoMcpServer
             ["files"] = result.FilesDeployed,
         }.ToJsonString();
     }
+
+    private static JsonArray Strings(IEnumerable<string> values)
+    {
+        var array = new JsonArray();
+        foreach (var value in values)
+        {
+            array.Add((JsonNode)JsonValue.Create(value)!);
+        }
+
+        return array;
+    }
+
+    private string GenerationList(JsonObject arguments)
+    {
+        var root = Root(arguments, required: false);
+        var array = new JsonArray();
+        foreach (var generation in _client.Generations(root, StorePath(arguments)))
+        {
+            array.Add((JsonNode)new JsonObject
+            {
+                ["generation"] = generation.Generation,
+                ["createdAt"] = generation.CreatedAt?.ToString("O"),
+                ["current"] = generation.Current,
+                ["sei"] = generation.SeiCount,
+                ["files"] = generation.FileCount,
+                ["rollbackable"] = generation.Valid,
+            });
+        }
+
+        return array.ToJsonString();
+    }
+
+    private static JsonObject GenerationListSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+            },
+            ["required"] = new JsonArray(),
+        };
 
     private string RequireMutations(Func<string> action)
         => _allowMutations
@@ -1419,6 +1481,7 @@ public sealed class SeikoMcpServer
                 ["adopt"] = new JsonObject { ["type"] = "boolean" },
                 ["force"] = new JsonObject { ["type"] = "boolean" },
                 ["offline"] = new JsonObject { ["type"] = "boolean" },
+                ["dryRun"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
@@ -1562,6 +1625,7 @@ public sealed class SeikoMcpServer
                 ["to"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
                 ["offline"] = new JsonObject { ["type"] = "boolean" },
+                ["dryRun"] = new JsonObject { ["type"] = "boolean" },
             },
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
