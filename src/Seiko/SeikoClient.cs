@@ -51,6 +51,9 @@ public sealed record CacheCleanResult(int Removed, long Bytes);
 
 public sealed class SeikoClient
 {
+    internal const string PendingTransactionWarning =
+        "an interrupted deployment transaction exists; run `sk sync` without --dry-run to recover it";
+
     public SyncResult Sync(
         string root,
         string? storeRoot = null,
@@ -120,9 +123,20 @@ public sealed class SeikoClient
         bool force = false,
         bool offline = false)
     {
+        var pendingTransaction = false;
         if (transaction is null)
         {
-            Deployer.Recover(root, Path.Combine(root, ".seiko"));
+            var recoveryDirectory = Path.Combine(root, ".seiko");
+            if (dryRun)
+            {
+                // Recovery writes config/lock/deployment; a preview must not
+                // (ADR-0029). Detect it and let the real sync recover.
+                pendingTransaction = File.Exists(Path.Combine(recoveryDirectory, "transaction.json"));
+            }
+            else
+            {
+                Deployer.Recover(root, recoveryDirectory);
+            }
         }
 
         if (offline && mode == SyncMode.Normal && !dryRun)
@@ -223,12 +237,15 @@ public sealed class SeikoClient
 
         if (dryRun)
         {
+            var previewWarnings = pendingTransaction
+                ? warnings.Concat([PendingTransactionWarning]).ToList()
+                : warnings;
             return new SyncResult
             {
                 Lock = lockFile,
                 FilesDeployed = 0,
-                Warnings = warnings,
-                Preview = Preview(existingLock, lockFile, resolved, mode, warnings),
+                Warnings = previewWarnings,
+                Preview = Preview(existingLock, lockFile, resolved, mode, previewWarnings),
             };
         }
 
@@ -687,7 +704,11 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        if (!dryRun)
+        {
+            Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        }
+
         var config = ConfigLoader.Load(root);
         var addNames = additions.Select(addition => addition.Name).ToHashSet(StringComparer.Ordinal);
         var removedNames = removals.ToHashSet(StringComparer.Ordinal);
@@ -931,7 +952,11 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        if (!dryRun)
+        {
+            Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        }
+
         var config = ConfigLoader.Load(root);
         var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
         if (!removedSei)
@@ -1049,7 +1074,11 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        if (!dryRun)
+        {
+            Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        }
+
         var config = ConfigLoader.Load(root);
         var targets = new List<SeiSpec>();
         if (string.IsNullOrWhiteSpace(name))

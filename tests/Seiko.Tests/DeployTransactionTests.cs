@@ -413,6 +413,64 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void DryRun_DoesNotRecoverAPendingTransaction()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("hello.txt");
+        transaction.WriteJournal();
+        var deployed = Path.Combine(fixture.Root, "hello.txt");
+        File.WriteAllText(deployed, "changed");
+
+        var result = client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
+
+        Assert.Contains(SeikoClient.PendingTransactionWarning, result.Preview!.Warnings);
+        Assert.Equal("changed", File.ReadAllText(deployed));
+        Assert.True(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
+    public void AddDryRun_DoesNotRecoverAPendingTransaction()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "old" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("hello.txt");
+        transaction.WriteJournal();
+        var deployed = Path.Combine(fixture.Root, "hello.txt");
+        File.WriteAllText(deployed, "changed");
+
+        var result = client.Add(
+            fixture.Root,
+            "hello@[1.0.0]",
+            fixture.StoreDirectory,
+            dryRun: true);
+
+        Assert.Contains(SeikoClient.PendingTransactionWarning, result.Preview!.Warnings);
+        Assert.Equal("changed", File.ReadAllText(deployed));
+        Assert.True(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
     public void Recover_RemovesJournaledTemporaryFiles()
     {
         using var fixture = new Fixture();
