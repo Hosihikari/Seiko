@@ -551,7 +551,15 @@ public sealed class SeikoClient
         // Size is optional metadata (a declaration may leave it at 0).
         var size = (manifest?.ExternalFiles ?? []).Sum(file => file.Size)
             + (manifest?.ExternalArchives ?? []).Sum(archive => archive.Size);
-        return declared.Size == 0 || declared.Size == size;
+        if (declared.Size != 0 && declared.Size != size)
+        {
+            return false;
+        }
+
+        // Hosts are the disclosure that matters most: a wrong summary must
+        // not silently pass just because the counts line up.
+        var declaredHosts = (declared.Hosts ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return declaredHosts.SetEquals(ExternalFiles.Hosts(manifest));
     }
 
     private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(

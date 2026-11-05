@@ -373,6 +373,19 @@ public sealed class ExternalFilesTests
         var again = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Contains(again.Warnings, warning => warning.Contains("does not match", StringComparison.Ordinal));
         Assert.Equal(1, again.ExternalItems);
+
+        // Correct counts but a wrong host is still a disclosure mismatch.
+        artifact["external"] = new JsonObject
+        {
+            ["files"] = 1,
+            ["archives"] = 0,
+            ["size"] = 7,
+            ["hosts"] = new JsonArray("wrong.example"),
+        };
+        File.WriteAllText(path, node.ToJsonString());
+
+        var wrongHost = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Contains(wrongHost.Warnings, warning => warning.Contains("does not match", StringComparison.Ordinal));
     }
 
     [Fact]
