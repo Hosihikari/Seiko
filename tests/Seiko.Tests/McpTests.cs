@@ -755,6 +755,62 @@ public sealed class McpTests
         }
     }
 
+    [Fact]
+    public void SyncPreviewAndResultCarryExternalFields()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture(
+                            "extra.txt",
+                            server.BaseUrl + "external/vendor/extra.txt",
+                            "extra"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        var mcp = new SeikoMcpServer(fixture.Root, allowMutations: true);
+
+        var previewResult = CallTool(
+            mcp,
+            "sync",
+            new JsonObject
+            {
+                ["root"] = fixture.Root,
+                ["store"] = fixture.StoreDirectory,
+                ["dryRun"] = true,
+            });
+        Assert.False(previewResult["isError"]!.GetValue<bool>());
+        var preview = JsonNode.Parse(ToolText(previewResult))!.AsObject();
+        Assert.Equal(1, preview["external"]!.GetValue<int>());
+        Assert.Contains(
+            "127.0.0.1",
+            preview["externalHosts"]!.AsArray().Select(host => host!.GetValue<string>()));
+        Assert.NotNull(preview["externalBytes"]);
+        Assert.NotNull(preview["externalUnknown"]);
+
+        var syncResult = CallTool(
+            mcp,
+            "sync",
+            new JsonObject { ["root"] = fixture.Root, ["store"] = fixture.StoreDirectory });
+        Assert.False(syncResult["isError"]!.GetValue<bool>());
+        var sync = JsonNode.Parse(ToolText(syncResult))!.AsObject();
+        Assert.Equal(1, sync["external"]!.GetValue<int>());
+        Assert.Contains(
+            "127.0.0.1",
+            sync["externalHosts"]!.AsArray().Select(host => host!.GetValue<string>()));
+    }
+
     private static string NewDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));

@@ -885,6 +885,10 @@ public sealed class SeikoMcpServer
             ["warnings"] = new JsonArray([.. preview.Warnings.Select(warning => (JsonNode?)JsonValue.Create(warning))]),
             ["diagnostics"] = diagnostics,
             ["downloaded"] = false,
+            ["external"] = preview.ExternalItems,
+            ["externalBytes"] = preview.ExternalBytes,
+            ["externalHosts"] = Strings(preview.ExternalHosts),
+            ["externalUnknown"] = Strings(preview.ExternalUnknown),
         }.ToJsonString();
     }
 
@@ -922,6 +926,8 @@ public sealed class SeikoMcpServer
             ["files"] = result.FilesDeployed,
             ["mode"] = SyncMode.Normal.ToString(),
             ["warnings"] = WarningsNode(result),
+            ["external"] = result.ExternalItems,
+            ["externalHosts"] = Strings(result.ExternalHosts),
         }.ToJsonString();
 
     private string Sync(JsonObject arguments)
@@ -962,6 +968,8 @@ public sealed class SeikoMcpServer
             ["mode"] = mode.ToString(),
             ["warnings"] = WarningsNode(result),
             ["diagnostics"] = diagnostics ? DiagnosticsNode(result.Diagnostics) : null,
+            ["external"] = result.ExternalItems,
+            ["externalHosts"] = Strings(result.ExternalHosts),
         }.ToJsonString();
     }
 
