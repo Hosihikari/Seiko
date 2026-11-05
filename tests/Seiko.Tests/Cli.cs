@@ -77,9 +77,33 @@ internal static class Cli
         }
 
         using var process = Process.Start(start)!;
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
+        // Drain both pipes concurrently: reading stdout to EOF first would
+        // deadlock a process that fills stderr while stdout is still open.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(TimeoutMilliseconds))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // The process exited between the timeout and the kill.
+            }
+
+            process.WaitForExit(5000);
+            var partialOut = stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : "";
+            var partialErr = stderrTask.IsCompletedSuccessfully ? stderrTask.Result : "";
+            throw new TimeoutException(
+                $"sk {string.Join(' ', args)} timed out after {TimeoutMilliseconds} ms\n"
+                + $"stdout:\n{partialOut}\nstderr:\n{partialErr}");
+        }
+
+        var stdout = stdoutTask.GetAwaiter().GetResult();
+        var stderr = stderrTask.GetAwaiter().GetResult();
         return (stdout, stderr, process.ExitCode);
     }
+
+    private const int TimeoutMilliseconds = 120_000;
 }
