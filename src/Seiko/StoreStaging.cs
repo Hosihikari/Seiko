@@ -8,15 +8,27 @@ internal static class StoreStaging
 {
     private const int HashLength = 64;
     private const int GuidLength = 32;
-    private const string Marker = ".tmp-";
+    private const int MarkerLength = 5;
 
+    // Both artifact extraction and external downloads stage on the store root
+    // under the owning artifact's digest, so an interrupted process leaves a
+    // directory that doctor/cache can reclaim under the artifact lock.
     public static bool IsStagingName(string name, out string artifact)
     {
         artifact = "";
-        if (name.Length != HashLength + Marker.Length + GuidLength
-            || !Hashing.IsLowerHex(name.AsSpan(0, HashLength))
-            || !name.AsSpan(HashLength, Marker.Length).SequenceEqual(Marker)
-            || !Hashing.IsLowerHex(name.AsSpan(HashLength + Marker.Length)))
+        if (name.Length != HashLength + MarkerLength + GuidLength
+            || !Hashing.IsLowerHex(name.AsSpan(0, HashLength)))
+        {
+            return false;
+        }
+
+        var marker = name.AsSpan(HashLength, MarkerLength);
+        if (!marker.SequenceEqual(".tmp-") && !marker.SequenceEqual(".ext-"))
+        {
+            return false;
+        }
+
+        if (!Hashing.IsLowerHex(name.AsSpan(HashLength + MarkerLength)))
         {
             return false;
         }

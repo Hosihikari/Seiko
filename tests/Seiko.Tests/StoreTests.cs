@@ -123,4 +123,31 @@ public sealed class StoreTests
         held.Dispose();
         Assert.NotNull(await read);
     }
+
+    [Fact]
+    public void ExternalStagingIsRecognizedAndReclaimedUnderTheArtifactLock()
+    {
+        using var fixture = new Fixture();
+        var sha = new string('a', 64);
+        var directory = Path.Combine(
+            fixture.StoreDirectory,
+            sha + ".ext-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "artifact"), "partial");
+
+        Assert.True(StoreStaging.IsStagingName(Path.GetFileName(directory), out var artifact));
+        Assert.Equal(sha, artifact);
+        Assert.Contains(directory, StoreStaging.Enumerate(fixture.StoreDirectory));
+
+        using (ProcessLock.Acquire(
+            Path.Combine(fixture.StoreDirectory, ".locks", sha + ".lock"),
+            "test artifact"))
+        {
+            Assert.False(StoreStaging.TryDelete(fixture.StoreDirectory, directory));
+            Assert.True(Directory.Exists(directory));
+        }
+
+        Assert.True(StoreStaging.TryDelete(fixture.StoreDirectory, directory));
+        Assert.False(Directory.Exists(directory));
+    }
 }

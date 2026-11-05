@@ -14,6 +14,7 @@ internal static class ExternalMaterializer
         SeiManifest manifest,
         string directory,
         string stagingRoot,
+        string artifactSha,
         List<StoreFileDigest> digests,
         DownloadSession session,
         CancellationToken cancellationToken)
@@ -36,9 +37,13 @@ internal static class ExternalMaterializer
         }
 
         // The artifact content tree may legitimately contain ".external/...";
-        // staging inside it would let the cleanup delete real files. Keep the
-        // download slots beside the store entry instead (ADR-0005, ADR-0024).
-        var staging = Path.Combine(stagingRoot, ".external-" + Guid.NewGuid().ToString("N"));
+        // staging inside it would let the cleanup delete real files. The name
+        // carries the artifact digest so StoreStaging can reclaim it under the
+        // same lock if the process dies before the finally (ADR-0005,
+        // ADR-0024).
+        var staging = Path.Combine(
+            stagingRoot,
+            artifactSha + ".ext-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(staging);
         try
         {
