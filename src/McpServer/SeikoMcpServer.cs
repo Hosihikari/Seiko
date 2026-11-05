@@ -1162,10 +1162,19 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(),
         };
 
+    private void EnsureMutations()
+    {
+        if (!_allowMutations)
+        {
+            throw new SeikoException("mutations are disabled; start seiko-mcp with --allow-mutations");
+        }
+    }
+
     private string RequireMutations(Func<string> action)
-        => _allowMutations
-            ? action()
-            : throw new SeikoException("mutations are disabled; start seiko-mcp with --allow-mutations");
+    {
+        EnsureMutations();
+        return action();
+    }
 
     private string Root(JsonObject arguments, bool required)
     {
@@ -1668,15 +1677,36 @@ public sealed class SeikoMcpServer
 
     private string IndexCatalog(JsonObject arguments)
     {
-        var directory = Path.GetFullPath(
-            OptionalString(arguments, "path") ?? Directory.GetCurrentDirectory());
+        var check = Bool(arguments, "check");
+        var pathOption = OptionalString(arguments, "path");
+        if (!check)
+        {
+            // Writing is a mutation: it needs --allow-mutations, an explicit
+            // target, and the same directory boundary as other mutation tools
+            // (ADR-0015). Check mode stays read-only and unrestricted.
+            EnsureMutations();
+            if (string.IsNullOrWhiteSpace(pathOption))
+            {
+                throw new SeikoException("path is required when index_catalog writes", "usage");
+            }
+        }
+
+        var directory = Path.GetFullPath(pathOption ?? Directory.GetCurrentDirectory());
+        if (!check)
+        {
+            directory = SeikoClient.CanonicalizePath(directory);
+            if (_allowedRoots.Count > 0 && !RootedPath.IsUnderAny(directory, _allowedRoots))
+            {
+                throw new SeikoException($"path '{directory}' is outside --allowed-root", "usage");
+            }
+        }
+
         var path = Path.Combine(directory, CatalogFile.FileName);
         var expected = CatalogFile.Build(CatalogFile.Load(directory));
         var existing = CatalogFile.TryRead(path);
         var stale = existing is null
             || JsonSerializer.Serialize(existing, SeikoJsonContext.Default.SeiCatalog)
                 != JsonSerializer.Serialize(expected, SeikoJsonContext.Default.SeiCatalog);
-        var check = Bool(arguments, "check");
         var wrote = false;
         if (!check)
         {

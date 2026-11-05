@@ -514,6 +514,97 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void IndexCatalog_ReadOnlyRefusesWrites()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            var catalog = Path.Combine(directory, "catalog.json");
+            File.WriteAllText(catalog, "sentinel");
+            var server = new SeikoMcpServer(directory, allowMutations: false);
+
+            var result = CallTool(server, "index_catalog", new JsonObject { ["path"] = directory });
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.Contains("mutations are disabled", ToolText(result));
+            Assert.Equal("sentinel", File.ReadAllText(catalog));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IndexCatalog_ReadOnlyCheckDoesNotWrite()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            var catalog = Path.Combine(directory, "catalog.json");
+            File.WriteAllText(catalog, "sentinel");
+            var server = new SeikoMcpServer(directory, allowMutations: false);
+
+            var result = CallTool(
+                server,
+                "index_catalog",
+                new JsonObject { ["path"] = directory, ["check"] = true });
+
+            Assert.False(result["isError"]!.GetValue<bool>());
+            Assert.Equal("sentinel", File.ReadAllText(catalog));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IndexCatalog_WriteOutsideAllowlistIsRejected()
+    {
+        var allowed = NewDirectory();
+        var outside = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(
+                allowed,
+                allowMutations: true,
+                allowedRoots: [allowed]);
+
+            var result = CallTool(server, "index_catalog", new JsonObject { ["path"] = outside });
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.Contains("outside --allowed-root", ToolText(result));
+            Assert.False(File.Exists(Path.Combine(outside, "catalog.json")));
+        }
+        finally
+        {
+            Directory.Delete(allowed, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IndexCatalog_WriteRequiresExplicitPath()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            var server = new SeikoMcpServer(directory, allowMutations: true);
+
+            var result = CallTool(server, "index_catalog", new JsonObject());
+
+            Assert.True(result["isError"]!.GetValue<bool>());
+            Assert.Contains("path is required", ToolText(result));
+            Assert.False(File.Exists(Path.Combine(directory, "catalog.json")));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void MutationRoot_OutsideAllowlistIsRejected()
     {
         var allowed = NewDirectory();
