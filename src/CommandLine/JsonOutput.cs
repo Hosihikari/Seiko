@@ -98,6 +98,10 @@ public sealed record CacheCleanEnvelope(int SchemaVersion, string Command, Cache
 
 public sealed record DoctorEnvelope(int SchemaVersion, string Command, DoctorResult Data);
 
+public sealed record IndexCatalogData(int Sei, bool Wrote, bool Stale);
+
+public sealed record IndexCatalogEnvelope(int SchemaVersion, string Command, IndexCatalogData Data);
+
 public sealed record IndexVerifyEnvelope(int SchemaVersion, string Command, IndexVerifyResult Data);
 
 public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData Error);
@@ -133,6 +137,7 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(CacheCleanResult))]
 [JsonSerializable(typeof(DoctorEnvelope))]
 [JsonSerializable(typeof(IndexVerifyEnvelope))]
+[JsonSerializable(typeof(IndexCatalogEnvelope))]
 [JsonSerializable(typeof(IndexVerifyResult))]
 [JsonSerializable(typeof(IndexFinding))]
 [JsonSerializable(typeof(ErrorEnvelope))]

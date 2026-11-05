@@ -241,26 +241,7 @@ public static class IndexVerifier
         => JsonSerializer.Serialize(catalog, SeikoJsonContext.Default.SeiCatalog);
 
     private static IEnumerable<SeiIndex> LoadAllSei(string root)
-    {
-        foreach (var file in EnumerateSeiFiles(root))
-        {
-            SeiIndex? index = null;
-            try
-            {
-                index = JsonSerializer.Deserialize(
-                    File.ReadAllBytes(file),
-                    SeikoJsonContext.Default.SeiIndex);
-            }
-            catch (JsonException)
-            {
-            }
-
-            if (index is not null)
-            {
-                yield return index;
-            }
-        }
-    }
+        => CatalogFile.Load(root);
 
     private static IndexRoot? ReadIndex(Context context, string path)
     {

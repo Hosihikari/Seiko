@@ -552,6 +552,27 @@ indexVerify.SetAction(parseResult => Run(
         IsJson(parseResult))));
 index.Add(indexVerify);
 
+var indexCatalog = new Command("catalog", "Generate catalog.json, or check it with --check.");
+var indexCatalogPath = new Argument<string?>("path")
+{
+    Description = "Index directory (defaults to the current directory).",
+    Arity = ArgumentArity.ZeroOrOne,
+};
+var indexCatalogCheck = new Option<bool>("--check")
+{
+    Description = "Only compare; exit 1 when the catalog is missing or stale.",
+};
+indexCatalog.Add(indexCatalogPath);
+indexCatalog.Add(indexCatalogCheck);
+indexCatalog.SetAction(parseResult => Run(
+    "index_catalog",
+    IsJson(parseResult),
+    () => IndexCatalogCommand(
+        parseResult.GetValue(indexCatalogPath),
+        parseResult.GetValue(indexCatalogCheck),
+        IsJson(parseResult))));
+index.Add(indexCatalog);
+
 var completion = new Command("completion", "Print a shell completion script.");
 var completionShell = new Argument<string>("shell")
 {
@@ -1533,6 +1554,53 @@ static int IndexVerifyCommand(
         $"{result.Sei} sei, {result.Versions} version(s), {result.Artifacts} artifact(s){checkedText}; "
         + $"{result.Errors} error(s), {result.Warnings} warning(s)");
     return failed ? 1 : 0;
+}
+
+static int IndexCatalogCommand(string? pathOption, bool check, bool json)
+{
+    var directory = Path.GetFullPath(pathOption ?? Directory.GetCurrentDirectory());
+    var path = Path.Combine(directory, CatalogFile.FileName);
+    var expected = CatalogFile.Build(CatalogFile.Load(directory));
+    var stale = true;
+    if (File.Exists(path))
+    {
+        var existing = CatalogFile.TryRead(path);
+        stale = existing is null || existing.Sei.Count != expected.Sei.Count
+            || JsonSerializer.Serialize(existing, SeikoJsonContext.Default.SeiCatalog)
+                != JsonSerializer.Serialize(expected, SeikoJsonContext.Default.SeiCatalog);
+    }
+
+    var wrote = false;
+    if (!check || stale)
+    {
+        if (!check)
+        {
+            CatalogFile.Write(path, expected);
+            wrote = true;
+        }
+    }
+
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.IndexCatalogEnvelope,
+            new IndexCatalogEnvelope(1, "index_catalog", new IndexCatalogData(
+                expected.Sei.Count,
+                wrote,
+                stale)));
+        return check && stale ? 1 : 0;
+    }
+
+    if (check)
+    {
+        Console.WriteLine(stale
+            ? "catalog.json is missing or stale"
+            : "catalog.json is up to date");
+        return stale ? 1 : 0;
+    }
+
+    Console.WriteLine($"wrote catalog.json with {expected.Sei.Count} sei");
+    return 0;
 }
 
 static int RunDoctor(string command, string? rootOption, string? store, bool clean, bool json)

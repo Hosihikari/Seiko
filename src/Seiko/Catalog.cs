@@ -26,7 +26,7 @@ public sealed class SeiCatalog
     public List<CatalogEntry> Sei { get; set; } = [];
 }
 
-internal static class CatalogFile
+public static class CatalogFile
 {
     public const string FileName = "catalog.json";
 
@@ -99,6 +99,38 @@ internal static class CatalogFile
         => File.WriteAllBytes(
             path,
             JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog));
+
+    // Reads every sei mirror under an index directory; malformed files are
+    // skipped here because the verifier reports them separately.
+    public static IEnumerable<SeiIndex> Load(string directory)
+    {
+        var seiDirectory = Path.Combine(directory, "sei");
+        if (!Directory.Exists(seiDirectory))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory
+            .EnumerateFiles(seiDirectory, "*.json", SearchOption.TopDirectoryOnly)
+            .OrderBy(path => path, StringComparer.Ordinal))
+        {
+            SeiIndex? index = null;
+            try
+            {
+                index = JsonSerializer.Deserialize(
+                    File.ReadAllBytes(file),
+                    SeikoJsonContext.Default.SeiIndex);
+            }
+            catch (JsonException)
+            {
+            }
+
+            if (index is not null)
+            {
+                yield return index;
+            }
+        }
+    }
 
     private static NuGet.Versioning.NuGetVersion Parse(string version)
         => NuGet.Versioning.NuGetVersion.TryParse(version, out var parsed)
