@@ -376,6 +376,42 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void Sync_ExtractsAnEmptyTarMember()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        var tar = Fixture.Tar(new Dictionary<string, byte[]> { ["empty.txt"] = [] });
+        var tarGz = Fixture.Gzip(tar);
+        fixture.WriteExternal("vendor/empty.tar.gz", tarGz);
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalArchives =
+                    [
+                        new ExternalArchiveFixture(
+                            server.BaseUrl + "external/vendor/empty.tar.gz",
+                            "tar.gz",
+                            tarGz,
+                            new ExternalMemberFixture("empty.txt", "empty.txt")),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        var path = Path.Combine(fixture.Root, "empty.txt");
+        Assert.True(File.Exists(path));
+        Assert.Equal(0, new FileInfo(path).Length);
+    }
+
+    [Fact]
     public void Sync_LimitsTarEntryCount()
     {
         var (fixture, server) = Setup();

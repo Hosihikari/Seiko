@@ -182,8 +182,7 @@ internal static class ExternalMaterializer
                     EnsureUniqueMember(state, name, sei);
                 }
 
-                if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile)
-                    || entry.DataStream is null)
+                if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile))
                 {
                     // Directories, links and other non-files are never
                     // materialized; the next GetNextEntry advances past them.
@@ -198,16 +197,29 @@ internal static class ExternalMaterializer
                     continue;
                 }
 
+                // TarReader reports a null DataStream for a legal zero-length
+                // regular file; it is an empty member, not a missing one.
+                var data = entry.DataStream;
+                if (data is null)
+                {
+                    if (entry.Length != 0)
+                    {
+                        continue;
+                    }
+
+                    data = Stream.Null;
+                }
+
                 if (wanted.TryGetValue(name, out var targets))
                 {
                     seen.Add(name);
-                    WriteTargets(entry.DataStream, targets, directory, digests, state, cancellationToken);
+                    WriteTargets(data, targets, directory, digests, state, cancellationToken);
                 }
-                else
+                else if (!ReferenceEquals(data, Stream.Null))
                 {
                     // Skipped members still consume decompression budget; a
                     // tar.gz cannot seek past them for free.
-                    Drain(entry.DataStream, state, cancellationToken);
+                    Drain(data, state, cancellationToken);
                 }
             }
         }
