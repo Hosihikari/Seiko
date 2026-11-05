@@ -15,35 +15,39 @@ catch (IOException)
 {
 }
 
-var rootCommand = new RootCommand("sk - Seiko general-purpose package manager (sk is short for Seiko)");
+// Descriptions are built once, so the locale must be known before the
+// command tree exists (ADR-0034).
+Loc.Configure(null);
+
+var rootCommand = new RootCommand(Loc.Get("cmd.root"));
 var jsonOption = new Option<bool>("--json")
 {
-    Description = "Emit machine-readable JSON.",
+    Description = Loc.Get("opt.json"),
     Recursive = true,
 };
 var verboseOption = new Option<bool>("--verbose", "-v")
 {
-    Description = "Show debug logs and full stack traces.",
+    Description = Loc.Get("opt.verbose"),
     Recursive = true,
 };
 var quietOption = new Option<bool>("--quiet", "-q")
 {
-    Description = "Suppress progress and non-error output.",
+    Description = Loc.Get("opt.quiet"),
     Recursive = true,
 };
 var offlineOption = new Option<bool>("--offline")
 {
-    Description = "Use only locked, stored, and cached metadata; never touch the network.",
+    Description = Loc.Get("opt.offline"),
     Recursive = true,
 };
 var diagnosticsOption = new Option<bool>("--diagnostics")
 {
-    Description = "Show relation and constraint details.",
+    Description = Loc.Get("opt.diagnostics"),
     Recursive = true,
 };
 var colorOption = new Option<string?>("--color")
 {
-    Description = "Colour output: auto (default), always, or never. NO_COLOR is honoured.",
+    Description = Loc.Get("opt.color"),
     Recursive = true,
 };
 rootCommand.Add(jsonOption);
@@ -53,7 +57,10 @@ rootCommand.Add(offlineOption);
 rootCommand.Add(diagnosticsOption);
 rootCommand.Add(colorOption);
 
-var init = new Command("init", "Write a seiko.conf template.\nExamples:\nsk init --root ./server" + "\n" + "Docs: https://hoshi.srcz.one/seiko/getting-started/");
+var init = new Command("init", Describe(
+    "cmd.init",
+    "https://hoshi.srcz.one/seiko/getting-started/",
+    "sk init --root ./server"));
 var initRoot = RootOption();
 init.Add(initRoot);
 init.SetAction(parseResult => Run(
@@ -62,21 +69,25 @@ init.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => Init(parseResult.GetValue(initRoot), IsJson(parseResult))));
 
-var sync = new Command("sync", "Resolve sei and deploy files into the install root.\nExamples:\nsk sync --dry-run\nsk sync --frozen" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var sync = new Command("sync", Describe(
+    "cmd.sync",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk sync --dry-run",
+    "sk sync --frozen"));
 var syncRoot = RootOption();
 var syncStore = StoreOption();
-var syncPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
-var syncFrozen = new Option<bool>("--frozen") { Description = "Replay seiko.lock.json without resolving." };
-var syncLocked = new Option<bool>("--locked") { Description = "Fail if the lock is out of date." };
-var syncJobs = new Option<int?>("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
+var syncPre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
+var syncFrozen = new Option<bool>("--frozen") { Description = Loc.Get("opt.frozen") };
+var syncLocked = new Option<bool>("--locked") { Description = Loc.Get("opt.locked") };
+var syncJobs = new Option<int?>("--jobs") { Description = Loc.Get("opt.jobs") };
 var syncProxy = ProxyOption();
 var syncLatestInstallable = new Option<bool>("--latest-installable")
 {
-    Description = "Pick the highest version that has an artifact for the resolved graph.",
+    Description = Loc.Get("opt.latest-installable"),
 };
 var syncAllowCritical = new Option<bool>("--allow-critical")
 {
-    Description = "Allow resolving versions with a critical advisory.",
+    Description = Loc.Get("opt.allow-critical"),
 };
 var syncDryRun = DryRunOption();
 var syncAdopt = AdoptOption();
@@ -115,10 +126,14 @@ sync.SetAction(parseResult => Run(
         IsJson(parseResult))));
 sync.Aliases.Add("install");
 
-var add = new Command("add", "Add a direct sei declaration and sync.\nExamples:\nsk add hello\nsk add hello@[1.2.0,2.0.0) --dry-run" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var add = new Command("add", Describe(
+    "cmd.add",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk add hello",
+    "sk add hello@[1.2.0,2.0.0) --dry-run"));
 var addRoot = RootOption();
 var addStore = StoreOption();
-var addPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var addPre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
 var addJobs = JobsOption();
 var addProxy = ProxyOption();
 var addDryRun = DryRunOption();
@@ -126,20 +141,20 @@ var addAdopt = AdoptOption();
 var addForce = ForceOption();
 var addLatestInstallable = new Option<bool>("--latest-installable")
 {
-    Description = "Pick the highest version that has an artifact for the resolved graph.",
+    Description = Loc.Get("opt.latest-installable"),
 };
 var addAllowCritical = new Option<bool>("--allow-critical")
 {
-    Description = "Allow resolving versions with a critical advisory.",
+    Description = Loc.Get("opt.allow-critical"),
 };
 var addSpec = new Argument<string[]>("spec")
 {
-    Description = "One or more sei names with optional @range.",
+    Description = Loc.Get("opt.add-names"),
     Arity = ArgumentArity.OneOrMore,
 };
 var addRemove = new Option<string[]>("--remove")
 {
-    Description = "Direct declarations to remove in the same operation.",
+    Description = Loc.Get("opt.remove-names"),
     Arity = ArgumentArity.OneOrMore,
 };
 add.Add(addSpec);
@@ -175,10 +190,13 @@ add.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var remove = new Command("remove", "Remove a direct sei declaration and sync.\nExamples:\nsk remove hello" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var remove = new Command("remove", Describe(
+    "cmd.remove",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk remove hello"));
 var removeRoot = RootOption();
 var removeStore = StoreOption();
-var removePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var removePre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
 var removeJobs = JobsOption();
 var removeProxy = ProxyOption();
 var removeDryRun = DryRunOption();
@@ -186,13 +204,13 @@ var removeAdopt = AdoptOption();
 var removeForce = ForceOption();
 var removePurge = new Option<bool>("--purge")
 {
-    Description = "Also delete config/seiko/<name>.conf and data/seiko/<name>/.",
+    Description = Loc.Get("opt.purge"),
 };
 var removeAllowCritical = new Option<bool>("--allow-critical")
 {
-    Description = "Allow resolving versions with a critical advisory.",
+    Description = Loc.Get("opt.allow-critical"),
 };
-var removeName = new Argument<string>("name") { Description = "Direct sei name." };
+var removeName = new Argument<string>("name") { Description = Loc.Get("opt.direct-name") };
 remove.Add(removeName);
 remove.Add(removeRoot);
 remove.Add(removeStore);
@@ -224,27 +242,31 @@ remove.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var update = new Command("update", "Update direct declarations and sync.\nExamples:\nsk update --dry-run\nsk update hello --latest" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var update = new Command("update", Describe(
+    "cmd.update",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk update --dry-run",
+    "sk update hello --latest"));
 var updateRoot = RootOption();
 var updateStore = StoreOption();
-var updatePre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var updatePre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
 var updateJobs = JobsOption();
 var updateProxy = ProxyOption();
 var updateDryRun = DryRunOption();
 var updateAdopt = AdoptOption();
 var updateForce = ForceOption();
-var updateLatest = new Option<bool>("--latest") { Description = "Rewrite direct ranges to the latest version." };
+var updateLatest = new Option<bool>("--latest") { Description = Loc.Get("opt.latest") };
 var updateLatestInstallable = new Option<bool>("--latest-installable")
 {
-    Description = "Pick the highest version that has an artifact for the resolved graph.",
+    Description = Loc.Get("opt.latest-installable"),
 };
 var updateAllowCritical = new Option<bool>("--allow-critical")
 {
-    Description = "Allow resolving versions with a critical advisory.",
+    Description = Loc.Get("opt.allow-critical"),
 };
 var updateName = new Argument<string?>("name")
 {
-    Description = "Direct sei name; all direct declarations when omitted.",
+    Description = Loc.Get("opt.update-name"),
     Arity = ArgumentArity.ZeroOrOne,
 };
 update.Add(updateName);
@@ -280,7 +302,7 @@ update.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var list = new Command("list", "List installed sei from the lock.");
+var list = new Command("list", Loc.Get("cmd.list"));
 var listRoot = RootOption();
 list.Add(listRoot);
 list.SetAction(parseResult => Run(
@@ -289,13 +311,18 @@ list.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => List(parseResult.GetValue(listRoot), IsJson(parseResult))));
 
-var rollback = new Command("rollback", "Restore a previous generation.\nExamples:\nsk generation list\nsk rollback --dry-run\nsk rollback --to 3" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var rollback = new Command("rollback", Describe(
+    "cmd.rollback",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk generation list",
+    "sk rollback --dry-run",
+    "sk rollback --to 3"));
 var rollbackRoot = RootOption();
 var rollbackStore = StoreOption();
-var rollbackTo = new Option<int?>("--to") { Description = "Generation number to roll back to." };
+var rollbackTo = new Option<int?>("--to") { Description = Loc.Get("opt.to") };
 var rollbackDryRun = new Option<bool>("--dry-run")
 {
-    Description = "Show the diff to the target generation without changing anything.",
+    Description = Loc.Get("opt.rollback-dry-run"),
 };
 var rollbackProxy = ProxyOption();
 rollback.Add(rollbackRoot);
@@ -317,8 +344,8 @@ rollback.SetAction(parseResult => Run(
         IsJson(parseResult),
         parseResult.GetValue(rollbackDryRun))));
 
-var generation = new Command("generation", "Inspect deployment generations.");
-var generationList = new Command("list", "List generations, newest first.");
+var generation = new Command("generation", Loc.Get("cmd.generation"));
+var generationList = new Command("list", Loc.Get("cmd.generation.list"));
 var generationRoot = RootOption();
 var generationStore = StoreOption();
 generationList.Add(generationRoot);
@@ -333,17 +360,21 @@ generationList.SetAction(parseResult => Run(
         IsJson(parseResult))));
 generation.Add(generationList);
 
-var search = new Command("search", "Search sei names, descriptions, and tags in the configured indexes.\nExamples:\nsk search server\nsk search server --tag hosting --limit 10" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var search = new Command("search", Describe(
+    "cmd.search",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk search server",
+    "sk search server --tag hosting --limit 10"));
 var searchRoot = RootOption();
 var searchProxy = ProxyOption();
 var searchTerms = new Argument<string[]>("terms")
 {
-    Description = "Name, description, or tag fragments to search for.",
+    Description = Loc.Get("opt.search-terms"),
     Arity = ArgumentArity.OneOrMore,
 };
-var searchTag = new Option<string?>("--tag") { Description = "Only sei with this exact tag." };
-var searchLicense = new Option<string?>("--license") { Description = "Only sei with this exact SPDX license." };
-var searchLimit = new Option<int?>("--limit") { Description = "Maximum number of results." };
+var searchTag = new Option<string?>("--tag") { Description = Loc.Get("opt.tag") };
+var searchLicense = new Option<string?>("--license") { Description = Loc.Get("opt.license") };
+var searchLimit = new Option<int?>("--limit") { Description = Loc.Get("opt.limit") };
 search.Add(searchTerms);
 search.Add(searchTag);
 search.Add(searchLicense);
@@ -365,11 +396,15 @@ search.SetAction(parseResult => Run(
         parseResult.GetValue(searchLicense),
         parseResult.GetValue(searchLimit))));
 
-var info = new Command("info", "Show project, versions, dependencies, and artifact counts.\nExamples:\nsk info hello\nsk info hello --versions" + "\n" + "Docs: https://hoshi.srcz.one/seiko/commands/");
+var info = new Command("info", Describe(
+    "cmd.info",
+    "https://hoshi.srcz.one/seiko/commands/",
+    "sk info hello",
+    "sk info hello --versions"));
 var infoRoot = RootOption();
 var infoProxy = ProxyOption();
-var infoVersions = new Option<bool>("--versions") { Description = "Show every version, not only notable ones." };
-var infoName = new Argument<string>("name") { Description = "Sei name." };
+var infoVersions = new Option<bool>("--versions") { Description = Loc.Get("opt.versions") };
+var infoName = new Argument<string>("name") { Description = Loc.Get("opt.sei-name") };
 info.Add(infoName);
 info.Add(infoVersions);
 info.Add(infoRoot);
@@ -387,10 +422,14 @@ info.SetAction(parseResult => Run(
         IsJson(parseResult),
         parseResult.GetValue(infoVersions))));
 
-var doctor = new Command("doctor", "Check the lock, store, deployment, and partial downloads.\nExamples:\nsk doctor\nsk doctor --clean" + "\n" + "Docs: https://hoshi.srcz.one/seiko/troubleshooting/");
+var doctor = new Command("doctor", Describe(
+    "cmd.doctor",
+    "https://hoshi.srcz.one/seiko/troubleshooting/",
+    "sk doctor",
+    "sk doctor --clean"));
 var doctorRoot = RootOption();
 var doctorStore = StoreOption();
-var doctorClean = new Option<bool>("--clean") { Description = "Delete all partial downloads." };
+var doctorClean = new Option<bool>("--clean") { Description = Loc.Get("opt.clean") };
 doctor.Add(doctorRoot);
 doctor.Add(doctorStore);
 doctor.Add(doctorClean);
@@ -406,7 +445,7 @@ doctor.SetAction(parseResult => Run(
         IsJson(parseResult))));
 
 // `check` is the read-only terminal summary of doctor; it never deletes .part.
-var check = new Command("check", "Check the lock, store, deployment, and partial downloads.");
+var check = new Command("check", Loc.Get("cmd.check"));
 var checkRoot = RootOption();
 var checkStore = StoreOption();
 check.Add(checkRoot);
@@ -422,9 +461,9 @@ check.SetAction(parseResult => Run(
         clean: false,
         IsJson(parseResult))));
 
-var why = new Command("why", "Explain why a sei is in the dependency graph.");
+var why = new Command("why", Loc.Get("cmd.why"));
 var whyRoot = RootOption();
-var whyName = new Argument<string>("name") { Description = "Sei name." };
+var whyName = new Argument<string>("name") { Description = Loc.Get("opt.sei-name") };
 why.Add(whyName);
 why.Add(whyRoot);
 why.SetAction(parseResult => Run(
@@ -436,10 +475,10 @@ why.SetAction(parseResult => Run(
         parseResult.GetValue(whyName)!,
         IsJson(parseResult))));
 
-var outdated = new Command("outdated", "Report sei that have newer versions.");
+var outdated = new Command("outdated", Loc.Get("cmd.outdated"));
 var outdatedRoot = RootOption();
 var outdatedProxy = ProxyOption();
-var outdatedPre = new Option<bool>("--pre") { Description = "Allow prerelease versions." };
+var outdatedPre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
 outdated.Add(outdatedRoot);
 outdated.Add(outdatedProxy);
 outdated.Add(outdatedPre);
@@ -455,16 +494,20 @@ outdated.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var audit = new Command("audit", "Check installed sei against advisories and retirement.\nExamples:\nsk audit\nsk audit --security-only --fail-on high" + "\n" + "Docs: https://hoshi.srcz.one/seiko/troubleshooting/");
+var audit = new Command("audit", Describe(
+    "cmd.audit",
+    "https://hoshi.srcz.one/seiko/troubleshooting/",
+    "sk audit",
+    "sk audit --security-only --fail-on high"));
 var auditRoot = RootOption();
 var auditProxy = ProxyOption();
 var auditSecurity = new Option<bool>("--security-only")
 {
-    Description = "Only report advisories, not yank or deprecation.",
+    Description = Loc.Get("opt.security-only"),
 };
 var auditFailOn = new Option<string?>("--fail-on")
 {
-    Description = "Exit 1 at this severity or worse: low, moderate, high, critical.",
+    Description = Loc.Get("opt.fail-on"),
 };
 audit.Add(auditRoot);
 audit.Add(auditProxy);
@@ -482,8 +525,8 @@ audit.SetAction(parseResult => Run(
         IsOffline(parseResult),
         IsJson(parseResult))));
 
-var source = new Command("source", "Manage configured sources.");
-var sourceList = new Command("list", "List configured sources.");
+var source = new Command("source", Loc.Get("cmd.source"));
+var sourceList = new Command("list", Loc.Get("cmd.source.list"));
 var sourceListRoot = RootOption();
 sourceList.Add(sourceListRoot);
 sourceList.SetAction(parseResult => Run(
@@ -492,12 +535,12 @@ sourceList.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => SourceListCommand(parseResult.GetValue(sourceListRoot), IsJson(parseResult))));
 
-var sourceStatus = new Command("status", "Check source reachability, index, and catalog.");
+var sourceStatus = new Command("status", Loc.Get("cmd.source.status"));
 var sourceStatusRoot = RootOption();
 var sourceStatusProxy = ProxyOption();
 var sourceStatusId = new Argument<string?>("id")
 {
-    Description = "Source ID (defaults to every source).",
+    Description = Loc.Get("opt.source-status-id"),
     Arity = ArgumentArity.ZeroOrOne,
 };
 sourceStatus.Add(sourceStatusId);
@@ -515,16 +558,16 @@ sourceStatus.SetAction(parseResult => Run(
         IsJson(parseResult))));
 source.Add(sourceStatus);
 
-var sourceAdd = new Command("add", "Add a source.");
+var sourceAdd = new Command("add", Loc.Get("cmd.source.add"));
 var sourceAddRoot = RootOption();
 var sourceAddTokenHosts = new Option<string[]>("--token-host")
 {
-    Description = "Extra host allowed to receive the bearer token (repeatable).",
+    Description = Loc.Get("opt.allow-host"),
     Arity = ArgumentArity.OneOrMore,
     AllowMultipleArgumentsPerToken = true,
 };
-var sourceAddId = new Argument<string>("id") { Description = "Source id." };
-var sourceAddIndex = new Argument<string>("index") { Description = "Index URL or local path." };
+var sourceAddId = new Argument<string>("id") { Description = Loc.Get("opt.source-id") };
+var sourceAddIndex = new Argument<string>("index") { Description = Loc.Get("opt.source-index") };
 sourceAdd.Add(sourceAddId);
 sourceAdd.Add(sourceAddIndex);
 sourceAdd.Add(sourceAddRoot);
@@ -540,9 +583,9 @@ sourceAdd.SetAction(parseResult => Run(
         parseResult.GetValue(sourceAddTokenHosts),
         IsJson(parseResult))));
 
-var sourceRemove = new Command("remove", "Remove a source.");
+var sourceRemove = new Command("remove", Loc.Get("cmd.source.remove"));
 var sourceRemoveRoot = RootOption();
-var sourceRemoveId = new Argument<string>("id") { Description = "Source id." };
+var sourceRemoveId = new Argument<string>("id") { Description = Loc.Get("opt.source-id") };
 sourceRemove.Add(sourceRemoveId);
 sourceRemove.Add(sourceRemoveRoot);
 sourceRemove.SetAction(parseResult => Run(
@@ -558,10 +601,10 @@ source.Add(sourceList);
 source.Add(sourceAdd);
 source.Add(sourceRemove);
 
-var config = new Command("config", "Read or write install-root configuration.");
-var configGet = new Command("get", "Read a configuration value.");
+var config = new Command("config", Loc.Get("cmd.config"));
+var configGet = new Command("get", Loc.Get("cmd.config.get"));
 var configGetRoot = RootOption();
-var configGetKey = new Argument<string>("key") { Description = "Configuration key (rid)." };
+var configGetKey = new Argument<string>("key") { Description = Loc.Get("opt.config-key") };
 configGet.Add(configGetKey);
 configGet.Add(configGetRoot);
 configGet.SetAction(parseResult => Run(
@@ -573,10 +616,10 @@ configGet.SetAction(parseResult => Run(
         parseResult.GetValue(configGetKey)!,
         IsJson(parseResult))));
 
-var configSet = new Command("set", "Write a configuration value.");
+var configSet = new Command("set", Loc.Get("cmd.config.set"));
 var configSetRoot = RootOption();
-var configSetKey = new Argument<string>("key") { Description = "Configuration key (rid)." };
-var configSetValue = new Argument<string>("value") { Description = "Value; empty removes the key." };
+var configSetKey = new Argument<string>("key") { Description = Loc.Get("opt.config-key") };
+var configSetValue = new Argument<string>("value") { Description = Loc.Get("opt.config-value") };
 configSet.Add(configSetKey);
 configSet.Add(configSetValue);
 configSet.Add(configSetRoot);
@@ -593,8 +636,8 @@ configSet.SetAction(parseResult => Run(
 config.Add(configGet);
 config.Add(configSet);
 
-var cache = new Command("cache", "Inspect or clean the content-addressed store.");
-var cacheStatus = new Command("status", "Show store artifact and partial counts.");
+var cache = new Command("cache", Loc.Get("cmd.cache"));
+var cacheStatus = new Command("status", Loc.Get("cmd.cache.status"));
 var cacheStatusStore = StoreOption();
 cacheStatus.Add(cacheStatusStore);
 cacheStatus.SetAction(parseResult => Run(
@@ -603,7 +646,7 @@ cacheStatus.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => CacheStatusCommand(parseResult.GetValue(cacheStatusStore), IsJson(parseResult))));
 
-var cacheVerify = new Command("verify", "Verify stored artifacts.");
+var cacheVerify = new Command("verify", Loc.Get("cmd.cache.verify"));
 var cacheVerifyStore = StoreOption();
 cacheVerify.Add(cacheVerifyStore);
 cacheVerify.SetAction(parseResult => Run(
@@ -612,7 +655,7 @@ cacheVerify.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => CacheVerifyCommand(parseResult.GetValue(cacheVerifyStore), IsJson(parseResult))));
 
-var cacheClean = new Command("clean", "Remove artifacts not referenced by this install root.");
+var cacheClean = new Command("clean", Loc.Get("cmd.cache.clean"));
 var cacheCleanRoot = RootOption();
 var cacheCleanStore = StoreOption();
 cacheClean.Add(cacheCleanRoot);
@@ -630,20 +673,20 @@ cache.Add(cacheStatus);
 cache.Add(cacheVerify);
 cache.Add(cacheClean);
 
-var index = new Command("index", "Inspect static index repositories.");
-var indexVerify = new Command("verify", "Validate an index directory or a sei-index.json file.");
+var index = new Command("index", Loc.Get("cmd.index"));
+var indexVerify = new Command("verify", Loc.Get("cmd.index.verify"));
 var indexVerifyPath = new Argument<string?>("path")
 {
-    Description = "Index directory or sei-index.json file (defaults to the current directory).",
+    Description = Loc.Get("opt.index-path"),
     Arity = ArgumentArity.ZeroOrOne,
 };
 var indexVerifyArtifacts = new Option<bool>("--check-artifacts")
 {
-    Description = "Download artifacts and verify size, SHA-256, and sei.json.",
+    Description = Loc.Get("opt.check-artifacts"),
 };
 var indexVerifyStrict = new Option<bool>("--strict")
 {
-    Description = "Treat warnings as errors.",
+    Description = Loc.Get("opt.strict"),
 };
 var indexVerifyProxy = ProxyOption();
 indexVerify.Add(indexVerifyPath);
@@ -662,15 +705,15 @@ indexVerify.SetAction(parseResult => Run(
         IsJson(parseResult))));
 index.Add(indexVerify);
 
-var indexCatalog = new Command("catalog", "Generate catalog.json, or check it with --check.");
+var indexCatalog = new Command("catalog", Loc.Get("cmd.index.catalog"));
 var indexCatalogPath = new Argument<string?>("path")
 {
-    Description = "Index directory (defaults to the current directory).",
+    Description = Loc.Get("opt.index-dir"),
     Arity = ArgumentArity.ZeroOrOne,
 };
 var indexCatalogCheck = new Option<bool>("--check")
 {
-    Description = "Only compare; exit 1 when the catalog is missing or stale.",
+    Description = Loc.Get("opt.catalog-check"),
 };
 indexCatalog.Add(indexCatalogPath);
 indexCatalog.Add(indexCatalogCheck);
@@ -684,10 +727,10 @@ indexCatalog.SetAction(parseResult => Run(
         IsJson(parseResult))));
 index.Add(indexCatalog);
 
-var completion = new Command("completion", "Print a shell completion script.");
+var completion = new Command("completion", Loc.Get("cmd.completion"));
 var completionShell = new Argument<string>("shell")
 {
-    Description = "bash, zsh, fish, or powershell.",
+    Description = Loc.Get("opt.shell"),
 };
 completion.Add(completionShell);
 completion.SetAction(parseResult => Run(
@@ -696,7 +739,7 @@ completion.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => Completion(parseResult.GetValue(completionShell)!, IsJson(parseResult))));
 
-var help = new Command("help", "Show help.");
+var help = new Command("help", Loc.Get("cmd.help"));
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
 
 rootCommand.Add(init);
@@ -755,7 +798,6 @@ static bool IsDiagnostics(ParseResult parseResult) => parseResult.GetValue<bool>
 static int Run(string command, string color, bool json, Func<int> action)
 {
     Color.Configure(json ? "never" : color);
-    Loc.Configure(null);
     try
     {
         return action();
@@ -817,7 +859,7 @@ static int Fail(
         Console.Error.WriteLine($"{Color.Error("sk: " + message)}");
         if (!string.IsNullOrWhiteSpace(hint))
         {
-            Console.Error.WriteLine(Color.Dim("  " + Loc.Get("hint", Loc.Get(hintKey ?? "hint", hint))));
+            Console.Error.WriteLine(Color.Dim("  " + Loc.GetIsolated("hint", Loc.Get(hintKey ?? "hint", hint))));
         }
     }
 
@@ -841,26 +883,42 @@ static string FirstCommand(ParseResult parseResult)
     return names.Count == 0 ? "sk" : string.Join("_", names);
 }
 
+static string Describe(string key, string? docs = null, params string[] examples)
+{
+    var text = Loc.Get(key);
+    if (examples.Length > 0)
+    {
+        text += "\n" + Loc.Get("help.examples") + ":\n" + string.Join("\n", examples);
+    }
+
+    if (docs is not null)
+    {
+        text += "\n" + Loc.Get("help.docs") + ": " + docs;
+    }
+
+    return text;
+}
+
 static Option<string?> RootOption()
-    => new("--root") { Description = "Install root (defaults to the nearest seiko.conf)." };
+    => new("--root") { Description = Loc.Get("opt.root") };
 
 static Option<string?> StoreOption()
-    => new("--store") { Description = "Content-addressed store directory." };
+    => new("--store") { Description = Loc.Get("opt.store") };
 
 static Option<string?> ProxyOption()
-    => new("--proxy") { Description = "HTTP proxy URL; defaults to the system proxy." };
+    => new("--proxy") { Description = Loc.Get("opt.proxy") };
 
 static Option<int?> JobsOption()
-    => new("--jobs") { Description = "Maximum concurrent HTTP requests (default 4)." };
+    => new("--jobs") { Description = Loc.Get("opt.jobs") };
 
 static Option<bool> DryRunOption()
-    => new("--dry-run") { Description = "Resolve and print the plan without downloading or writing." };
+    => new("--dry-run") { Description = Loc.Get("opt.dry-run") };
 
 static Option<bool> AdoptOption()
-    => new("--adopt") { Description = "Keep existing files and record them as adopted." };
+    => new("--adopt") { Description = Loc.Get("opt.adopt") };
 
 static Option<bool> ForceOption()
-    => new("--force") { Description = "Overwrite or delete conflicting existing files." };
+    => new("--force") { Description = Loc.Get("opt.force") };
 
 static int Sync(
     string? rootOption,
@@ -1930,17 +1988,20 @@ static int RunDoctor(string command, string? rootOption, string? store, bool cle
     foreach (var finding in result.Findings)
     {
         var path = finding.Path is null ? "" : $" ({finding.Path})";
-        var line = $"{finding.Severity} {finding.Code}: {finding.Message}{path}";
+        var message = finding.MessageKey is null
+            ? finding.Message
+            : Loc.GetIsolated(finding.MessageKey, finding.MessageArgs ?? []);
+        var line = $"{finding.Severity} {finding.Code}: {message}{path}";
         Console.WriteLine(finding.Severity == "error" ? Color.Error(line) : Color.Warning(line));
         if (finding.Hint is not null)
         {
-            Console.WriteLine("  " + Loc.Get("hint", Loc.Get(finding.HintKey ?? "hint", finding.Hint!)));
+            Console.WriteLine("  " + Loc.GetIsolated("hint", Loc.Get(finding.HintKey ?? "hint", finding.Hint!)));
         }
     }
 
     if (result.CleanCount > 0)
     {
-        Console.WriteLine($"cleaned {result.CleanCount} partial item(s)");
+        Console.WriteLine(Loc.GetIsolated("doctor.cleaned", result.CleanCount));
     }
 
     if (result.Findings.Count == 0)

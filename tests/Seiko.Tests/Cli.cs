@@ -49,6 +49,12 @@ internal static class Cli
             StandardErrorEncoding = System.Text.Encoding.UTF8,
         };
         start.Environment["DOTNET_NOLOGO"] = "1";
+        // Human text is localised; tests that assert English substrings must
+        // not depend on the machine's UI language (ADR-0034). Locale tests
+        // override LANG through the environment argument below.
+        start.Environment["LANG"] = "en";
+        start.Environment.Remove("LC_ALL");
+        start.Environment.Remove("LC_MESSAGES");
         foreach (var arg in args)
         {
             start.ArgumentList.Add(arg);

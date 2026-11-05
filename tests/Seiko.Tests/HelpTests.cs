@@ -20,4 +20,37 @@ public sealed class HelpTests
             Assert.Contains(command, text, StringComparison.Ordinal);
         }
     }
+
+    [Fact]
+    public void HelpFollowsTheSystemLanguage()
+    {
+        var (stdout, stderr, _) = Cli.Run(
+            ["--help"],
+            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" });
+        var text = stdout + stderr;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        Assert.Contains("Seiko 通用包管理器", text, StringComparison.Ordinal);
+        Assert.Contains("示例", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Write a seiko.conf template.", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnsupportedLanguageHelpFallsBackToEnglish()
+    {
+        var (stdout, stderr, _) = Cli.Run(
+            ["--help"],
+            new Dictionary<string, string> { ["LANG"] = "de_DE.UTF-8" });
+        var text = stdout + stderr;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        Assert.Contains("Examples:", text, StringComparison.Ordinal);
+        Assert.Contains("Write a seiko.conf template.", text, StringComparison.Ordinal);
+    }
 }

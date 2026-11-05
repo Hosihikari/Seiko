@@ -1,9 +1,19 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NuGet.Versioning;
 
 namespace Seiko;
 
-public sealed record DoctorFinding(string Severity, string Code, string Message, string? Path, string? Hint = null, string? HintKey = null);
+public sealed record DoctorFinding(string Severity, string Code, string Message, string? Path, string? Hint = null, string? HintKey = null)
+{
+    // The CLI localises the display text from these (ADR-0034); JSON keeps
+    // the English Message and never exposes the keys.
+    [JsonIgnore]
+    public string? MessageKey { get; init; }
+
+    [JsonIgnore]
+    public object[]? MessageArgs { get; init; }
+}
 
 public sealed record DoctorResult(IReadOnlyList<DoctorFinding> Findings, int CleanCount);
 
@@ -21,7 +31,10 @@ public sealed class Doctor
                 "warning",
                 "root-busy",
                 "install root is in use by another process; run doctor again after it finishes",
-                root));
+                root)
+            {
+                MessageKey = "doctor.root-busy",
+            });
             return new DoctorResult(findings, 0);
         }
 
@@ -59,7 +72,7 @@ public sealed class Doctor
             var lockFile = LockFile.Read(path);
             if (lockFile is null)
             {
-                findings.Add(Warning("lock-missing", "no lock; run `sk sync`", path));
+                findings.Add(Warning("lock-missing", "no lock; run `sk sync`", path, "doctor.lock-missing"));
             }
 
             return lockFile;
@@ -88,13 +101,23 @@ public sealed class Doctor
             var locked = lockFile.Sei.FirstOrDefault(item => string.Equals(item.Name, spec.Name, StringComparison.Ordinal));
             if (locked is null)
             {
-                findings.Add(Error("lock-missing-entry", $"{spec.Name} is declared but not in the lock", null));
+                findings.Add(Error(
+                    "lock-missing-entry",
+                    $"{spec.Name} is declared but not in the lock",
+                    null,
+                    "doctor.lock-missing-entry",
+                    spec.Name));
                 continue;
             }
 
             if (!locked.Direct)
             {
-                findings.Add(Error("lock-direct", $"{spec.Name} is declared but locked as transitive", null));
+                findings.Add(Error(
+                    "lock-direct",
+                    $"{spec.Name} is declared but locked as transitive",
+                    null,
+                    "doctor.lock-direct",
+                    spec.Name));
             }
 
             if (string.IsNullOrWhiteSpace(spec.Version) || spec.Version.Trim() == "*")
@@ -104,7 +127,13 @@ public sealed class Doctor
 
             if (!VersionRange.TryParse(spec.Version, out var range))
             {
-                findings.Add(Error("config", $"invalid version range '{spec.Version}' for {spec.Name}", null));
+                findings.Add(Error(
+                    "config",
+                    $"invalid version range '{spec.Version}' for {spec.Name}",
+                    null,
+                    "doctor.invalid-range",
+                    spec.Version,
+                    spec.Name));
                 continue;
             }
 
@@ -113,7 +142,11 @@ public sealed class Doctor
                 findings.Add(Error(
                     "lock-version",
                     $"{spec.Name} locks {locked.Version}, which does not satisfy {spec.Version}",
-                    null));
+                    null,
+                    "doctor.lock-version",
+                    spec.Name,
+                    locked.Version,
+                    spec.Version));
             }
         }
 
@@ -124,7 +157,9 @@ public sealed class Doctor
                 findings.Add(Warning(
                     "lock-extra",
                     $"{locked.Name} is direct in the lock but not declared",
-                    null));
+                    null,
+                    "doctor.lock-extra",
+                    locked.Name));
             }
         }
     }
@@ -141,7 +176,12 @@ public sealed class Doctor
             var digest = sei.Artifact.Sha256?.ToLowerInvariant();
             if (!Hashing.IsSha256(digest))
             {
-                findings.Add(Error("store-digest", $"{sei.Name} has an invalid artifact digest", null));
+                findings.Add(Error(
+                    "store-digest",
+                    $"{sei.Name} has an invalid artifact digest",
+                    null,
+                    "doctor.store-digest",
+                    sei.Name));
                 continue;
             }
 
@@ -155,7 +195,10 @@ public sealed class Doctor
                 findings.Add(Warning(
                     "store-busy",
                     $"{sei.Name} {sei.Version} is being updated by another process; run doctor again",
-                    Path.Combine(storePath, digest!)));
+                    Path.Combine(storePath, digest!),
+                    "doctor.store-busy",
+                    sei.Name,
+                    sei.Version));
                 continue;
             }
 
@@ -163,7 +206,13 @@ public sealed class Doctor
             var manifestPath = Path.Combine(directory, "sei.json");
             if (!File.Exists(manifestPath))
             {
-                findings.Add(Error("store-missing", $"{sei.Name} {sei.Version} is not in the store", directory));
+                findings.Add(Error(
+                    "store-missing",
+                    $"{sei.Name} {sei.Version} is not in the store",
+                    directory,
+                    "doctor.store-missing",
+                    sei.Name,
+                    sei.Version));
                 continue;
             }
 
@@ -178,7 +227,13 @@ public sealed class Doctor
                     || !NuGetVersion.TryParse(sei.Version, out var lockedVersion)
                     || !manifestVersion.Equals(lockedVersion))
                 {
-                    findings.Add(Error("store-manifest", $"{sei.Name} {sei.Version} manifest does not match the lock", directory));
+                    findings.Add(Error(
+                        "store-manifest",
+                        $"{sei.Name} {sei.Version} manifest does not match the lock",
+                        directory,
+                        "doctor.store-manifest",
+                        sei.Name,
+                        sei.Version));
                 }
             }
             catch (Exception ex)
@@ -195,7 +250,11 @@ public sealed class Doctor
         {
             if (lockFile is not null && lockFile.Sei.Count > 0)
             {
-                findings.Add(Warning("deploy-missing-state", "deployment state is missing; run `sk sync`", statePath));
+                findings.Add(Warning(
+                    "deploy-missing-state",
+                    "deployment state is missing; run `sk sync`",
+                    statePath,
+                    "doctor.deploy-missing-state"));
             }
 
             return;
@@ -214,7 +273,11 @@ public sealed class Doctor
 
         if (state is null)
         {
-            findings.Add(Error("deploy-state", "invalid deployment state", statePath));
+            findings.Add(Error(
+                "deploy-state",
+                "invalid deployment state",
+                statePath,
+                "doctor.deploy-state-invalid"));
             return;
         }
 
@@ -225,13 +288,19 @@ public sealed class Doctor
             findings.Add(Error(
                 "deploy-state",
                 $"unsupported deployment state schemaVersion {state.SchemaVersion}",
-                statePath));
+                statePath,
+                "doctor.deploy-state-schema",
+                state.SchemaVersion));
             return;
         }
 
         if (state.Files is null)
         {
-            findings.Add(Error("deploy-state", "invalid deployment state: files is null", statePath));
+            findings.Add(Error(
+                "deploy-state",
+                "invalid deployment state: files is null",
+                statePath,
+                "doctor.deploy-state-files"));
             return;
         }
 
@@ -240,13 +309,23 @@ public sealed class Doctor
             var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             if (file is null)
             {
-                findings.Add(Error("deploy-state", $"deployed file {relative} has no record", statePath));
+                findings.Add(Error(
+                    "deploy-state",
+                    $"deployed file {relative} has no record",
+                    statePath,
+                    "doctor.deploy-record",
+                    relative));
                 continue;
             }
 
             if (!File.Exists(path))
             {
-                findings.Add(Error("deploy-missing-file", $"deployed file {relative} is missing", path));
+                findings.Add(Error(
+                    "deploy-missing-file",
+                    $"deployed file {relative} is missing",
+                    path,
+                    "doctor.deploy-missing-file",
+                    relative));
                 continue;
             }
 
@@ -255,7 +334,12 @@ public sealed class Doctor
                 var actual = Hashing.Sha256File(path);
                 if (!actual.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
-                    findings.Add(Error("deploy-hash", $"deployed file {relative} has changed", path));
+                    findings.Add(Error(
+                        "deploy-hash",
+                        $"deployed file {relative} has changed",
+                        path,
+                        "doctor.deploy-hash",
+                        relative));
                 }
             }
             catch (IOException ex)
@@ -273,7 +357,8 @@ public sealed class Doctor
             findings.Add(Error(
                 "deploy-transaction",
                 "an incomplete deployment transaction exists; run `sk sync` to roll it back",
-                journal));
+                journal,
+                "doctor.transaction"));
         }
         else
         {
@@ -283,7 +368,8 @@ public sealed class Doctor
                 findings.Add(Warning(
                     "deploy-backup",
                     "leftover deployment backup; run `sk sync` or remove it",
-                    backup));
+                    backup,
+                    "doctor.backup"));
             }
         }
     }
@@ -299,7 +385,9 @@ public sealed class Doctor
                 findings.Add(Warning(
                     "partial",
                     $"{count} partial download item(s); run `sk doctor --clean`",
-                    partialRoot));
+                    partialRoot,
+                    "doctor.partial",
+                    count));
             }
         }
 
@@ -309,7 +397,9 @@ public sealed class Doctor
             findings.Add(Warning(
                 "staging",
                 $"{staging} interrupted extraction(s); run `sk doctor --clean`",
-                storePath));
+                storePath,
+                "doctor.staging",
+                staging));
         }
 
         return 0;
@@ -331,7 +421,8 @@ public sealed class Doctor
                     findings.Add(Warning(
                         "staging-in-use",
                         "interrupted extraction is in use by another process; skipped",
-                        staging));
+                        staging,
+                        "doctor.staging-in-use"));
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -382,7 +473,9 @@ public sealed class Doctor
                 findings.Add(Warning(
                     "partial-in-use",
                     $"partial download {name} is in use by another process; skipped",
-                    path));
+                    path,
+                    "doctor.partial-in-use",
+                    name));
                 continue;
             }
 
@@ -408,11 +501,29 @@ public sealed class Doctor
         return count;
     }
 
-    private static DoctorFinding Error(string code, string message, string? path)
-        => new("error", code, message, path, HintFor(code), HintKeyFor(code));
+    private static DoctorFinding Error(
+        string code,
+        string message,
+        string? path,
+        string? messageKey = null,
+        params object[] messageArgs)
+        => new("error", code, message, path, HintFor(code), HintKeyFor(code))
+        {
+            MessageKey = messageKey,
+            MessageArgs = messageArgs.Length == 0 ? null : messageArgs,
+        };
 
-    private static DoctorFinding Warning(string code, string message, string? path)
-        => new("warning", code, message, path, HintFor(code), HintKeyFor(code));
+    private static DoctorFinding Warning(
+        string code,
+        string message,
+        string? path,
+        string? messageKey = null,
+        params object[] messageArgs)
+        => new("warning", code, message, path, HintFor(code), HintKeyFor(code))
+        {
+            MessageKey = messageKey,
+            MessageArgs = messageArgs.Length == 0 ? null : messageArgs,
+        };
 
     // A fixed map keeps hints short and consistent across the finding sites.
     // The key lets the CLI show the hint in the UI language while the JSON

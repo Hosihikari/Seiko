@@ -7,7 +7,7 @@ namespace Seiko.CommandLine;
 // diagnostics stay English; an unknown language or missing key falls back to
 // English. Only en and zh-Hans are reviewed, the other catalogs are first
 // drafts that are guaranteed to exist, not to be idiomatic.
-internal static class Loc
+internal static partial class Loc
 {
     public static string Current { get; private set; } = "en";
 
@@ -322,20 +322,57 @@ internal static class Loc
             _ => count == 1 ? "one" : "other",
         };
 
-        var index = category switch
+        // Each language stores its categories in CLDR order, so the same
+        // category name lands on a different index per language.
+        var index = Current switch
         {
-            "zero" => 0,
-            "one" => Math.Min(1, forms.Length - 1),
-            "two" => Math.Min(2, forms.Length - 1),
-            "few" => Math.Min(3, forms.Length - 1),
-            "many" => forms.Length - 1,
-            _ => forms.Length - 1,
+            "ru" => category switch
+            {
+                "one" => 0,
+                "few" => 1,
+                "many" => Math.Min(2, forms.Length - 1),
+                _ => Math.Min(3, forms.Length - 1),
+            },
+            "ar" => category switch
+            {
+                "zero" => 0,
+                "one" => 1,
+                "two" => 2,
+                "few" => 3,
+                "many" => Math.Min(4, forms.Length - 1),
+                _ => forms.Length - 1,
+            },
+            _ => category == "one" ? 0 : Math.Min(1, forms.Length - 1),
         };
         return forms[index];
     }
 
+    // Arabic keeps an LTR layout, but names, versions, paths and URLs must not
+    // be reordered by the terminal's bidi algorithm; FSI/PDI isolate them.
+    public static string GetIsolated(string key, params object[] arguments)
+    {
+        if (Current != "ar")
+        {
+            return Get(key, arguments);
+        }
+
+        var fsi = ((char)0x2068).ToString();
+        var pdi = ((char)0x2069).ToString();
+        var isolated = arguments
+            .Select(argument => argument is string text ? fsi + text + pdi : argument)
+            .ToArray();
+        return Get(key, isolated);
+    }
+
     private static string[]? Lookup(string language, string key)
-        => Catalogs.TryGetValue(language, out var catalog) && catalog.TryGetValue(key, out var forms)
+    {
+        if (Catalogs.TryGetValue(language, out var catalog) && catalog.TryGetValue(key, out var forms))
+        {
+            return forms;
+        }
+
+        return TextCatalogs.TryGetValue(language, out var text) && text.TryGetValue(key, out forms)
             ? forms
             : null;
+    }
 }

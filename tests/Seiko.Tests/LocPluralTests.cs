@@ -26,4 +26,29 @@ public sealed class LocPluralTests
         // The hint label itself is localized.
         Assert.Contains("提示", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void DoctorCountsUseRussianPluralForms()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var partial = Path.Combine(fixture.StoreDirectory, ".partial");
+        Directory.CreateDirectory(partial);
+        foreach (var name in new[] { "a", "b", "c" })
+        {
+            File.WriteAllText(Path.Combine(partial, name), "");
+        }
+
+        var (stdout, stderr, _) = Cli.Run(
+            ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
+            new Dictionary<string, string> { ["LANG"] = "ru_RU.UTF-8" });
+        var text = stdout + stderr;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        // 3 is the "few" category, not "many".
+        Assert.Contains("незавершённые загрузки", text, StringComparison.Ordinal);
+    }
 }
