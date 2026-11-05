@@ -47,7 +47,9 @@ public sealed record InfoArtifact(
     List<SeiDependency> Dependencies,
     List<SeiDependency> Prerequisites,
     List<SeiDependency> OptionalPeers,
-    List<SeiDependency> Conflicts);
+    List<SeiDependency> Conflicts,
+    int External,
+    List<string> ExternalHosts);
 
 public sealed record InfoVersion(
     string Version,
@@ -59,14 +61,18 @@ public sealed record InfoVersion(
     List<SeiDependency> Prerequisites,
     List<SeiDependency> OptionalPeers,
     List<SeiDependency> Conflicts,
-    List<InfoArtifact> ArtifactDetails);
+    List<InfoArtifact> ArtifactDetails,
+    bool SourceRetired);
 
 public sealed record InfoData(
     string Name,
     string Source,
     bool Unlisted,
     string? Deprecated,
-    List<InfoVersion> Versions);
+    List<InfoVersion> Versions,
+    ProjectMetadata? Project,
+    string? UpstreamHost,
+    bool MaintainedHere);
 
 public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
 

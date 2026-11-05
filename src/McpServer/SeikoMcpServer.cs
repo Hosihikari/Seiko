@@ -449,18 +449,34 @@ public sealed class SeikoMcpServer
             term,
             OptionalString(arguments, "proxy"),
             Bool(arguments, "offline"),
-            StorePath(arguments)))
+            StorePath(arguments),
+            OptionalString(arguments, "tag"),
+            OptionalString(arguments, "license"),
+            arguments["limit"] is JsonValue limit && limit.TryGetValue<int>(out var max) ? max : null))
         {
             results.Add((JsonNode)new JsonObject
             {
                 ["name"] = result.Name,
                 ["version"] = result.Version,
                 ["source"] = result.Source,
+                ["description"] = result.Description,
+                ["tags"] = result.Tags is null ? null : new JsonArray(result.Tags.Select(TagNode).ToArray()),
+                ["license"] = result.License,
+                ["deprecated"] = result.Deprecated,
+                ["advisory"] = result.Advisory is null
+                    ? null
+                    : new JsonObject
+                    {
+                        ["severity"] = result.Advisory.Severity,
+                        ["url"] = result.Advisory.Url,
+                    },
             });
         }
 
         return results.ToJsonString();
     }
+
+    private static JsonNode TagNode(string tag) => JsonValue.Create(tag)!;
 
     private string Info(JsonObject arguments)
     {
@@ -479,6 +495,7 @@ public sealed class SeikoMcpServer
             {
                 ["version"] = version.Version,
                 ["yanked"] = version.Yanked,
+                ["sourceRetired"] = version.SourceRetired,
                 ["deprecated"] = version.Deprecated,
                 ["advisory"] = version.Advisory is null
                     ? null
@@ -502,6 +519,22 @@ public sealed class SeikoMcpServer
             ["source"] = info.Source,
             ["unlisted"] = info.Unlisted,
             ["deprecated"] = info.Deprecated,
+            ["project"] = info.Project is null
+                ? null
+                : new JsonObject
+                {
+                    ["description"] = info.Project.Description,
+                    ["authors"] = new JsonArray(info.Project.Authors.Select(TagNode).ToArray()),
+                    ["license"] = info.Project.License,
+                    ["tags"] = info.Project.Tags is null
+                        ? null
+                        : new JsonArray(info.Project.Tags.Select(TagNode).ToArray()),
+                    ["projectUrl"] = info.Project.ProjectUrl,
+                    ["repositoryUrl"] = info.Project.RepositoryUrl,
+                    ["repositoryType"] = info.Project.RepositoryType,
+                },
+            ["upstreamHost"] = info.UpstreamHost,
+            ["maintainedHere"] = info.MaintainedHere,
             ["versions"] = versions,
         }.ToJsonString();
     }
@@ -1194,6 +1227,9 @@ public sealed class SeikoMcpServer
             ["properties"] = new JsonObject
             {
                 ["term"] = new JsonObject { ["type"] = "string" },
+                ["tag"] = new JsonObject { ["type"] = "string" },
+                ["license"] = new JsonObject { ["type"] = "string" },
+                ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1 },
                 ["root"] = new JsonObject { ["type"] = "string" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
                 ["store"] = new JsonObject { ["type"] = "string" },

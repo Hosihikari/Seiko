@@ -288,11 +288,21 @@ rollback.SetAction(parseResult => Run(
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
 
-var search = new Command("search", "Search sei names in the configured indexes.");
+var search = new Command("search", "Search sei names, descriptions, and tags in the configured indexes.");
 var searchRoot = RootOption();
 var searchProxy = ProxyOption();
-var searchTerm = new Argument<string>("term") { Description = "Name fragment to search for." };
-search.Add(searchTerm);
+var searchTerms = new Argument<string[]>("terms")
+{
+    Description = "Name, description, or tag fragments to search for.",
+    Arity = ArgumentArity.OneOrMore,
+};
+var searchTag = new Option<string?>("--tag") { Description = "Only sei with this exact tag." };
+var searchLicense = new Option<string?>("--license") { Description = "Only sei with this exact SPDX license." };
+var searchLimit = new Option<int?>("--limit") { Description = "Maximum number of results." };
+search.Add(searchTerms);
+search.Add(searchTag);
+search.Add(searchLicense);
+search.Add(searchLimit);
 search.Add(searchRoot);
 search.Add(searchProxy);
 search.SetAction(parseResult => Run(
@@ -300,17 +310,22 @@ search.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => Search(
         parseResult.GetValue(searchRoot),
-        parseResult.GetValue(searchTerm)!,
+        parseResult.GetValue(searchTerms) ?? [],
         parseResult.GetValue(searchProxy),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+        IsJson(parseResult),
+        parseResult.GetValue(searchTag),
+        parseResult.GetValue(searchLicense),
+        parseResult.GetValue(searchLimit))));
 
-var info = new Command("info", "Show versions, dependencies, and artifact counts.");
+var info = new Command("info", "Show project, versions, dependencies, and artifact counts.");
 var infoRoot = RootOption();
 var infoProxy = ProxyOption();
+var infoVersions = new Option<bool>("--versions") { Description = "Show every version, not only notable ones." };
 var infoName = new Argument<string>("name") { Description = "Sei name." };
 info.Add(infoName);
+info.Add(infoVersions);
 info.Add(infoRoot);
 info.Add(infoProxy);
 info.SetAction(parseResult => Run(
@@ -322,7 +337,8 @@ info.SetAction(parseResult => Run(
         parseResult.GetValue(infoProxy),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+        IsJson(parseResult),
+        parseResult.GetValue(infoVersions))));
 
 var doctor = new Command("doctor", "Check the lock, store, deployment, and partial downloads.");
 var doctorRoot = RootOption();
@@ -1226,26 +1242,62 @@ static int List(string? rootOption, bool json)
     return 0;
 }
 
-static int Search(string? rootOption, string term, string? proxy, bool offline, bool diagnostics, bool json)
+static int Search(
+    string? rootOption,
+    string[] terms,
+    string? proxy,
+    bool offline,
+    bool diagnostics,
+    bool json,
+    string? tag,
+    string? license,
+    int? limit)
 {
     var root = ResolveRoot(rootOption);
-    var results = new SeikoClient().Search(root, term, proxy, offline);
+    var client = new SeikoClient();
+    // Every term must match somewhere: several terms narrow the result, they
+    // do not widen it.
+    List<SeiSummary> results = [];
+    var first = true;
+    foreach (var term in terms)
+    {
+        var matches = client.Search(root, term, proxy, offline, null, tag, license, null);
+        results = first
+            ? matches.ToList()
+            : results.Where(item => matches.Any(match => match.Name == item.Name)).ToList();
+        first = false;
+    }
+
+    if (limit is > 0)
+    {
+        results = results.Take(limit.Value).ToList();
+    }
+
     if (json)
     {
         WriteJson(CliJsonContext.Default.SearchEnvelope, new SearchEnvelope(1, "search", results.ToList()));
         return 0;
     }
 
-    Console.WriteLine("NAME\tVERSION\tSOURCE");
+    Console.WriteLine("NAME\tVERSION\tSOURCE\tLICENSE\tDESCRIPTION");
     foreach (var result in results)
     {
-        Console.WriteLine($"{result.Name}\t{result.Version}\t{result.Source}");
+        var flags = result.Deprecated is null ? "" : "\tdeprecated";
+        Console.WriteLine(
+            $"{result.Name}\t{result.Version}\t{result.Source}\t{result.License ?? ""}\t{result.Description ?? ""}{flags}");
     }
 
     return 0;
 }
 
-static int Info(string? rootOption, string name, string? proxy, bool offline, bool diagnostics, bool json)
+static int Info(
+    string? rootOption,
+    string name,
+    string? proxy,
+    bool offline,
+    bool diagnostics,
+    bool json,
+    bool allVersions)
 {
     var root = ResolveRoot(rootOption);
     var info = new SeikoClient().Info(root, name, proxy, offline);
@@ -1273,9 +1325,15 @@ static int Info(string? rootOption, string name, string? proxy, bool offline, bo
                             artifact.Dependencies.ToList(),
                             artifact.Prerequisites.ToList(),
                             artifact.OptionalPeers.ToList(),
-                            artifact.Conflicts.ToList()))
-                        .ToList()))
-                .ToList());
+                            artifact.Conflicts.ToList(),
+                            artifact.ExternalCount,
+                            artifact.ExternalHosts.ToList()))
+                        .ToList(),
+                    version.SourceRetired))
+                .ToList(),
+            info.Project,
+            info.UpstreamHost,
+            info.MaintainedHere);
         WriteJson(CliJsonContext.Default.InfoEnvelope, new InfoEnvelope(1, "info", data));
         return 0;
     }
@@ -1287,9 +1345,64 @@ static int Info(string? rootOption, string name, string? proxy, bool offline, bo
     }
 
     Console.WriteLine($"{info.Name} ({info.Source}){packageFlags}");
-    foreach (var version in info.Versions)
+    if (info.Project is { } project)
+    {
+        if (!string.IsNullOrWhiteSpace(project.Description))
+        {
+            Console.WriteLine($"  {project.Description}");
+        }
+
+        Console.WriteLine($"  authors: {string.Join(", ", project.Authors)}  license: {project.License}");
+        if (project.Tags is { Count: > 0 })
+        {
+            Console.WriteLine($"  tags: {string.Join(", ", project.Tags)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(project.ProjectUrl))
+        {
+            Console.WriteLine($"  project: {project.ProjectUrl}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(project.RepositoryUrl))
+        {
+            Console.WriteLine($"  repository: {project.RepositoryUrl}");
+        }
+    }
+
+    if (info.UpstreamHost is not null)
+    {
+        Console.WriteLine($"  maintained upstream: {info.UpstreamHost}");
+    }
+
+    // Long version histories are noise by default; notable versions and the
+    // installed one stay visible, --versions expands the rest.
+    var installed = InstalledVersion(root, info.Name);
+    var shown = allVersions
+        ? info.Versions
+        : info.Versions
+            .Where(version => version == info.Versions[0]
+                || version.Yanked
+                || version.Advisory is not null
+                || string.Equals(version.Version, installed, StringComparison.Ordinal))
+            .ToList();
+    if (!allVersions && shown.Count < info.Versions.Count)
+    {
+        Console.WriteLine($"  {info.Versions.Count - shown.Count} more version(s); use --versions");
+    }
+
+    foreach (var version in shown)
     {
         var flags = version.Yanked ? " yanked" : "";
+        if (version.SourceRetired)
+        {
+            flags += " (by source)";
+        }
+
+        if (string.Equals(version.Version, installed, StringComparison.Ordinal))
+        {
+            flags += " installed";
+        }
+
         if (!string.IsNullOrWhiteSpace(version.Deprecated))
         {
             flags += $" deprecated: {version.Deprecated}";
@@ -1312,6 +1425,12 @@ static int Info(string? rootOption, string name, string? proxy, bool offline, bo
         foreach (var artifact in version.Artifacts)
         {
             Console.WriteLine($"    artifact rid={artifact.Rid ?? "*"}");
+            if (artifact.ExternalCount > 0)
+            {
+                Console.WriteLine(
+                    $"      external: {artifact.ExternalCount} item(s) from {string.Join(", ", artifact.ExternalHosts)}");
+            }
+
             WriteRelations(artifact.Dependencies, "dependency", 6);
             WriteRelations(artifact.Prerequisites, "prerequisite", 6);
             WriteRelations(artifact.OptionalPeers, "optional peer", 6);
@@ -1320,6 +1439,12 @@ static int Info(string? rootOption, string name, string? proxy, bool offline, bo
     }
 
     return 0;
+}
+
+static string? InstalledVersion(string root, string name)
+{
+    var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
+    return lockFile?.Sei.FirstOrDefault(sei => sei.Name == name)?.Version;
 }
 
 static void WriteRelations(IReadOnlyList<SeiDependency> relations, string kind, int indent = 4)

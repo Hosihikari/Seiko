@@ -1760,7 +1760,15 @@ public sealed class SeikoClient
         };
     }
 
-    public IReadOnlyList<SeiSummary> Search(string root, string term, string? proxy = null, bool offline = false, string? storeRoot = null)
+    public IReadOnlyList<SeiSummary> Search(
+        string root,
+        string term,
+        string? proxy = null,
+        bool offline = false,
+        string? storeRoot = null,
+        string? tag = null,
+        string? license = null,
+        int? limit = null)
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
@@ -1812,6 +1820,18 @@ public sealed class SeikoClient
                     continue;
                 }
 
+                if (tag is not null
+                    && !(sei.Project?.Tags ?? []).Contains(tag, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (license is not null
+                    && !string.Equals(sei.Project?.License, license, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 results.Add((rank, new SeiSummary(
                     name,
                     latest.Version,
@@ -1826,11 +1846,11 @@ public sealed class SeikoClient
 
         // Exact name beats a prefix, a prefix beats a substring, and project
         // text is the weakest signal; ties stay alphabetical.
-        return results
+        var ordered = results
             .OrderBy(item => item.Rank)
             .ThenBy(item => item.Summary.Name, StringComparer.Ordinal)
-            .Select(item => item.Summary)
-            .ToList();
+            .Select(item => item.Summary);
+        return (limit is > 0 ? ordered.Take(limit.Value) : ordered).ToList();
     }
 
     private static bool Matches(string term, string name, ProjectMetadata? project, out int rank)

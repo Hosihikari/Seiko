@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Seiko.McpServer;
 using Xunit;
@@ -134,6 +135,49 @@ public sealed class McpTests
 
         Assert.False(result["isError"]!.GetValue<bool>());
         Assert.Equal("[]", ToolText(result));
+    }
+
+    [Fact]
+    public void Search_ReturnsProjectFieldsAndFilters()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.AddSei("other", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteConfig("win-x64");
+        var index = JsonSerializer.Deserialize<SeiIndex>(
+            File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "hello.json")),
+            SeikoJsonContext.Default.SeiIndex)!;
+        index.Project = new ProjectMetadata
+        {
+            Description = "a greeting",
+            Authors = ["someone"],
+            License = "MIT",
+            Tags = ["greeting"],
+        };
+        File.WriteAllBytes(
+            Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
+
+        var result = CallTool(
+            server,
+            "search",
+            new JsonObject { ["root"] = fixture.Root, ["term"] = "greet", ["tag"] = "greeting" });
+
+        Assert.False(result["isError"]!.GetValue<bool>());
+        var rows = JsonNode.Parse(ToolText(result))!.AsArray();
+        var row = Assert.Single(rows)!.AsObject();
+        Assert.Equal("hello", row["name"]!.GetValue<string>());
+        Assert.Equal("a greeting", row["description"]!.GetValue<string>());
+        Assert.Equal("MIT", row["license"]!.GetValue<string>());
     }
 
     [Fact]
