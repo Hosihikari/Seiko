@@ -352,6 +352,67 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void ConfigSet_RecoversAPendingTransactionFirst()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("seiko.conf");
+        transaction.WriteJournal();
+
+        new SeikoClient().ConfigSet(fixture.Root, "rid", "linux-x64");
+        DeploymentTransaction.Recover(fixture.Root, stateDirectory);
+
+        Assert.Equal("linux-x64", new SeikoClient().ConfigGet(fixture.Root, "rid"));
+    }
+
+    [Fact]
+    public void SourceAdd_RecoversAPendingTransactionFirst()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("seiko.conf");
+        transaction.WriteJournal();
+
+        new SeikoClient().SourceAdd(fixture.Root, "extra", "extra/index.json");
+        DeploymentTransaction.Recover(fixture.Root, stateDirectory);
+
+        Assert.Contains(
+            new SeikoClient().ListSources(fixture.Root),
+            source => source.Id == "extra");
+    }
+
+    [Fact]
+    public void SourceRemove_RecoversAPendingTransactionFirst()
+    {
+        using var fixture = new Fixture();
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            "schemaVersion = 2\n"
+            + "sources = [\n"
+            + "  { id = \"a\", index = \"a/index.json\" },\n"
+            + "  { id = \"b\", index = \"b/index.json\" }\n"
+            + "]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = []\n");
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("seiko.conf");
+        transaction.WriteJournal();
+
+        new SeikoClient().SourceRemove(fixture.Root, "b");
+        DeploymentTransaction.Recover(fixture.Root, stateDirectory);
+
+        Assert.Equal(["a"], new SeikoClient().ListSources(fixture.Root).Select(source => source.Id));
+    }
+
+    [Fact]
     public void Recover_RemovesJournaledTemporaryFiles()
     {
         using var fixture = new Fixture();

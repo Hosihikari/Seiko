@@ -1252,6 +1252,9 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        // A pending transaction holds an older config backup; editing first
+        // would let the next recovery silently undo this command (ADR-0019).
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root, requireSources: false);
         if (config.Sources.Any(source => string.Equals(source.Id, id, StringComparison.Ordinal)))
         {
@@ -1279,6 +1282,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root, requireSources: false);
         var removed = config.Sources.RemoveAll(source => string.Equals(source.Id, id, StringComparison.Ordinal));
         if (removed == 0)
@@ -1317,6 +1321,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
+        Deployer.Recover(root, Path.Combine(root, ".seiko"));
         ConfigWriter.WriteRid(root, value);
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
