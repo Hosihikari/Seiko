@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Seiko/Seiko.csproj" />
     <ProjectReference Include="../../src/McpServer/Seiko.McpServer.csproj" />
+    <ProjectReference Include="../../src/CommandLine/Seiko.CommandLine.csproj" />
   </ItemGroup>
 
 </Project>
