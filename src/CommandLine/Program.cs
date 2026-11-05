@@ -1168,7 +1168,7 @@ static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, b
         Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}	{item.LatestInstallable ?? "-"}");
         foreach (var blocker in item.Blockers)
         {
-            Console.WriteLine($"  blocked by {blocker.Relation} {blocker.Target} {blocker.Range ?? ""} ({blocker.Source})");
+            Console.WriteLine("  " + Loc.Get("outdated.blocked", blocker.Relation, blocker.Target, blocker.Range ?? "", blocker.Source));
         }
     }
 
@@ -1261,11 +1261,11 @@ static int CacheStatusCommand(string? store, bool json)
         return 0;
     }
 
-    Console.WriteLine($"artifacts: {status.Artifacts}");
-    Console.WriteLine($"bytes: {status.Bytes}");
-    Console.WriteLine($"partials: {status.PartialItems}");
-    Console.WriteLine($"staging: {status.StagingItems}");
-    Console.WriteLine($"staging bytes: {status.StagingBytes}");
+    Console.WriteLine(Loc.Get("cache.artifacts", status.Artifacts));
+    Console.WriteLine(Loc.Get("cache.bytes", status.Bytes));
+    Console.WriteLine(Loc.Get("cache.partials", status.PartialItems));
+    Console.WriteLine(Loc.Get("cache.staging", status.StagingItems));
+    Console.WriteLine(Loc.Get("cache.staging-bytes", status.StagingBytes));
     return 0;
 }
 
@@ -1303,7 +1303,7 @@ static int CacheCleanCommand(string? rootOption, string? store, bool json)
         return 0;
     }
 
-    Console.WriteLine($"removed {result.Removed} artifact(s), freed {result.Bytes} bytes");
+    Console.WriteLine(Loc.Get("cache.cleaned", result.Removed, result.Bytes));
     return 0;
 }
 
@@ -1520,7 +1520,7 @@ static int Info(
         packageFlags += $" deprecated: {info.Deprecated}";
     }
 
-    Console.WriteLine($"{info.Name} ({info.Source}){packageFlags}");
+    Console.WriteLine(Loc.Get("info.installation", info.Name, info.Source, packageFlags));
     if (info.Project is { } project)
     {
         if (!string.IsNullOrWhiteSpace(project.Description))
@@ -1547,7 +1547,7 @@ static int Info(
 
     if (info.UpstreamHost is not null)
     {
-        Console.WriteLine($"  maintained upstream: {info.UpstreamHost}");
+        Console.WriteLine("  " + Loc.Get("info.upstream", info.UpstreamHost));
     }
 
     // Long version histories are noise by default; notable versions and the
@@ -1563,7 +1563,7 @@ static int Info(
             .ToList();
     if (!allVersions && shown.Count < info.Versions.Count)
     {
-        Console.WriteLine($"  {info.Versions.Count - shown.Count} more version(s); use --versions");
+        Console.WriteLine("  " + Loc.Get("info.more-versions", info.Versions.Count - shown.Count));
     }
 
     foreach (var version in shown)
@@ -1657,18 +1657,16 @@ static int SourceStatusCommand(
 
     foreach (var status in statuses)
     {
-        var catalog = status.CatalogPresent ? "catalog" : "no catalog (warning)";
+        var catalog = Loc.Get(status.CatalogPresent ? "status.catalog" : "status.no-catalog");
         var count = status.SeiCount is null ? "?" : status.SeiCount.Value.ToString();
-        Console.WriteLine($"{status.Id}	{(status.Reachable ? "reachable" : "unreachable")}	{count} sei	{catalog}");
+        Console.WriteLine(Loc.Get("status.row", status.Id, Loc.Get(status.Reachable ? "status.reachable" : "status.unreachable"), count, catalog));
         foreach (var problem in status.Problems)
         {
             Console.WriteLine($"  {problem}");
         }
     }
 
-    Console.WriteLine(failed
-        ? "a source is unreachable; check the proxy or token, or use --offline"
-        : "all sources answered; source order is unchanged");
+    Console.WriteLine(Loc.Get(failed ? "status.failed" : "status.ok"));
     return failed ? 1 : 0;
 }
 
