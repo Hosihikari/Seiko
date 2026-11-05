@@ -14,14 +14,12 @@ public sealed class LocPluralTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
 
-        var (stdout, stderr, _) = Cli.Run(
-            ["doctor", "--root", fixture.Root],
+        var (stdout, stderr, exitCode) = Cli.Run(
+            ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
             new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" });
         var text = stdout + stderr;
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
+        Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
+        Assert.Equal(0, exitCode);
 
         // The hint label itself is localized.
         Assert.Contains("提示", text, StringComparison.Ordinal);
@@ -39,14 +37,12 @@ public sealed class LocPluralTests
             File.WriteAllText(Path.Combine(partial, name), "");
         }
 
-        var (stdout, stderr, _) = Cli.Run(
+        var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
             new Dictionary<string, string> { ["LANG"] = "ru_RU.UTF-8" });
         var text = stdout + stderr;
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
+        Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
+        Assert.Equal(0, exitCode);
 
         // 3 is the "few" category, not "many".
         Assert.Contains("незавершённые загрузки", text, StringComparison.Ordinal);
