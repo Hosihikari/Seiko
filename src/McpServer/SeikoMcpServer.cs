@@ -145,6 +145,7 @@ public sealed class SeikoMcpServer
             Tool("info", "Show versions, dependencies, and artifact counts.", InfoSchema()),
             Tool("lock", "Return the current lock file.", RootSchema(required: false)),
             Tool("source_list", "List configured sources.", RootSchema(required: false)),
+            Tool("source_status", "Check source reachability, index, and catalog.", SourceStatusSchema()),
             Tool("config_get", "Read an install-root configuration value.", ConfigGetSchema()),
             Tool("cache_status", "Show store artifact and partial counts.", StoreSchema()),
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
@@ -192,6 +193,7 @@ public sealed class SeikoMcpServer
                 "info" => Info(arguments),
                 "lock" => Lock(arguments),
                 "source_list" => SourceList(arguments),
+                "source_status" => SourceStatus(arguments),
                 "config_get" => ConfigGet(arguments),
                 "cache_status" => CacheStatus(arguments),
                 "cache_verify" => CacheVerify(arguments),
@@ -556,6 +558,45 @@ public sealed class SeikoMcpServer
 
     private string SourceList(JsonObject arguments)
         => SourcesJson(_client.ListSources(Root(arguments, required: false)));
+
+    private string SourceStatus(JsonObject arguments)
+    {
+        var root = Root(arguments, required: false);
+        var array = new JsonArray();
+        foreach (var status in _client.SourceStatus(
+            root,
+            OptionalString(arguments, "id"),
+            OptionalString(arguments, "proxy"),
+            Bool(arguments, "offline"),
+            StorePath(arguments)))
+        {
+            array.Add((JsonNode)new JsonObject
+            {
+                ["id"] = status.Id,
+                ["reachable"] = status.Reachable,
+                ["sei"] = status.SeiCount,
+                ["catalog"] = status.CatalogPresent,
+                ["problems"] = Strings(status.Problems),
+            });
+        }
+
+        return array.ToJsonString();
+    }
+
+    private static JsonObject SourceStatusSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["root"] = new JsonObject { ["type"] = "string" },
+                ["id"] = new JsonObject { ["type"] = "string" },
+                ["proxy"] = new JsonObject { ["type"] = "string" },
+                ["store"] = new JsonObject { ["type"] = "string" },
+                ["offline"] = new JsonObject { ["type"] = "boolean" },
+            },
+            ["required"] = new JsonArray(),
+        };
 
     private static string SourcesJson(IReadOnlyList<SourceConfig> sources)
     {

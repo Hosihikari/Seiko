@@ -290,6 +290,15 @@ public sealed record AuditResult(
     IReadOnlyList<AuditFinding> Findings,
     IReadOnlyList<string> Unknown);
 
+// One row of `source status`. Catalog issues are warnings, index issues are
+// errors; nothing here changes a source or falls back to another one.
+public sealed record SourceStatus(
+    string Id,
+    bool Reachable,
+    int? SeiCount,
+    bool CatalogPresent,
+    IReadOnlyList<string> Problems);
+
 public sealed class RootRegistryState
 {
     public int SchemaVersion { get; set; } = 1;

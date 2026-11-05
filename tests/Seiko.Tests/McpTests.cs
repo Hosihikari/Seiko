@@ -52,7 +52,7 @@ public sealed class McpTests
         var names = ToolNames(server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!);
         string[] expectedRead =
         [
-            "list", "search", "info", "lock", "source_list", "config_get",
+            "list", "search", "info", "lock", "source_list", "source_status", "config_get",
             "cache_status", "cache_verify", "why", "outdated", "audit", "index_verify", "index_catalog", "generation_list", "doctor", "check",
         ];
         string[] expectedWrite =

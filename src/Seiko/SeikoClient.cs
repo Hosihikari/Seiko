@@ -1047,6 +1047,62 @@ public sealed class SeikoClient
         return null;
     }
 
+    // Online diagnostics only; doctor stays local. A missing catalog is a
+    // warning, an unreachable or invalid index is an error.
+    public IReadOnlyList<SourceStatus> SourceStatus(
+        string root,
+        string? id = null,
+        string? proxy = null,
+        bool offline = false,
+        string? storeRoot = null)
+    {
+        root = Path.GetFullPath(root);
+        var config = ConfigLoader.Load(root, requireSources: false);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
+        var result = new List<SourceStatus>();
+        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        foreach (var source in config.Sources)
+        {
+            if (id is not null && !string.Equals(source.Id, id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var problems = new List<string>();
+            ISeiSource? built = null;
+            try
+            {
+                built = CreateSource(source, root, proxy, session, storePath, offline);
+            }
+            catch (SeikoException ex)
+            {
+                problems.Add(ex.Message);
+            }
+
+            var catalog = built switch
+            {
+                HttpSource http => http.Catalog,
+                LocalSource local => local.Catalog,
+                _ => null,
+            };
+
+            result.Add(new SourceStatus(
+                source.Id,
+                built is not null,
+                built?.Index.Sei?.Count,
+                catalog is not null,
+                problems));
+            (built as IDisposable)?.Dispose();
+        }
+
+        if (id is not null && result.Count == 0)
+        {
+            throw new SeikoException($"source '{id}' is not configured", "config");
+        }
+
+        return result;
+    }
+
     public IReadOnlyList<SourceConfig> ListSources(string root)
     {
         root = Path.GetFullPath(root);

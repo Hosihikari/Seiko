@@ -460,6 +460,28 @@ sourceList.SetAction(parseResult => Run(
     IsJson(parseResult),
     () => SourceListCommand(parseResult.GetValue(sourceListRoot), IsJson(parseResult))));
 
+var sourceStatus = new Command("status", "Check source reachability, index, and catalog.");
+var sourceStatusRoot = RootOption();
+var sourceStatusProxy = ProxyOption();
+var sourceStatusId = new Argument<string?>("id")
+{
+    Description = "Source ID (defaults to every source).",
+    Arity = ArgumentArity.ZeroOrOne,
+};
+sourceStatus.Add(sourceStatusId);
+sourceStatus.Add(sourceStatusRoot);
+sourceStatus.Add(sourceStatusProxy);
+sourceStatus.SetAction(parseResult => Run(
+    "source_status",
+    IsJson(parseResult),
+    () => SourceStatusCommand(
+        parseResult.GetValue(sourceStatusRoot),
+        parseResult.GetValue(sourceStatusId),
+        parseResult.GetValue(sourceStatusProxy),
+        IsOffline(parseResult),
+        IsJson(parseResult))));
+source.Add(sourceStatus);
+
 var sourceAdd = new Command("add", "Add a source.");
 var sourceAddRoot = RootOption();
 var sourceAddTokenHosts = new Option<string[]>("--token-host")
@@ -1529,6 +1551,41 @@ static void WriteRelations(IReadOnlyList<SeiDependency> relations, string kind, 
     {
         Console.WriteLine($"{pad}{kind}: {relation.Name} {relation.Version ?? "*"}");
     }
+}
+
+static int SourceStatusCommand(
+    string? rootOption,
+    string? id,
+    string? proxy,
+    bool offline,
+    bool json)
+{
+    var root = ResolveRoot(rootOption);
+    var statuses = new SeikoClient().SourceStatus(root, id, proxy, offline);
+    var failed = statuses.Any(status => !status.Reachable);
+    if (json)
+    {
+        WriteJson(
+            CliJsonContext.Default.SourceStatusEnvelope,
+            new SourceStatusEnvelope(1, "source_status", statuses.ToList()));
+        return failed ? 1 : 0;
+    }
+
+    foreach (var status in statuses)
+    {
+        var catalog = status.CatalogPresent ? "catalog" : "no catalog (warning)";
+        var count = status.SeiCount is null ? "?" : status.SeiCount.Value.ToString();
+        Console.WriteLine($"{status.Id}	{(status.Reachable ? "reachable" : "unreachable")}	{count} sei	{catalog}");
+        foreach (var problem in status.Problems)
+        {
+            Console.WriteLine($"  {problem}");
+        }
+    }
+
+    Console.WriteLine(failed
+        ? "a source is unreachable; check the proxy or token, or use --offline"
+        : "all sources answered; source order is unchanged");
+    return failed ? 1 : 0;
 }
 
 static int Audit(
