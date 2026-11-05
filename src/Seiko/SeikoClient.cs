@@ -1759,102 +1759,12 @@ public sealed class SeikoClient
             throw new SeikoException("no previous generation to roll back to", "lock");
         }
 
-        var snapshotLockPath = Path.Combine(stateDirectory, "generations", target.ToString(), "lock.json");
-        if (!File.Exists(snapshotLockPath))
-        {
-            throw new SeikoException($"generation {target} not found", "lock");
-        }
-
-        var snapshotLock = LockFile.Read(snapshotLockPath)
-            ?? throw new SeikoException($"generation {target} has no lock", "lock");
-        var snapshotConfigPath = Path.Combine(
-            stateDirectory,
-            "generations",
-            target.ToString(),
-            "seiko.conf");
-        PathSafety.EnsureNoLinks(
-            root,
-            Path.GetRelativePath(root, snapshotConfigPath).Replace('\\', '/'));
-        if (!File.Exists(snapshotConfigPath))
-        {
-            throw new SeikoException($"generation {target} has no config", "io");
-        }
-
-        var snapshotConfig = File.ReadAllBytes(snapshotConfigPath);
-        var snapshotConfigInfo = ConfigLoader.LoadPath(snapshotConfigPath);
-        var snapshotRid = string.IsNullOrWhiteSpace(snapshotConfigInfo.Rid)
-            ? DefaultRid()
-            : snapshotConfigInfo.Rid;
-        if (!string.Equals(snapshotLock.Target.Rid, snapshotRid, StringComparison.Ordinal))
-        {
-            throw new SeikoException(
-                $"generation {target} config selects rid '{snapshotRid}', but its lock targets '{snapshotLock.Target.Rid}'",
-                "io");
-        }
-
-        // The target generation's own state is what defines its deployment,
-        // so a generation without one cannot be restored faithfully.
-        var adoptedSnapshots = new Dictionary<string, string>(StringComparer.Ordinal);
-        var snapshotStatePath = Path.Combine(stateDirectory, "generations", target.ToString(), "state.json");
-        if (!File.Exists(snapshotStatePath))
-        {
-            throw new SeikoException($"generation {target} has no state", "io");
-        }
-
-        var snapshotState = JsonSerializer.Deserialize(
-            File.ReadAllBytes(snapshotStatePath),
-            SeikoJsonContext.Default.LocalState)
-            ?? throw new SeikoException($"generation {target} has no state", "io");
-        if (snapshotState.SchemaVersion != LocalState.CurrentSchemaVersion)
-        {
-            throw new SeikoException(
-                $"generation {target} has unsupported state schemaVersion {snapshotState.SchemaVersion}",
-                "io");
-        }
-
-        if (snapshotState.Files is null)
-        {
-            throw new SeikoException($"generation {target} has no deployment state", "io");
-        }
-
-        foreach (var (relative, record) in snapshotState.Files)
-        {
-            if (record is null)
-            {
-                throw new SeikoException(
-                    $"generation {target} has no record for {relative}",
-                    "io");
-            }
-
-            if (!record.Adopted)
-            {
-                continue;
-            }
-
-            var snapshot = Path.Combine(
-                stateDirectory,
-                "generations",
-                target.ToString(),
-                "adopted",
-                relative);
-            if (!File.Exists(snapshot))
-            {
-                throw new SeikoException(
-                    $"generation {target} is missing the adopted snapshot of {relative}",
-                    "io");
-            }
-
-            // A damaged snapshot must not silently redefine the generation:
-            // the recorded digest is the authority, not today's bytes.
-            if (!string.Equals(Hashing.Sha256File(snapshot), record.Sha256, StringComparison.Ordinal))
-            {
-                throw new SeikoException(
-                    $"generation {target} snapshot of adopted file {relative} is corrupted",
-                    "checksum");
-            }
-
-            adoptedSnapshots[relative] = snapshot;
-        }
+        var targetSnapshot = ReadGenerationTarget(root, stateDirectory, target);
+        var snapshotLock = targetSnapshot.Lock;
+        var snapshotConfig = targetSnapshot.ConfigBytes;
+        var snapshotConfigInfo = targetSnapshot.Config;
+        var snapshotState = targetSnapshot.State;
+        var adoptedSnapshots = targetSnapshot.AdoptedSnapshots;
 
         var store = new Store(storePath);
         var sei = new List<DeployedSei>();
@@ -1955,29 +1865,16 @@ public sealed class SeikoClient
             throw new SeikoException("no previous generation to roll back to", "lock");
         }
 
-        var generationDirectory = Path.Combine(stateDirectory, "generations", target.ToString());
-        var snapshotLockPath = Path.Combine(generationDirectory, "lock.json");
-        var snapshotConfigPath = Path.Combine(generationDirectory, "seiko.conf");
-        var snapshotStatePath = Path.Combine(generationDirectory, "state.json");
-        if (!File.Exists(snapshotLockPath) || !File.Exists(snapshotConfigPath) || !File.Exists(snapshotStatePath))
-        {
-            throw new SeikoException($"generation {target} is incomplete", "lock");
-        }
-
-        // Reuse the real rollback's target validation so a preview cannot be
-        // greener than the operation it describes.
-        var snapshotLock = LockFile.Read(snapshotLockPath)
-            ?? throw new SeikoException($"generation {target} has no lock", "lock");
-        var snapshotState = JsonSerializer.Deserialize(
-            File.ReadAllBytes(snapshotStatePath),
-            SeikoJsonContext.Default.LocalState)
-            ?? throw new SeikoException($"generation {target} has no state", "io");
+        // The same target validation as list and the real rollback; a preview
+        // cannot be greener than the operation it describes (ADR-0040).
+        var targetSnapshot = ReadGenerationTarget(root, stateDirectory, target);
+        var snapshotLock = targetSnapshot.Lock;
+        var snapshotState = targetSnapshot.State;
 
         var currentConfig = File.Exists(Path.Combine(root, "seiko.conf"))
             ? File.ReadAllText(Path.Combine(root, "seiko.conf"))
             : "";
-        var snapshotConfig = File.ReadAllText(snapshotConfigPath);
-        var configChanges = DiffLines(currentConfig, snapshotConfig, "config");
+        var configChanges = DiffLines(currentConfig, targetSnapshot.ConfigText, "config");
 
         var currentLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
             ?? throw new SeikoException("no lock; run `sk sync`", "lock");
@@ -2145,89 +2042,139 @@ public sealed class SeikoClient
             }
 
             var createdAt = ReadGenerationMeta(path);
-            var snapshot = ReadGenerationSnapshot(path);
+            var valid = TryReadGenerationTarget(root, stateDirectory, number, out var snapshot);
 
             // The file count of the current generation comes from live state;
             // older ones from their own snapshot.
-            var fileCount = number == current ? files.Count : snapshot.FileCount;
+            var fileCount = number == current ? files.Count : snapshot?.State.Files?.Count ?? 0;
             generations.Add(new GenerationInfo(
                 number,
                 createdAt,
                 number == current,
-                snapshot.SeiCount,
+                snapshot?.Lock.Sei.Count ?? 0,
                 fileCount,
-                snapshot.Valid));
+                valid));
         }
 
         return generations.OrderByDescending(item => item.Generation).ToList();
     }
 
-    // Valid means "rollback could restore this generation": the same checks
-    // the real rollback performs on the target, except store presence, which
-    // can be repaired online (ADR-0040).
-    private static GenerationSnapshot ReadGenerationSnapshot(string directory)
+    // The read-only half of a rollback target, shared by `generation list`,
+    // `rollback --dry-run` and the real rollback so the three cannot drift
+    // (ADR-0040). Store presence is deliberately not checked: a missing
+    // artifact can be downloaded, so it does not make a snapshot invalid.
+    private sealed record GenerationTarget(
+        SeikoLock Lock,
+        LocalState State,
+        byte[] ConfigBytes,
+        string ConfigText,
+        SeikoConfig Config,
+        IReadOnlyDictionary<string, string> AdoptedSnapshots);
+
+    private static GenerationTarget ReadGenerationTarget(string root, string stateDirectory, int target)
+    {
+        var directory = Path.Combine(stateDirectory, "generations", target.ToString());
+        var lockPath = Path.Combine(directory, "lock.json");
+        if (!File.Exists(lockPath))
+        {
+            throw new SeikoException($"generation {target} not found", "lock");
+        }
+
+        var lockFile = LockFile.Read(lockPath)
+            ?? throw new SeikoException($"generation {target} has no lock", "lock");
+
+        var configPath = Path.Combine(directory, "seiko.conf");
+        PathSafety.EnsureNoLinks(
+            root,
+            Path.GetRelativePath(root, configPath).Replace('\\', '/'));
+        if (!File.Exists(configPath))
+        {
+            throw new SeikoException($"generation {target} has no config", "io");
+        }
+
+        var configBytes = File.ReadAllBytes(configPath);
+        var configText = File.ReadAllText(configPath);
+        var config = ConfigLoader.LoadPath(configPath);
+        var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+        if (!string.Equals(lockFile.Target.Rid, rid, StringComparison.Ordinal))
+        {
+            throw new SeikoException(
+                $"generation {target} config selects rid '{rid}', but its lock targets '{lockFile.Target.Rid}'",
+                "io");
+        }
+
+        // The target generation's own state is what defines its deployment,
+        // so a generation without one cannot be restored faithfully.
+        var statePath = Path.Combine(directory, "state.json");
+        if (!File.Exists(statePath))
+        {
+            throw new SeikoException($"generation {target} has no state", "io");
+        }
+
+        var state = JsonSerializer.Deserialize(
+            File.ReadAllBytes(statePath),
+            SeikoJsonContext.Default.LocalState)
+            ?? throw new SeikoException($"generation {target} has no state", "io");
+        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            throw new SeikoException(
+                $"generation {target} has unsupported state schemaVersion {state.SchemaVersion}",
+                "io");
+        }
+
+        if (state.Files is null)
+        {
+            throw new SeikoException($"generation {target} has no deployment state", "io");
+        }
+
+        var adoptedSnapshots = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (relative, record) in state.Files)
+        {
+            if (record is null)
+            {
+                throw new SeikoException(
+                    $"generation {target} has no record for {relative}",
+                    "io");
+            }
+
+            if (!record.Adopted)
+            {
+                continue;
+            }
+
+            var snapshot = Path.Combine(directory, "adopted", relative);
+            if (!File.Exists(snapshot))
+            {
+                throw new SeikoException(
+                    $"generation {target} is missing the adopted snapshot of {relative}",
+                    "io");
+            }
+
+            // A damaged snapshot must not silently redefine the generation:
+            // the recorded digest is the authority, not today's bytes.
+            if (!string.Equals(Hashing.Sha256File(snapshot), record.Sha256, StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"generation {target} snapshot of adopted file {relative} is corrupted",
+                    "checksum");
+            }
+
+            adoptedSnapshots[relative] = snapshot;
+        }
+
+        return new GenerationTarget(lockFile, state, configBytes, configText, config, adoptedSnapshots);
+    }
+
+    private static bool TryReadGenerationTarget(
+        string root,
+        string stateDirectory,
+        int target,
+        out GenerationTarget? value)
     {
         try
         {
-            var statePath = Path.Combine(directory, "state.json");
-            if (!File.Exists(statePath))
-            {
-                return GenerationSnapshot.Invalid;
-            }
-
-            var state = JsonSerializer.Deserialize(
-                File.ReadAllBytes(statePath),
-                SeikoJsonContext.Default.LocalState);
-            if (state is null
-                || state.SchemaVersion != LocalState.CurrentSchemaVersion
-                || state.Files is null)
-            {
-                return GenerationSnapshot.Invalid;
-            }
-
-            var lockFile = LockFile.Read(Path.Combine(directory, "lock.json"));
-            if (lockFile is null)
-            {
-                return GenerationSnapshot.Invalid;
-            }
-
-            var configPath = Path.Combine(directory, "seiko.conf");
-            if (!File.Exists(configPath))
-            {
-                return GenerationSnapshot.Invalid;
-            }
-
-            var config = ConfigLoader.LoadPath(configPath);
-            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-            if (!string.Equals(lockFile.Target.Rid, rid, StringComparison.Ordinal))
-            {
-                return GenerationSnapshot.Invalid;
-            }
-
-            foreach (var (relative, record) in state.Files)
-            {
-                if (record is null)
-                {
-                    return GenerationSnapshot.Invalid;
-                }
-
-                if (!record.Adopted)
-                {
-                    continue;
-                }
-
-                var snapshot = Path.Combine(directory, "adopted", relative);
-                if (!File.Exists(snapshot)
-                    || !string.Equals(
-                        Hashing.Sha256File(snapshot),
-                        record.Sha256,
-                        StringComparison.Ordinal))
-                {
-                    return GenerationSnapshot.Invalid;
-                }
-            }
-
-            return new GenerationSnapshot(true, lockFile.Sei.Count, state.Files.Count);
+            value = ReadGenerationTarget(root, stateDirectory, target);
+            return true;
         }
         catch (SeikoException)
         {
@@ -2242,12 +2189,8 @@ public sealed class SeikoClient
         {
         }
 
-        return GenerationSnapshot.Invalid;
-    }
-
-    private readonly record struct GenerationSnapshot(bool Valid, int SeiCount, int FileCount)
-    {
-        public static GenerationSnapshot Invalid => new(false, 0, 0);
+        value = null;
+        return false;
     }
 
     private static DateTimeOffset? ReadGenerationMeta(string directory)

@@ -131,6 +131,22 @@ public sealed class GenerationTests
     }
 
     [Fact]
+    public void Preview_FailsOnAnUnsupportedStateSchema()
+    {
+        using var fixture = Installed();
+        Upgrade(fixture);
+        var path = Path.Combine(fixture.Root, ".seiko", "generations", "1", "state.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["schemaVersion"] = 999;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("io", error.Code);
+    }
+
+    [Fact]
     public void Preview_FailsOnAnIncompleteTarget()
     {
         using var fixture = Installed();
