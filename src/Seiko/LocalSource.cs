@@ -178,7 +178,7 @@ public sealed class LocalSource : ISeiSource
         return Path.GetFullPath(Path.Combine(BaseDirectory, source.Url));
     }
 
-    private static string ResolvePath(string value, string root)
+    internal static string ResolvePath(string value, string root)
     {
         if (value.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
         {

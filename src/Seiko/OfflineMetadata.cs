@@ -204,11 +204,9 @@ internal static class OfflineMetadata
 
             // Local sources read directly; a missing file simply lets a later
             // source answer, matching the online walk.
-            var localIndexPath = LocalIndexPath(source, root);
-            var localIndex = localIndexPath is null
-                ? null
-                : MetadataCache.TryRead(localIndexPath, SeikoJsonContext.Default.IndexRoot);
-            if (localIndexPath is null || localIndex is null)
+            var localIndexPath = LocalSource.ResolvePath(source.Index, root);
+            var localIndex = MetadataCache.TryRead(localIndexPath, SeikoJsonContext.Default.IndexRoot);
+            if (localIndex is null)
             {
                 continue;
             }
@@ -242,18 +240,6 @@ internal static class OfflineMetadata
                 + "Run the command once online, then retry offline",
                 "source");
         }
-    }
-
-    private static string? LocalIndexPath(SourceConfig source, string root)
-    {
-        if (source.Index.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-        {
-            return new Uri(source.Index).LocalPath;
-        }
-
-        return Path.IsPathRooted(source.Index)
-            ? source.Index
-            : Path.GetFullPath(Path.Combine(root, source.Index));
     }
 
     // Local sources are always readable; their files still contribute relation
