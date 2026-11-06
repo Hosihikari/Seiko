@@ -109,10 +109,9 @@ internal static class ExternalFiles
             }
         }
 
-        var collision = collisions.Validate().FirstOrDefault();
-        if (collision is not null)
+        if (collisions.TryFind(out var collision))
         {
-            throw Collision(name, collision, code);
+            throw Collision(name, collision!, code);
         }
 
         // The same layered budget as artifact extraction (ADR-0024): many
@@ -226,6 +225,16 @@ internal static class ExternalFiles
 
     private static void ValidateTarget(string path, string name, string code)
     {
+        // External targets go through the same ancestor lookups as archive
+        // names, whose cost is quadratic in length, so they need the same
+        // length and depth bounds (ADR-0024).
+        if (ArchiveLimits.ExceedsEntryNameLimits(path))
+        {
+            throw new SeikoException(
+                $"{name}: external target path is too long or too deep '{path}'",
+                code);
+        }
+
         if (!StoreDigests.IsSafeRelativePath(path))
         {
             throw new SeikoException($"{name}: unsafe external target path '{path}'", code);

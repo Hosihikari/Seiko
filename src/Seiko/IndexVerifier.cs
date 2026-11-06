@@ -1143,12 +1143,11 @@ public static class IndexVerifier
                 collisions.Add(name);
             }
 
-            var archiveCollision = collisions.Validate().FirstOrDefault();
-            if (archiveCollision is not null)
+            if (collisions.TryFind(out var archiveCollision))
             {
                 context.Error(
                     "artifact-path",
-                    artifactCollision(reference, archiveCollision),
+                    artifactCollision(reference, archiveCollision!),
                     reference.Path);
                 return;
             }
@@ -1328,26 +1327,25 @@ public static class IndexVerifier
                     context.Error("manifest-external", ex.Message, reference.Path);
                 }
 
+                // External targets must not collide with the archive's own
+                // names under the same folded rules (ADR-0024). The archive
+                // set already has no internal collisions, so a per-target
+                // lookup is enough and stays linear.
                 var declared = (manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path)
                     .Concat((manifest.Artifact.ExternalArchives ?? [])
                         .SelectMany(archive => archive.Members)
                         .Select(member => member.Path));
                 foreach (var target in declared)
                 {
-                    // The deployment folds case and Unicode normalization and
-                    // rejects file/directory overlaps; a package that would
-                    // fail there must not pass here (ADR-0024).
-                    collisions.Add(target);
-                }
-
-                foreach (var targetCollision in collisions.Validate())
-                {
-                    context.Error(
-                        "manifest-external",
-                        targetCollision.Kind == PathCollisionKind.SamePath
-                            ? $"{prefix}: external target path '{targetCollision.Other}' also exists inside the artifact"
-                            : $"{prefix}: path '{targetCollision.Other}' is both a file and a directory of another path",
-                        reference.Path);
+                    if (collisions.TryFindCollisionWith(target, out var targetCollision))
+                    {
+                        context.Error(
+                            "manifest-external",
+                            targetCollision!.Kind == PathCollisionKind.SamePath
+                                ? $"{prefix}: external target path '{target}' also exists inside the artifact as '{targetCollision.Other}'"
+                                : $"{prefix}: path '{targetCollision.Other}' is both a file and a directory of external target '{target}'",
+                            reference.Path);
+                    }
                 }
             }
 

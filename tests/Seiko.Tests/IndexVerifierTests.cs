@@ -790,6 +790,59 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsManyAncestorPairsWithoutMaterializingThemAll()
+    {
+        // 300 nested files plus 300 leaves: every nested file is a directory
+        // of every leaf, so a full pair list would be ~90,000 entries. Only
+        // one error is needed to reject.
+        using var fixture = new Fixture();
+        var nested = string.Join("/", Enumerable.Repeat("a", 300));
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        var cursor = "";
+        for (var i = 0; i < 300; i++)
+        {
+            cursor = cursor.Length == 0 ? "a" : cursor + "/a";
+            files[cursor] = "x";
+        }
+
+        for (var i = 0; i < 300; i++)
+        {
+            files[nested + $"/leaf{i}.txt"] = "x";
+        }
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = files }],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("artifact-path", finding.Code);
+        Assert.Contains("both a file and a directory", finding.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Verify_RejectsAnExternalTargetDeeperThanTheArchiveLimit()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        var deep = string.Join("/", Enumerable.Repeat("d", 600));
+        sei.Versions[0].Artifacts[0].ExternalFiles =
+        [
+            new ExternalFile { Path = deep + ".bin", Url = "https://vendor.invalid/x", Sha256 = new string('a', 64) },
+        ];
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-external");
+    }
+
+    [Fact]
     public void Verify_AcceptsManyDeepPaths()
     {
         // Deep paths used to cost one retained string per ancestor; the index
