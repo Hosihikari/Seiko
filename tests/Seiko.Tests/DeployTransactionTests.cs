@@ -68,10 +68,10 @@ public sealed class DeployTransactionTests
 
     // Deployment order comes from directory enumeration, so the tests pick
     // whichever of the two targets has not been published yet instead of
-    // assuming one. Returns the injected relative path.
-    private static string InjectAfterFirstFile(Fixture fixture)
+    // assuming one. The one-element array is filled when the callback runs.
+    private static string[] InjectAfterFirstFile(Fixture fixture)
     {
-        var target = "";
+        var target = new string[1];
         Deployer.AppliedForTests.Value = count =>
         {
             if (count != 1)
@@ -82,7 +82,7 @@ public sealed class DeployTransactionTests
             var pending = new[] { "a.txt", "b.txt" }
                 .First(name => !File.Exists(Path.Combine(fixture.Root, name)));
             File.WriteAllText(Path.Combine(fixture.Root, pending), "external-user-content");
-            target = pending;
+            target[0] = pending;
         };
         return target;
     }
@@ -112,10 +112,9 @@ public sealed class DeployTransactionTests
     public void Sync_DoesNotOverwriteAFileCreatedDuringTheDeployment()
     {
         using var fixture = TwoFileFixture();
-        var injected = "";
+        var injected = InjectAfterFirstFile(fixture);
         try
         {
-            injected = InjectAfterFirstFile(fixture);
             var error = Assert.Throws<SeikoException>(
                 () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
             Assert.Contains("appeared during the deployment", error.Message, StringComparison.Ordinal);
@@ -127,8 +126,9 @@ public sealed class DeployTransactionTests
 
         // Rollback keeps the racing content; the new file is the deployer's
         // leftover and goes away with the transaction.
-        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected)));
-        Assert.False(File.Exists(Path.Combine(fixture.Root, Other(injected))));
+        Assert.True(injected[0] is not null, "callback did not run");
+        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected[0])));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, Other(injected[0]))));
         Assert.Null(new SeikoClient().ReadLock(fixture.Root));
     }
 
@@ -155,10 +155,9 @@ public sealed class DeployTransactionTests
     public void Sync_AdoptKeepsAFileCreatedDuringTheDeployment()
     {
         using var fixture = TwoFileFixture();
-        var injected = "";
+        var injected = InjectAfterFirstFile(fixture);
         try
         {
-            injected = InjectAfterFirstFile(fixture);
             new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, adopt: true);
         }
         finally
@@ -167,11 +166,11 @@ public sealed class DeployTransactionTests
         }
 
         Assert.Equal("package-a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
-        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected)));
+        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected[0])));
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
             SeikoJsonContext.Default.LocalState)!;
-        Assert.True(state.Files[injected].Adopted);
+        Assert.True(state.Files[injected[0]].Adopted);
 
         // The adopted content is in the generation snapshot for rollback.
         var snapshot = Path.Combine(
@@ -180,7 +179,7 @@ public sealed class DeployTransactionTests
             "generations",
             state.Generation.ToString(),
             "adopted",
-            injected);
+            injected[0]);
         Assert.Equal("external-user-content", File.ReadAllText(snapshot));
     }
 
