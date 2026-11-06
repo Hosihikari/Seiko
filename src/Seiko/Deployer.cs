@@ -554,15 +554,19 @@ public static class Deployer
                 File.Move(temp, destination);
                 return;
             }
-            catch (IOException) when (File.Exists(destination))
+            catch (IOException) when (attempt < 8 && !File.Exists(destination))
+            {
+                // The winner removed the file again before the filter ran;
+                // retry the same non-overwriting move.
+                continue;
+            }
+            catch (IOException)
             {
             }
 
-            if (!transaction.SnapshotLateCreation(relative))
+            if (!File.Exists(destination))
             {
-                // Created, then removed again while it was being classified.
-                // Re-running the non-overwriting move is cheaper and keeps the
-                // final decision atomic; give up only on a livelock.
+                // Vanished after the failed move; retry rather than overwrite.
                 if (attempt < 8)
                 {
                     continue;
@@ -570,6 +574,13 @@ public static class Deployer
 
                 File.Move(temp, destination);
                 return;
+            }
+
+            if (!transaction.SnapshotLateCreation(relative))
+            {
+                // Gone while it was being backed up; the next attempt decides
+                // again instead of assuming the path is free.
+                continue;
             }
 
             if (!adopt && !force)
