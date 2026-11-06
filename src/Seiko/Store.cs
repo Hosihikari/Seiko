@@ -11,6 +11,19 @@ public sealed record StoredSei(
 
 public sealed class Store
 {
+    // Visible to tests: how many EnsureAsync calls are inside the store at
+    // once. Scheduled downloads must stay bounded by --jobs.
+    private static int _activeEnsures;
+    private static int _maxActiveEnsures;
+
+    internal static int MaxActiveEnsures => Volatile.Read(ref _maxActiveEnsures);
+
+    internal static void ResetEnsureStats()
+    {
+        Volatile.Write(ref _activeEnsures, 0);
+        Volatile.Write(ref _maxActiveEnsures, 0);
+    }
+
     public string Root { get; }
 
     public Store(string root)
@@ -40,6 +53,30 @@ public sealed class Store
 
     public StoredSei Ensure(ResolvedSei sei, DownloadSession session, CancellationToken cancellationToken)
         => EnsureAsync(sei, session, cancellationToken).GetAwaiter().GetResult();
+
+    // Same as EnsureAsync plus the concurrency statistic the scheduling bound
+    // is tested with.
+    internal async Task<StoredSei> EnsureCountedAsync(
+        ResolvedSei sei,
+        DownloadSession session,
+        CancellationToken cancellationToken)
+    {
+        var active = Interlocked.Increment(ref _activeEnsures);
+        int max;
+        while (active > (max = Volatile.Read(ref _maxActiveEnsures))
+            && Interlocked.CompareExchange(ref _maxActiveEnsures, active, max) != max)
+        {
+        }
+
+        try
+        {
+            return await EnsureAsync(sei, session, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeEnsures);
+        }
+    }
 
     public async Task<StoredSei> EnsureAsync(
         ResolvedSei sei,

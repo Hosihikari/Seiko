@@ -364,6 +364,33 @@ public sealed class DownloadTests
         Assert.Equal("usage", error.Code);
     }
 
+    [Fact]
+    public void Sync_BoundsConcurrentStoreEnsuresByJobs()
+    {
+        using var fixture = new Fixture();
+        var names = new List<string>();
+        for (var i = 0; i < 8; i++)
+        {
+            var name = $"p{i}";
+            names.Add(name);
+            fixture.AddSei(name, new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [name + ".txt"] = name } }],
+            });
+        }
+
+        fixture.WriteConfig("win-x64", names.Select(name => new SpecFixture(name)).ToArray());
+        Store.ResetEnsureStats();
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, jobs: 2);
+
+        Assert.True(
+            Store.MaxActiveEnsures <= 2,
+            $"at most two store ensures may run at once, saw {Store.MaxActiveEnsures}");
+        Assert.Equal(8, new SeikoClient().ReadLock(fixture.Root)!.Sei.Count);
+    }
+
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
     {
         public void Report(T value) => report(value);

@@ -586,12 +586,20 @@ public sealed class SeikoClient
         CancellationTokenSource downloadCts)
     {
         Exception? firstError = null;
+        // Starting every EnsureAsync at once opens one artifact lock per
+        // package before any HTTP slot is taken, so the handle peak would grow
+        // with the graph regardless of --jobs (ADR-0017 bounds requests, not
+        // handles). Admit only as many ensures as there are jobs; the rest
+        // enter as earlier ones finish.
+        var bound = Math.Max(1, session.Jobs);
+        using var slots = new SemaphoreSlim(bound, bound);
         var tasks = resolved
             .Select(async sei =>
             {
+                await slots.WaitAsync(downloadCts.Token).ConfigureAwait(false);
                 try
                 {
-                    return (Sei: sei, Stored: await store.EnsureAsync(sei, session, downloadCts.Token)
+                    return (Sei: sei, Stored: await store.EnsureCountedAsync(sei, session, downloadCts.Token)
                         .ConfigureAwait(false));
                 }
                 catch (Exception ex)
@@ -599,6 +607,10 @@ public sealed class SeikoClient
                     Interlocked.CompareExchange(ref firstError, ex, null);
                     downloadCts.Cancel();
                     throw;
+                }
+                finally
+                {
+                    slots.Release();
                 }
             })
             .ToArray();
