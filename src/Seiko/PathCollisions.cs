@@ -8,48 +8,59 @@ namespace Seiko;
 // the external declarations share this so a package cannot pass one check and
 // fail the next.
 //
-// Callers collect every path, then validate once. The check sorts by the
-// normalized key with the separator ordered below every other character, so a
-// file and its descendant are always adjacent; this keeps only one string per
-// path instead of one per ancestor, which used to grow with the square of the
-// path depth.
+// Every path is kept once in a list; a dictionary of normalized keys to the
+// first index answers both equality and ancestor lookups, so the rules can
+// never disagree with each other. Ancestors are found through a span lookup,
+// which slices without allocating, so no ancestor string is retained (the
+// former per-ancestor keys grew with the square of the path depth).
 internal sealed class PathCollisions
 {
+    private readonly Dictionary<string, int> _firstByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Entry> _items = [];
 
     public static string Key(string path) => path.Normalize(NormalizationForm.FormC);
 
-    public void Add(string path) => _items.Add(new Entry(Key(path), path, _items.Count));
+    public void Add(string path)
+    {
+        var key = Key(path);
+        _firstByKey.TryAdd(key, _items.Count);
+        _items.Add(new Entry(key, path));
+    }
 
     // Collisions in the order the later participant was added; the record's
-    // Other is always the file side.
+    // Other is always the file side. Additions are complete by now, so an
+    // ancestor may have been added after its descendant; both directions are
+    // reported once, keyed by the later index.
     public IReadOnlyList<PathCollision> Validate()
     {
-        if (_items.Count < 2)
-        {
-            return [];
-        }
-
-        var sorted = _items.ToArray();
-        Array.Sort(sorted, Compare);
         var found = new List<(int Later, PathCollision Collision)>();
-        for (var i = 0; i + 1 < sorted.Length; i++)
+        var lookup = _firstByKey.GetAlternateLookup<ReadOnlySpan<char>>();
+        var reported = new HashSet<(int, int, PathCollisionKind)>();
+        for (var index = 0; index < _items.Count; index++)
         {
-            var left = sorted[i];
-            var right = sorted[i + 1];
-            if (string.Equals(left.Key, right.Key, StringComparison.OrdinalIgnoreCase))
+            var entry = _items[index];
+
+            // Same path modulo case or normalization, reported against the
+            // earliest occurrence. Repeats keep participating below.
+            var first = _firstByKey[entry.Key];
+            if (first != index && reported.Add((first, index, PathCollisionKind.SamePath)))
             {
-                var (first, second) = left.Index <= right.Index ? (left, right) : (right, left);
-                found.Add((second.Index, new PathCollision(first.Path, PathCollisionKind.SamePath)));
-                continue;
+                found.Add((
+                    Math.Max(first, index),
+                    new PathCollision(_items[first].Path, PathCollisionKind.SamePath)));
             }
 
-            if (right.Key.Length > left.Key.Length
-                && right.Key[left.Key.Length] == '/'
-                && right.Key.AsSpan(0, left.Key.Length).Equals(left.Key.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            for (var i = 0; i < entry.Key.Length; i++)
             {
-                // left is the shorter key, so it is always the file side.
-                found.Add((Math.Max(left.Index, right.Index), new PathCollision(left.Path, PathCollisionKind.Prefix)));
+                if (entry.Key[i] == '/'
+                    && lookup.TryGetValue(entry.Key.AsSpan(0, i), out var file)
+                    && file != index
+                    && reported.Add((file, index, PathCollisionKind.Prefix)))
+                {
+                    found.Add((
+                        Math.Max(file, index),
+                        new PathCollision(_items[file].Path, PathCollisionKind.Prefix)));
+                }
             }
         }
 
@@ -59,37 +70,7 @@ internal sealed class PathCollisions
             .ToList();
     }
 
-    // Ordinal ignore-case, except that '/' sorts below every other character
-    // so "dir/x" sits next to "dir" and not after "dir!". Comparison is per
-    // code point: upper-casing UTF-16 units one at a time would not fold
-    // supplementary-plane letters, which OrdinalIgnoreCase does fold, and the
-    // equal pair could then be sorted apart.
-    private static int Compare(Entry left, Entry right)
-    {
-        var leftIndex = 0;
-        var rightIndex = 0;
-        while (leftIndex < left.Key.Length && rightIndex < right.Key.Length)
-        {
-            Rune.DecodeFromUtf16(left.Key.AsSpan(leftIndex), out var a, out var aLength);
-            Rune.DecodeFromUtf16(right.Key.AsSpan(rightIndex), out var b, out var bLength);
-            var leftOrder = Order(a);
-            var rightOrder = Order(b);
-            if (leftOrder != rightOrder)
-            {
-                return leftOrder < rightOrder ? -1 : 1;
-            }
-
-            leftIndex += aLength;
-            rightIndex += bLength;
-        }
-
-        return (left.Key.Length - leftIndex).CompareTo(right.Key.Length - rightIndex);
-    }
-
-    private static int Order(Rune value)
-        => value.Value == '/' ? 0 : Rune.ToUpperInvariant(value).Value;
-
-    private readonly record struct Entry(string Key, string Path, int Index);
+    private readonly record struct Entry(string Key, string Path);
 }
 
 internal enum PathCollisionKind

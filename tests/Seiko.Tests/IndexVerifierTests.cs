@@ -733,6 +733,63 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsLongSThatOrdinalIgnoreCaseKeepsDistinct()
+    {
+        // U+017F upper-cases to 'S' but OrdinalIgnoreCase does not equate them,
+        // so an upper-folding sort would hide the S/s pair behind it.
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["S.txt"] = "upper",
+                        ["ſ.txt"] = "long-s",
+                        ["s.txt"] = "lower",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
+    public void Verify_RejectsADeepDuplicateThatSortsAfterItsFile()
+    {
+        // The parent is added after its child by the archive order, so a
+        // one-directional "earlier index" check would miss it.
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["dir/child.txt"] = "child",
+                        ["dir"] = "flat",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
     public void Verify_AcceptsManyDeepPaths()
     {
         // Deep paths used to cost one retained string per ancestor; the index
