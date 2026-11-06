@@ -49,11 +49,7 @@ public static class CatalogFile
             // Search uses the same helper for its per-name fallback, so the
             // derived catalog cannot change the displayed version.
             var latest = SeikoClient.LatestVersion(effective);
-            var advisory = versions
-                .Select(entry => entry?.Advisory)
-                .Where(entry => entry is not null)
-                .OrderByDescending(Rank)
-                .FirstOrDefault();
+            var advisory = MostSevere(versions);
             entries.Add(new CatalogEntry
             {
                 Name = effective.Name ?? "",
@@ -174,6 +170,16 @@ public static class CatalogFile
             }
         }
     }
+
+    // The package's most severe advisory across all versions; search uses the
+    // same helper for its per-name fallback, so a catalog's presence cannot
+    // change the displayed security signal.
+    internal static AdvisoryInfo? MostSevere(IEnumerable<SeiVersionEntry?> versions)
+        => versions
+            .Select(entry => entry?.Advisory)
+            .Where(advisory => advisory is not null)
+            .OrderByDescending(Rank)
+            .FirstOrDefault();
 
     private static int Rank(AdvisoryInfo? advisory)
         => advisory?.Severity?.Trim().ToLowerInvariant() switch

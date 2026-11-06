@@ -56,6 +56,33 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public void Search_CatalogAndFallbackReportTheSamePackageAdvisory()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+            Advisory = new AdvisoryInfo { Severity = "critical", Url = "https://example.invalid/a" },
+        });
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var fallback = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
+        WriteCatalog(fixture, Read(fixture, "hello"));
+        var catalogued = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
+
+        Assert.Equal("2.0.0", fallback.Version);
+        Assert.Equal("critical", fallback.Advisory?.Severity);
+        Assert.Equal(fallback.Version, catalogued.Version);
+        Assert.Equal(fallback.Advisory?.Severity, catalogued.Advisory?.Severity);
+    }
+
+    [Fact]
     public void OfflineSearch_KeepsEachNamesSource()
     {
         using var fixture = new Fixture();

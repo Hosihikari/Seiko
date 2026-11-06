@@ -2391,7 +2391,9 @@ public sealed class SeikoClient
                     sei.Project?.Tags,
                     sei.Project?.License,
                     sei.Deprecated,
-                    latest.Advisory)));
+                    // Package-wide, matching the catalog, not just the latest
+                    // version; otherwise a derived file changes the answer.
+                    CatalogFile.MostSevere(sei.Versions))));
             }
         }
 
