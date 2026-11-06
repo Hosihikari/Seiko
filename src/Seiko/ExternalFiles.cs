@@ -31,18 +31,9 @@ internal static class ExternalFiles
                 throw new SeikoException($"{name}: duplicate external target path '{file.Path}'", code);
             }
 
-            if (!collisions.TryAdd(file.Path, out var otherTarget))
+            if (!collisions.TryAdd(file.Path, out var fileCollision))
             {
-                throw new SeikoException(
-                    $"{name}: external target path '{file.Path}' also exists as '{otherTarget}' by case or Unicode normalization",
-                    code);
-            }
-
-            if (collisions.FilePrefixOf(file.Path) is { } filePrefix)
-            {
-                throw new SeikoException(
-                    $"{name}: path '{filePrefix}' is both a file and a directory of external target '{file.Path}'",
-                    code);
+                throw Collision(name, file.Path, fileCollision!, code);
             }
 
             EnsureHttps(file.Url, $"external file '{file.Path}'", name, code);
@@ -121,18 +112,9 @@ internal static class ExternalFiles
                         code);
                 }
 
-                if (!collisions.TryAdd(member.Path, out var otherMemberTarget))
+                if (!collisions.TryAdd(member.Path, out var memberCollision))
                 {
-                    throw new SeikoException(
-                        $"{name}: external target path '{member.Path}' also exists as '{otherMemberTarget}' by case or Unicode normalization",
-                        code);
-                }
-
-                if (collisions.FilePrefixOf(member.Path) is { } memberPrefix)
-                {
-                    throw new SeikoException(
-                        $"{name}: path '{memberPrefix}' is both a file and a directory of external target '{member.Path}'",
-                        code);
+                    throw Collision(name, member.Path, memberCollision!, code);
                 }
             }
         }
@@ -196,6 +178,13 @@ internal static class ExternalFiles
 
     public static int Count(ArtifactManifest? artifact)
         => artifact is null ? 0 : (artifact.ExternalFiles?.Count ?? 0) + (artifact.ExternalArchives?.Count ?? 0);
+
+    private static SeikoException Collision(string name, string path, PathCollision collision, string code)
+        => new(
+            collision.Kind == PathCollisionKind.SamePath
+                ? $"{name}: external target path '{path}' also exists as '{collision.Other}' by case or Unicode normalization"
+                : $"{name}: path '{collision.Other}' is both a file and a directory of external target '{path}'",
+            code);
 
     private static string Host(string url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "";

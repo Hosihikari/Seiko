@@ -683,6 +683,56 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsExternalFileWhereTheZipHasADirectory()
+    {
+        // The zip has dir/child.txt; the external target is dir, so the
+        // external file needs dir to be a file. Order must not matter.
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["dir/child.txt"] = "child" },
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture("dir", "https://vendor.invalid/dir", "data"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "manifest-external"
+            && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Verify_RejectsExternalTargetsDeclaredChildFirstThenParent()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].ExternalFiles =
+        [
+            new ExternalFile { Path = "dir/child.txt", Url = "https://vendor.invalid/c", Sha256 = new string('a', 64) },
+            new ExternalFile { Path = "dir", Url = "https://vendor.invalid/d", Sha256 = new string('b', 64) },
+        ];
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "artifact-external"
+            && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsReportsForeignLocation()
     {
         using var fixture = NewFixture();

@@ -305,17 +305,12 @@ public sealed class Store
             .Concat((artifact.ExternalArchives ?? []).SelectMany(archive => archive.Members).Select(member => member.Path));
         foreach (var target in targets)
         {
-            if (!collisions.TryAdd(target, out var other))
+            if (!collisions.TryAdd(target, out var collision))
             {
                 throw new SeikoException(
-                    $"{name}: external target path '{target}' also exists inside the artifact as '{other}'",
-                    "io");
-            }
-
-            if (collisions.FilePrefixOf(target) is { } prefix)
-            {
-                throw new SeikoException(
-                    $"{name}: path '{prefix}' is both a file and a directory of external target '{target}'",
+                    collision!.Kind == PathCollisionKind.SamePath
+                        ? $"{name}: external target path '{target}' also exists inside the artifact as '{collision.Other}'"
+                        : $"{name}: path '{collision.Other}' is both a file and a directory of external target '{target}'",
                     "io");
             }
         }
