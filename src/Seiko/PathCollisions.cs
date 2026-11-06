@@ -8,9 +8,15 @@ namespace Seiko;
 // the external declarations share this so a package cannot pass one check and
 // fail the next. Both directions are checked, because the order in which the
 // two colliding paths are declared is irrelevant.
+//
+// A package may carry 100,000 entries, so the reverse direction (an existing
+// descendant below the new path) cannot scan every added path. Every add
+// records its ancestor directories with one example descendant instead; the
+// check then costs the path depth.
 internal sealed class PathCollisions
 {
     private readonly Dictionary<string, string> _byKey = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _descendants = new(StringComparer.OrdinalIgnoreCase);
 
     public static string Key(string path) => path.Normalize(NormalizationForm.FormC);
 
@@ -28,25 +34,33 @@ internal sealed class PathCollisions
 
         for (var i = 0; i < key.Length; i++)
         {
-            if (key[i] == '/' && _byKey.TryGetValue(key[..i], out var filePrefix))
+            if (key[i] != '/')
+            {
+                continue;
+            }
+
+            if (_byKey.TryGetValue(key[..i], out var filePrefix))
             {
                 collision = new PathCollision(filePrefix, PathCollisionKind.FileBlocksDirectory);
                 return false;
             }
         }
 
-        var prefix = key + "/";
-        foreach (var (candidate, original) in _byKey)
+        if (_descendants.TryGetValue(key, out var descendant))
         {
-            if (candidate.Length > prefix.Length
-                && candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                collision = new PathCollision(original, PathCollisionKind.DirectoryBlocksFile);
-                return false;
-            }
+            collision = new PathCollision(descendant, PathCollisionKind.DirectoryBlocksFile);
+            return false;
         }
 
         _byKey[key] = path;
+        for (var i = 0; i < key.Length; i++)
+        {
+            if (key[i] == '/')
+            {
+                _descendants.TryAdd(key[..i], path);
+            }
+        }
+
         collision = null;
         return true;
     }

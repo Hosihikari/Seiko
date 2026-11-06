@@ -429,19 +429,28 @@ public sealed class WorkflowTests
     public void Outdated_KeepsPrereleasePermissionWhenRangesIntersect()
     {
         using var fixture = new Fixture();
+        // lib is installed at a stable version; app's artifact requires a
+        // stable range, the direct range names a prerelease endpoint. Only
+        // their intersection filters versions, and that intersection has no
+        // prerelease endpoint, so the permission must come from the original
+        // constraints.
         fixture.AddSei("lib", new VersionFixture
         {
-            Version = "1.0.0-alpha",
-            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "alpha" } }],
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "stable" } }],
         });
         fixture.AddSei("app", new VersionFixture
         {
             Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    Dependencies = [new DepFixture("lib", "[2.0.0,3.0.0)")],
+                },
+            ],
         });
-        // The direct range names a prerelease; intersecting it with a stable
-        // range drops the alpha endpoint, so the permission must come from the
-        // original constraints.
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("lib", "[1.0.0-alpha,3.0.0)"),

@@ -16,6 +16,16 @@ internal static class ExternalFiles
             return;
         }
 
+        // Cheap pre-check before the per-target work: declarations alone may
+        // already exceed the entry budget (ADR-0024).
+        var declaredTargets = files.Count + archives.Sum(archive => archive.Members.Count);
+        if (declaredTargets > ArchiveLimits.MaxEntries)
+        {
+            throw new SeikoException(
+                $"{name}: external declarations name {declaredTargets} targets; the limit is {ArchiveLimits.MaxEntries}",
+                code);
+        }
+
         var paths = new HashSet<string>(StringComparer.Ordinal);
         // Deployment folds case and Unicode normalization and rejects
         // file/directory overlaps, so declarations must already be unique

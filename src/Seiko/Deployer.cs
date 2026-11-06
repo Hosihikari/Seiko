@@ -535,8 +535,9 @@ public static class Deployer
     }
 
     // Publish a target that the plan recorded as absent without overwriting:
-    // the rename itself is the conflict check. If the file appeared between
-    // the last look and here, apply the same rule as the check would have.
+    // the rename itself is the conflict check. A failure only means somebody
+    // created the path; if it vanished again since, the same non-overwriting
+    // move is retried instead of switching to an overwriting one.
     private static void PublishCreated(
         string temp,
         string destination,
@@ -546,36 +547,47 @@ public static class Deployer
         bool force,
         List<string> lateAdoptions)
     {
-        try
+        for (var attempt = 0; ; attempt++)
         {
-            File.Move(temp, destination);
-            return;
-        }
-        catch (IOException) when (File.Exists(destination))
-        {
-            // Another writer won the race.
-        }
+            try
+            {
+                File.Move(temp, destination);
+                return;
+            }
+            catch (IOException) when (File.Exists(destination))
+            {
+            }
 
-        if (!transaction.SnapshotLateCreation(relative))
-        {
+            if (!transaction.SnapshotLateCreation(relative))
+            {
+                // Created, then removed again while it was being classified.
+                // Re-running the non-overwriting move is cheaper and keeps the
+                // final decision atomic; give up only on a livelock.
+                if (attempt < 8)
+                {
+                    continue;
+                }
+
+                File.Move(temp, destination);
+                return;
+            }
+
+            if (!adopt && !force)
+            {
+                throw new SeikoException(
+                    $"deployment conflict: unmanaged path {relative} appeared during the deployment; pass --adopt to keep it or --force to overwrite it",
+                    "deploy");
+            }
+
+            if (adopt)
+            {
+                lateAdoptions.Add(relative);
+                return;
+            }
+
             File.Move(temp, destination, overwrite: true);
             return;
         }
-
-        if (!adopt && !force)
-        {
-            throw new SeikoException(
-                $"deployment conflict: unmanaged path {relative} appeared during the deployment; pass --adopt to keep it or --force to overwrite it",
-                "deploy");
-        }
-
-        if (adopt)
-        {
-            lateAdoptions.Add(relative);
-            return;
-        }
-
-        File.Move(temp, destination, overwrite: true);
     }
 
     // A fixed-length leaf avoids exceeding a filesystem component limit when
