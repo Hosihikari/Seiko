@@ -885,7 +885,7 @@ public sealed class Resolver
         => _prereleaseHints.TryGetValue(name, out var ranges)
             && ranges.Any(range => range.Satisfies(version));
 
-    private static bool RangeAllowsPrerelease(VersionRange range)
+    internal static bool RangeAllowsPrerelease(VersionRange range)
         => range.MinVersion?.IsPrerelease == true
             || range.MaxVersion?.IsPrerelease == true
             || range.Float is { IncludePrerelease: true };

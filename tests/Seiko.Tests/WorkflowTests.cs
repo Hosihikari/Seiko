@@ -338,6 +338,68 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Outdated_UsesArtifactDependencyRanges()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    Dependencies = [new DepFixture("lib", "[1.0.0]")],
+                },
+            ],
+        });
+        fixture.AddSei("lib", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.AddSei("lib", new VersionFixture
+        {
+            Version = "2.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib2" } }],
+        });
+
+        var item = Assert.Single(client.Outdated(fixture.Root));
+
+        Assert.Equal("lib", item.Name);
+        Assert.Equal("1.0.0", item.LatestInRange);
+        Assert.Equal("2.0.0", item.Latest);
+        Assert.Contains(item.Blockers, blocker =>
+            blocker.Relation == "dependency" && blocker.Target == "app");
+    }
+
+    [Fact]
+    public void Outdated_AllowsPrereleasesWhenTheRangeNamesOne()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0-beta.1",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "beta1" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0-beta,3.0.0)"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "2.0.0-beta.2",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "beta2" } }],
+        });
+
+        var item = Assert.Single(client.Outdated(fixture.Root));
+
+        Assert.Equal("2.0.0-beta.2", item.LatestInRange);
+    }
+
+    [Fact]
     public void Sync_RejectsOverlongArchiveEntryNames()
     {
         using var fixture = new Fixture();

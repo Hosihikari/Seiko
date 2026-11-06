@@ -2771,7 +2771,10 @@ public sealed class SeikoClient
         var dependencyRanges = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var locked in lockFile.Sei)
         {
-            foreach (var dependency in locked.Dependencies)
+            // The resolver enforces version-level and artifact-level relations
+            // together, so the chosen artifact's dependencies constrain an
+            // upgrade exactly like the version-level ones (ADR-0027).
+            foreach (var dependency in locked.Dependencies.Concat(locked.Artifact.Dependencies))
             {
                 if (!dependencyRanges.TryGetValue(dependency.Name, out var ranges))
                 {
@@ -2821,6 +2824,10 @@ public sealed class SeikoClient
             NuGetVersion? latest = null;
             NuGetVersion? latestInRange = null;
             var rid = string.IsNullOrWhiteSpace(lockFile.Target.Rid) ? DefaultRid() : lockFile.Target.Rid;
+            // A range that names a prerelease admits them, exactly as the
+            // resolver decides; requiring --pre too would hide updates on a
+            // prerelease line the user already chose (ADR-0004).
+            var allowPrereleaseHere = allowPrerelease || Resolver.RangeAllowsPrerelease(range);
             var candidates = new List<NuGetVersion>();
             foreach (var entry in index.Versions)
             {
@@ -2830,7 +2837,7 @@ public sealed class SeikoClient
                     continue;
                 }
 
-                if (!allowPrerelease && version.IsPrerelease)
+                if (!allowPrereleaseHere && version.IsPrerelease)
                 {
                     continue;
                 }
@@ -2860,7 +2867,7 @@ public sealed class SeikoClient
                     locked.Name,
                     version,
                     rid,
-                    allowPrerelease))
+                    allowPrereleaseHere))
                 {
                     latestInstallable = version;
                     break;
@@ -2887,6 +2894,7 @@ public sealed class SeikoClient
                     foreach (var owner in lockFile.Sei)
                     {
                         foreach (var dependency in owner.Dependencies
+                            .Concat(owner.Artifact.Dependencies)
                             .Where(dependency => string.Equals(dependency.Name, locked.Name, StringComparison.Ordinal)))
                         {
                             blockers.Add(new OutdatedBlocker(
