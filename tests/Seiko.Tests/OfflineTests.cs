@@ -260,6 +260,86 @@ public sealed class OfflineTests
         Assert.Contains("sei/hello.json", error.Message);
     }
 
+    [Fact]
+    public void Offline_ResolvesRelativeLocalIndexesAgainstTheRoot()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+
+        // The local source owns app and names dep; dep exists only in the HTTP
+        // source and is not cached. The pre-check must find app through the
+        // local index (resolved against the root, not the process cwd) and
+        // then report dep as missing.
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("dep", "*")],
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
+        var relative = Path.GetRelativePath(fixture.Root, fixture.SourceDirectory).Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            Config(
+                $"{{ id = \"local\", index = \"{relative}/index.json\" }}",
+                $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Info(fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory));
+
+        Assert.Contains("missing cached metadata", error.Message);
+        Assert.Contains("dep", error.Message);
+    }
+
+    [Fact]
+    public void Offline_ContinuesPastALocalSourceThatDoesNotHaveTheName()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+
+        // The first local source is empty; app lives in the second local one.
+        // A local miss must not stop the walk, or dep goes unreported.
+        var empty = Path.Combine(fixture.Root, "empty-index");
+        Directory.CreateDirectory(Path.Combine(empty, "sei"));
+        File.WriteAllBytes(
+            Path.Combine(empty, "index.json"),
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                new IndexRoot { Sei = [] },
+                SeikoJsonContext.Default.IndexRoot));
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Dependencies = [new DepFixture("dep", "*")],
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            Config(
+                $"{{ id = \"empty\", index = \"{Path.Combine(empty, "index.json").Replace('\\', '/')}\" }}",
+                $"{{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }}",
+                $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Info(fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory));
+
+        Assert.Contains("missing cached metadata", error.Message);
+        Assert.Contains("dep", error.Message);
+    }
+
+    private static string Config(params string[] sources)
+        => string.Join(
+            "\n",
+            "schemaVersion = 2",
+            "sources = [",
+            "  " + string.Join(",\n  ", sources),
+            "]",
+            "rid = \"win-x64\"",
+            "sei = [",
+            "  { name = \"app\", version = \"*\" }",
+            "]")
+        + "\n";
+
     private static void Seed(Fixture fixture, string? httpBaseUrl = null)
     {
         fixture.AddSei("hello", new VersionFixture

@@ -11,18 +11,23 @@ public sealed record StoredSei(
 
 public sealed class Store
 {
-    // Visible to tests: how many EnsureAsync calls are inside the store at
-    // once. Scheduled downloads must stay bounded by --jobs.
-    private static int _activeEnsures;
-    private static int _maxActiveEnsures;
-
-    internal static int MaxActiveEnsures => Volatile.Read(ref _maxActiveEnsures);
-
-    internal static void ResetEnsureStats()
+    // Visible to tests: how many EnsureAsync calls are inside one store at
+    // once. Scheduled downloads must stay bounded by --jobs. Keyed by root so
+    // tests running in parallel do not disturb each other.
+    private sealed class EnsureStats
     {
-        Volatile.Write(ref _activeEnsures, 0);
-        Volatile.Write(ref _maxActiveEnsures, 0);
+        public int Active;
+        public int Max;
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, EnsureStats> Stats =
+        new(StringComparer.Ordinal);
+
+    internal static int MaxActiveEnsures(string root)
+        => Stats.TryGetValue(root, out var stats) ? Volatile.Read(ref stats.Max) : 0;
+
+    internal static void ResetEnsureStats(string root)
+        => Stats[root] = new EnsureStats();
 
     public string Root { get; }
 
@@ -61,10 +66,11 @@ public sealed class Store
         DownloadSession session,
         CancellationToken cancellationToken)
     {
-        var active = Interlocked.Increment(ref _activeEnsures);
+        var stats = Stats.GetOrAdd(Root, _ => new EnsureStats());
+        var active = Interlocked.Increment(ref stats.Active);
         int max;
-        while (active > (max = Volatile.Read(ref _maxActiveEnsures))
-            && Interlocked.CompareExchange(ref _maxActiveEnsures, active, max) != max)
+        while (active > (max = Volatile.Read(ref stats.Max))
+            && Interlocked.CompareExchange(ref stats.Max, active, max) != max)
         {
         }
 
@@ -74,7 +80,7 @@ public sealed class Store
         }
         finally
         {
-            Interlocked.Decrement(ref _activeEnsures);
+            Interlocked.Decrement(ref stats.Active);
         }
     }
 

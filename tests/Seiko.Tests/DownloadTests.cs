@@ -381,13 +381,13 @@ public sealed class DownloadTests
         }
 
         fixture.WriteConfig("win-x64", names.Select(name => new SpecFixture(name)).ToArray());
-        Store.ResetEnsureStats();
+        Store.ResetEnsureStats(fixture.StoreDirectory);
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, jobs: 2);
 
         Assert.True(
-            Store.MaxActiveEnsures <= 2,
-            $"at most two store ensures may run at once, saw {Store.MaxActiveEnsures}");
+            Store.MaxActiveEnsures(fixture.StoreDirectory) <= 2,
+            $"at most two store ensures may run at once, saw {Store.MaxActiveEnsures(fixture.StoreDirectory)}");
         Assert.Equal(8, new SeikoClient().ReadLock(fixture.Root)!.Sei.Count);
     }
 

@@ -170,6 +170,7 @@ public sealed class SeikoClient
             OfflineMetadata.Verify(
                 config,
                 storePath,
+                root,
                 config.Sei.Select(spec => spec.Name),
                 lockedGraph: mode == SyncMode.Normal ? null : existingLock);
         }
@@ -2474,7 +2475,7 @@ public sealed class SeikoClient
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         if (offline)
         {
-            OfflineMetadata.Verify(config, storePath, [name]);
+            OfflineMetadata.Verify(config, storePath, root, [name]);
         }
 
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);

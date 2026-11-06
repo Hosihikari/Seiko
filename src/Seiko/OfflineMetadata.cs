@@ -10,6 +10,7 @@ internal static class OfflineMetadata
     public static void Verify(
         SeikoConfig config,
         string storePath,
+        string root,
         IEnumerable<string> initial,
         SeikoLock? lockedGraph = null)
     {
@@ -78,8 +79,15 @@ internal static class OfflineMetadata
                     break;
                 }
 
-                found = LocalIndex(source, name);
-                break;
+                // A local miss must keep looking: the resolver and the search
+                // walk fall through to later sources too.
+                found = LocalIndex(source, name, root);
+                if (found is not null)
+                {
+                    break;
+                }
+
+                continue;
             }
 
             if (found is null)
@@ -225,19 +233,13 @@ internal static class OfflineMetadata
 
     // Local sources are always readable; their files still contribute relation
     // names, and a missing local file is reported by the source itself later.
-    private static SeiIndex? LocalIndex(SourceConfig source, string name)
+    private static SeiIndex? LocalIndex(SourceConfig source, string name, string root)
     {
-        if (source.Index.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var baseDirectory = Path.GetDirectoryName(
-            Path.GetFullPath(source.Index.StartsWith('/') ? source.Index : source.Index));
-        var path = Path.Combine(
-            baseDirectory ?? "",
-            "sei",
-            name + ".json");
+        // Same path rule as LocalSource; relative indexes belong to the
+        // install root, not the process working directory.
+        var indexPath = LocalSource.ResolvePath(source.Index, root);
+        var baseDirectory = Path.GetDirectoryName(indexPath) ?? root;
+        var path = Path.Combine(baseDirectory, "sei", name + ".json");
         return File.Exists(path)
             ? MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex)
             : null;
