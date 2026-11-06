@@ -46,6 +46,12 @@ internal static class ExternalMaterializer
             artifactSha + ".ext-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(staging);
         var budget = new PackageBudget();
+
+        // Every output target counts against the package entry budget, on top
+        // of the files the metadata zip already put into the tree; the
+        // per-archive input counts below bound the read work as well.
+        budget.AddEntries(
+            digests.Count + files.Count + archives.Sum(archive => archive.Members.Count));
         try
         {
             // One URL is downloaded once (ADR-0032), even when it feeds more
@@ -74,13 +80,12 @@ internal static class ExternalMaterializer
                 };
                 var slot = Path.Combine(staging, Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(slot);
-                session.Log?.Invoke($"{sei.Name}: fetching external file {url}");
+                session.Log?.Invoke($"{sei.Name}: fetching external file {Urls.Redact(new Uri(url))}");
                 sei.Source.DownloadAsync(sei.Name, location, slot, session, cancellationToken)
                     .GetAwaiter().GetResult();
 
                 var downloaded = Path.Combine(slot, "artifact");
-                Verify(downloaded, identity.Sha256, identity.Size, sei.Name, url, ArchiveLimits.MaxEntryBytes);
-                var length = new FileInfo(downloaded).Length;
+                Verify(downloaded, identity.Sha256, identity.Size, sei.Name, url, ArchiveLimits.MaxEntryBytes);                var length = new FileInfo(downloaded).Length;
                 budget.AddDownload(length);
                 var firstDestination = Path.Combine(directory, group[0].Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(firstDestination)!);
@@ -135,7 +140,7 @@ internal static class ExternalMaterializer
                     Sha256 = identity.Sha256,
                     Size = identity.Size,
                 };
-                session.Log?.Invoke($"{sei.Name}: fetching external archive {identity.Url}");
+                session.Log?.Invoke($"{sei.Name}: fetching external archive {Urls.Redact(new Uri(identity.Url))}");
                 sei.Source.DownloadAsync(sei.Name, location, slot, session, cancellationToken)
                     .GetAwaiter().GetResult();
                 var downloaded = Path.Combine(slot, "artifact");
@@ -410,6 +415,9 @@ internal static class ExternalMaterializer
         string label,
         long maxBytes)
     {
+        // Errors may be persisted or handed to MCP callers; the label is a
+        // signed URL and must not leak its query (ADR-0024).
+        label = Urls.Redact(new Uri(label));
         var length = new FileInfo(path).Length;
         if (length > maxBytes)
         {

@@ -119,10 +119,29 @@ public static class CatalogFile
 
     // An invalid catalog is ignored rather than reported: it is a derived
     // cache, and the caller still has the per-name path.
+    // Atomic same-volume write (ADR-0043): a temp file plus rename means a
+    // failure leaves no half catalog, and the rename replaces the directory
+    // entry instead of following an existing leaf symlink, so a linked
+    // catalog.json cannot redirect the write outside the index directory.
     public static void Write(string path, SeiCatalog catalog)
-        => File.WriteAllBytes(
-            path,
-            JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog));
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        var temp = Path.Combine(directory, "." + FileName + ".tmp-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            File.WriteAllBytes(
+                temp,
+                JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+        }
+    }
 
     // Reads every sei mirror under an index directory; malformed files are
     // skipped here because the verifier reports them separately.

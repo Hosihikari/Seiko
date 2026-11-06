@@ -585,6 +585,43 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void IndexCatalog_WriteReplacesALeafSymlinkInsteadOfFollowingIt()
+    {
+        var allowed = NewDirectory();
+        var outside = NewDirectory();
+        try
+        {
+            File.WriteAllText(Path.Combine(outside, "sentinel.txt"), "sentinel");
+            try
+            {
+                File.CreateSymbolicLink(
+                    Path.Combine(allowed, "catalog.json"),
+                    Path.Combine(outside, "sentinel.txt"));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                return; // Symlink creation needs privileges on some hosts.
+            }
+
+            var server = new SeikoMcpServer(
+                allowed,
+                allowMutations: true,
+                allowedRoots: [allowed]);
+
+            var result = CallTool(server, "index_catalog", new JsonObject { ["path"] = allowed });
+
+            Assert.False(result["isError"]!.GetValue<bool>());
+            Assert.Equal("sentinel", File.ReadAllText(Path.Combine(outside, "sentinel.txt")));
+            Assert.NotEmpty(File.ReadAllBytes(Path.Combine(allowed, "catalog.json")));
+        }
+        finally
+        {
+            Directory.Delete(allowed, recursive: true);
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public void IndexCatalog_WriteRequiresExplicitPath()
     {
         var directory = NewDirectory();

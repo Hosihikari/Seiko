@@ -704,10 +704,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        if (!dryRun)
-        {
-            Deployer.Recover(root, Path.Combine(root, ".seiko"));
-        }
+        RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
         var addNames = additions.Select(addition => addition.Name).ToHashSet(StringComparer.Ordinal);
@@ -814,6 +811,17 @@ public sealed class SeikoClient
                 transaction,
                 adopt: adopt,
                 force: force));
+    }
+
+    // A preview must not recover a pending transaction (ADR-0029); a real
+    // mutation must, before it reads the config (ADR-0019). Every mutation
+    // entry uses this so a change to the policy stays in one place.
+    private static void RecoverUnlessPreview(string root, bool dryRun)
+    {
+        if (!dryRun)
+        {
+            Deployer.Recover(root, Path.Combine(root, ".seiko"));
+        }
     }
 
     private SyncResult PreviewWithoutWriting(
@@ -952,10 +960,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        if (!dryRun)
-        {
-            Deployer.Recover(root, Path.Combine(root, ".seiko"));
-        }
+        RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
         var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
@@ -1074,10 +1079,7 @@ public sealed class SeikoClient
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
             $"install root {root}");
-        if (!dryRun)
-        {
-            Deployer.Recover(root, Path.Combine(root, ".seiko"));
-        }
+        RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
         var targets = new List<SeiSpec>();

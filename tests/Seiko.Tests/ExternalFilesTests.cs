@@ -499,6 +499,73 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void Sync_SignedUrlQueryDoesNotLeakIntoLogsOrErrors()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
+        var signed = server.BaseUrl + "external/vendor/server.bin?token=REREVIEW_SIGNED_SENTINEL";
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles = [new ExternalFileFixture("server.bin", signed, "payload")],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        var logs = new List<string>();
+        new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            log: message => logs.Add(message));
+
+        Assert.Contains(logs, message => message.Contains("server.bin", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs, message => message.Contains("SENTINEL", StringComparison.Ordinal));
+
+        // A mismatching download also reports through the error text.
+        fixture.WriteExternal("vendor/server.bin", "PAYLOAD"u8.ToArray());
+        var store = Path.Combine(fixture.Root, "other-store");
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, store));
+
+        Assert.Contains("server.bin", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("SENTINEL", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sync_CountsExternalTargetsAgainstTheEntryBudget()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
+        var url = server.BaseUrl + "external/vendor/server.bin";
+        var targets = new List<ExternalFileFixture>();
+        for (var i = 0; i <= ArchiveLimits.MaxEntries; i++)
+        {
+            targets.Add(new ExternalFileFixture($"t{i}.bin", url, "payload"));
+        }
+
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { ExternalFiles = targets }],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains($"limit is {ArchiveLimits.MaxEntries}", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sync_LimitsTarEntryCount()
     {
         var (fixture, server) = Setup();
