@@ -174,7 +174,7 @@ internal sealed class TestHttpServer : IDisposable
             }
 
             if (TruncateBodyResponses > 0
-                && relative.Contains(TruncateBodyPath, StringComparison.Ordinal)
+                && relative.Replace('\\', '/').Contains(TruncateBodyPath, StringComparison.Ordinal)
                 && !headers.ContainsKey("Range"))
             {
                 TruncateBodyResponses--;
