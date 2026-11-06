@@ -39,7 +39,7 @@ internal static class ExternalFiles
                     || (firstFile.Size > 0 && file.Size > 0 && firstFile.Size != file.Size))
                 {
                     throw new SeikoException(
-                        $"{name}: repeated external file '{file.Url}' must keep the same digest and size",
+                        $"{name}: repeated external file '{SafeUrl(file.Url)}' must keep the same digest and size",
                         code);
                 }
             }
@@ -72,7 +72,7 @@ internal static class ExternalFiles
                     || (first.Size > 0 && archive.Size > 0 && first.Size != archive.Size))
                 {
                     throw new SeikoException(
-                        $"{name}: repeated external archive '{archive.Url}' must keep the same digest, format, and size",
+                        $"{name}: repeated external archive '{SafeUrl(archive.Url)}' must keep the same digest, format, and size",
                         code);
                 }
             }
@@ -135,6 +135,11 @@ internal static class ExternalFiles
 
     private static string Host(string url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "";
+
+    // Errors are persisted or handed to MCP callers; a signed external URL
+    // must not leak its userinfo, query, or fragment (ADR-0024).
+    private static string SafeUrl(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? Urls.Redact(uri) : url;
 
     private static void EnsureHttps(string url, string label, string name, string code)
     {

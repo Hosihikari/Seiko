@@ -566,6 +566,82 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void Validate_RedactsRepeatedDeclarationConflicts()
+    {
+        const string Url = "https://example.invalid/extra.bin?token=VALIDATION_SIGNED_SENTINEL";
+
+        var fileError = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
+            new ArtifactManifest
+            {
+                ExternalFiles =
+                [
+                    new ExternalFile { Path = "one.bin", Url = Url, Sha256 = new string('a', 64), Size = 1 },
+                    new ExternalFile { Path = "two.bin", Url = Url, Sha256 = new string('b', 64), Size = 1 },
+                ],
+            },
+            "hello"));
+        Assert.DoesNotContain("SENTINEL", fileError.Message, StringComparison.Ordinal);
+        Assert.Contains("extra.bin", fileError.Message, StringComparison.Ordinal);
+
+        var archiveError = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
+            new ArtifactManifest
+            {
+                ExternalArchives =
+                [
+                    new ExternalArchive
+                    {
+                        Url = Url,
+                        Sha256 = new string('a', 64),
+                        Format = "zip",
+                        Size = 1,
+                        Members = [new ExternalArchiveMember { Member = "a", Path = "a" }],
+                    },
+                    new ExternalArchive
+                    {
+                        Url = Url,
+                        Sha256 = new string('b', 64),
+                        Format = "zip",
+                        Size = 1,
+                        Members = [new ExternalArchiveMember { Member = "b", Path = "b" }],
+                    },
+                ],
+            },
+            "hello"));
+        Assert.DoesNotContain("SENTINEL", archiveError.Message, StringComparison.Ordinal);
+        Assert.Contains("extra.bin", archiveError.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sync_RejectsOverBudgetTargetsWithoutLeavingStaging()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
+        var url = server.BaseUrl + "external/vendor/server.bin";
+        var targets = new List<ExternalFileFixture>();
+        for (var i = 0; i <= ArchiveLimits.MaxEntries; i++)
+        {
+            targets.Add(new ExternalFileFixture($"t{i}.bin", url, "payload"));
+        }
+
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { ExternalFiles = targets }],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+
+        Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Empty(Directory.EnumerateDirectories(
+            fixture.StoreDirectory,
+            "*.ext-*",
+            SearchOption.TopDirectoryOnly));
+    }
+
+    [Fact]
     public void Sync_LimitsTarEntryCount()
     {
         var (fixture, server) = Setup();

@@ -44,14 +44,16 @@ internal static class ExternalMaterializer
         var staging = Path.Combine(
             stagingRoot,
             artifactSha + ".ext-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(staging);
         var budget = new PackageBudget();
 
         // Every output target counts against the package entry budget, on top
         // of the files the metadata zip already put into the tree; the
-        // per-archive input counts below bound the read work as well.
+        // per-archive input counts below bound the read work as well. The
+        // precheck runs before the staging directory exists so a rejected
+        // package leaves no trace.
         budget.AddEntries(
             digests.Count + files.Count + archives.Sum(archive => archive.Members.Count));
+        Directory.CreateDirectory(staging);
         try
         {
             // One URL is downloaded once (ADR-0032), even when it feeds more
