@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Net;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using NuGet.Versioning;
@@ -1038,9 +1039,24 @@ public static class IndexVerifier
     private static int ReadWithIdleLimit(Stream input, byte[] buffer, CancellationToken cancellationToken)
     {
         var read = input.ReadAsync(buffer, cancellationToken).AsTask();
-        // Wait(budget, token) throws OperationCanceledException when the token
-        // fires, so cancellation is observed without waiting the full budget.
-        if (read.Wait(BodyIdleTimeout, cancellationToken))
+        bool finished;
+        try
+        {
+            // Wait(timeout, token) throws OperationCanceledException when the
+            // token fires, so cancellation is observed without waiting the
+            // full budget.
+            finished = read.Wait(BodyIdleTimeout, cancellationToken);
+        }
+        catch (AggregateException ex)
+        {
+            // Wait surfaces a failed read as AggregateException, but the
+            // caller's catch list knows the real types (IOException,
+            // HttpRequestException); rethrow the original.
+            ExceptionDispatchInfo.Capture(ex.InnerException ?? ex).Throw();
+            throw;
+        }
+
+        if (finished)
         {
             return read.GetAwaiter().GetResult();
         }

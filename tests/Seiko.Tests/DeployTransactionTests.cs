@@ -66,10 +66,32 @@ public sealed class DeployTransactionTests
         Assert.False(Directory.Exists(Path.Combine(fixture.Root, ".seiko", "transaction")));
     }
 
-    [Fact]
-    public void Sync_DoesNotOverwriteAFileCreatedDuringTheDeployment()
+    // Deployment order comes from directory enumeration, so the tests pick
+    // whichever of the two targets has not been published yet instead of
+    // assuming one. Returns the injected relative path.
+    private static string InjectAfterFirstFile(Fixture fixture)
     {
-        using var fixture = new Fixture();
+        var target = "";
+        Deployer.AppliedForTests.Value = count =>
+        {
+            if (count != 1)
+            {
+                return;
+            }
+
+            var pending = new[] { "a.txt", "b.txt" }
+                .First(name => !File.Exists(Path.Combine(fixture.Root, name)));
+            File.WriteAllText(Path.Combine(fixture.Root, pending), "external-user-content");
+            target = pending;
+        };
+        return target;
+    }
+
+    private static string Other(string name) => name == "a.txt" ? "b.txt" : "a.txt";
+
+    private static Fixture TwoFileFixture()
+    {
+        var fixture = new Fixture();
         fixture.AddSei("hello", new VersionFixture
         {
             Version = "1.0.0",
@@ -83,16 +105,17 @@ public sealed class DeployTransactionTests
             }],
         });
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        return fixture;
+    }
 
+    [Fact]
+    public void Sync_DoesNotOverwriteAFileCreatedDuringTheDeployment()
+    {
+        using var fixture = TwoFileFixture();
+        var injected = "";
         try
         {
-            Deployer.AppliedForTests.Value = count =>
-            {
-                if (count == 1)
-                {
-                    File.WriteAllText(Path.Combine(fixture.Root, "b.txt"), "external-user-content");
-                }
-            };
+            injected = InjectAfterFirstFile(fixture);
             var error = Assert.Throws<SeikoException>(
                 () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
             Assert.Contains("appeared during the deployment", error.Message, StringComparison.Ordinal);
@@ -104,39 +127,18 @@ public sealed class DeployTransactionTests
 
         // Rollback keeps the racing content; the new file is the deployer's
         // leftover and goes away with the transaction.
-        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
-        Assert.False(File.Exists(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected)));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, Other(injected))));
         Assert.Null(new SeikoClient().ReadLock(fixture.Root));
     }
 
     [Fact]
     public void Sync_ForceOverwritesAFileCreatedDuringTheDeployment()
     {
-        using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture
-            {
-                Files =
-                {
-                    ["a.txt"] = "package-a",
-                    ["b.txt"] = "package-b",
-                },
-            }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
-
+        using var fixture = TwoFileFixture();
         try
         {
-            // Open the window after a.txt is published, before b.txt.
-            Deployer.AppliedForTests.Value = count =>
-            {
-                if (count == 1)
-                {
-                    File.WriteAllText(Path.Combine(fixture.Root, "b.txt"), "external-user-content");
-                }
-            };
+            InjectAfterFirstFile(fixture);
             new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, force: true);
         }
         finally
@@ -152,30 +154,11 @@ public sealed class DeployTransactionTests
     [Fact]
     public void Sync_AdoptKeepsAFileCreatedDuringTheDeployment()
     {
-        using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture
-            {
-                Files =
-                {
-                    ["a.txt"] = "package-a",
-                    ["b.txt"] = "package-b",
-                },
-            }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
-
+        using var fixture = TwoFileFixture();
+        var injected = "";
         try
         {
-            Deployer.AppliedForTests.Value = count =>
-            {
-                if (count == 1)
-                {
-                    File.WriteAllText(Path.Combine(fixture.Root, "b.txt"), "external-user-content");
-                }
-            };
+            injected = InjectAfterFirstFile(fixture);
             new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, adopt: true);
         }
         finally
@@ -184,11 +167,11 @@ public sealed class DeployTransactionTests
         }
 
         Assert.Equal("package-a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
-        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
+        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected)));
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
             SeikoJsonContext.Default.LocalState)!;
-        Assert.True(state.Files["b.txt"].Adopted);
+        Assert.True(state.Files[injected].Adopted);
 
         // The adopted content is in the generation snapshot for rollback.
         var snapshot = Path.Combine(
@@ -197,7 +180,7 @@ public sealed class DeployTransactionTests
             "generations",
             state.Generation.ToString(),
             "adopted",
-            "b.txt");
+            injected);
         Assert.Equal("external-user-content", File.ReadAllText(snapshot));
     }
 

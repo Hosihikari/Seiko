@@ -418,9 +418,10 @@ public static class Deployer
                     EnsureDirectory(parent, createdDirectories);
                 }
 
-                // The plan saw no file here. If one appeared since, it is
-                // someone else's content: back it up now and apply the normal
-                // unmanaged-path rule rather than overwrite it.
+                // The plan saw no file here. A late arrival is someone else's
+                // content: back it up, then apply the normal unmanaged-path
+                // rule. The publish itself also refuses to overwrite, so the
+                // remaining window is closed by the rename, not by this check.
                 var raced = mutation.CreatedHere
                     && transaction.SnapshotLateCreation(mutation.RelativePath);
                 if (raced)
@@ -462,7 +463,14 @@ public static class Deployer
                         temp,
                         allowHardlink: !mutation.File.SnapshotSource
                             && !modes.ContainsKey(mutation.RelativePath));
-                    File.Move(temp, destination, overwrite: true);
+                    if (mutation.CreatedHere && !raced)
+                    {
+                        PublishCreated(temp, destination, mutation.RelativePath, transaction, adopt, force, lateAdoptions);
+                    }
+                    else
+                    {
+                        File.Move(temp, destination, overwrite: true);
+                    }
                 }
                 finally
                 {
@@ -524,6 +532,50 @@ public static class Deployer
 
         PruneGenerations(stateDirectory, newState.Generation);
         return new DeployResult { FileCount = desired.Count };
+    }
+
+    // Publish a target that the plan recorded as absent without overwriting:
+    // the rename itself is the conflict check. If the file appeared between
+    // the last look and here, apply the same rule as the check would have.
+    private void PublishCreated(
+        string temp,
+        string destination,
+        string relative,
+        DeploymentTransaction transaction,
+        bool adopt,
+        bool force,
+        List<string> lateAdoptions)
+    {
+        try
+        {
+            File.Move(temp, destination);
+            return;
+        }
+        catch (IOException) when (File.Exists(destination))
+        {
+            // Another writer won the race.
+        }
+
+        if (!transaction.SnapshotLateCreation(relative))
+        {
+            File.Move(temp, destination, overwrite: true);
+            return;
+        }
+
+        if (!adopt && !force)
+        {
+            throw new SeikoException(
+                $"deployment conflict: unmanaged path {relative} appeared during the deployment; pass --adopt to keep it or --force to overwrite it",
+                "deploy");
+        }
+
+        if (adopt)
+        {
+            lateAdoptions.Add(relative);
+            return;
+        }
+
+        File.Move(temp, destination, overwrite: true);
     }
 
     // A fixed-length leaf avoids exceeding a filesystem component limit when
