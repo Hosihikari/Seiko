@@ -60,25 +60,34 @@ internal sealed class PathCollisions
     }
 
     // Ordinal ignore-case, except that '/' sorts below every other character
-    // so "dir/x" sits next to "dir" and not after "dir!".
+    // so "dir/x" sits next to "dir" and not after "dir!". Comparison is per
+    // code point: upper-casing UTF-16 units one at a time would not fold
+    // supplementary-plane letters, which OrdinalIgnoreCase does fold, and the
+    // equal pair could then be sorted apart.
     private static int Compare(Entry left, Entry right)
     {
-        var length = Math.Min(left.Key.Length, right.Key.Length);
-        for (var i = 0; i < length; i++)
+        var leftIndex = 0;
+        var rightIndex = 0;
+        while (leftIndex < left.Key.Length && rightIndex < right.Key.Length)
         {
-            var a = Order(left.Key[i]);
-            var b = Order(right.Key[i]);
-            if (a != b)
+            Rune.DecodeFromUtf16(left.Key.AsSpan(leftIndex), out var a, out var aLength);
+            Rune.DecodeFromUtf16(right.Key.AsSpan(rightIndex), out var b, out var bLength);
+            var leftOrder = Order(a);
+            var rightOrder = Order(b);
+            if (leftOrder != rightOrder)
             {
-                return a < b ? -1 : 1;
+                return leftOrder < rightOrder ? -1 : 1;
             }
+
+            leftIndex += aLength;
+            rightIndex += bLength;
         }
 
-        return left.Key.Length.CompareTo(right.Key.Length);
+        return (left.Key.Length - leftIndex).CompareTo(right.Key.Length - rightIndex);
     }
 
-    private static char Order(char value)
-        => value == '/' ? '\0' : char.ToUpperInvariant(value);
+    private static int Order(Rune value)
+        => value.Value == '/' ? 0 : Rune.ToUpperInvariant(value).Value;
 
     private readonly record struct Entry(string Key, string Path, int Index);
 }

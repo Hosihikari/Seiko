@@ -782,6 +782,49 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsSupplementaryPlaneCaseDuplicatesSortedApart()
+    {
+        // U+10400 and U+10428 are a Deseret capital/small pair that
+        // OrdinalIgnoreCase folds. Upper-casing UTF-16 units one at a time
+        // cannot pair them, so a naive sort would leave them non-adjacent.
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files =
+                    {
+                        ["\U00010400.txt"] = "upper",
+                        ["\U00010401.txt"] = "middle",
+                        ["\U00010428.txt"] = "lower",
+                    },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-path");
+    }
+
+    [Fact]
+    public void Verify_RejectsSupplementaryPlaneCaseDuplicatesInExternalTargets()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("\U00010400.txt", "https://vendor.invalid/a", "a"),
+            new ExternalFileFixture("\U00010401.txt", "https://vendor.invalid/b", "b"),
+            new ExternalFileFixture("\U00010428.txt", "https://vendor.invalid/c", "c"));
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-external");
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsReportsForeignLocation()
     {
         using var fixture = NewFixture();
