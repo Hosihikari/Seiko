@@ -463,6 +463,42 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void AddPreview_FetchesIndexMetadataOncePerCommand()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+
+        new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory, dryRun: true);
+
+        Assert.Single(server.Requests, request => request.Path == "/index.json");
+        Assert.Single(server.Requests, request => request.Path == "/sei/hello.json");
+    }
+
+    [Fact]
+    public void UpdateLatest_FetchesIndexMetadataOncePerCommand()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello"));
+
+        new SeikoClient().Update(fixture.Root, "hello", latest: true, storeRoot: fixture.StoreDirectory);
+
+        Assert.Single(server.Requests, request => request.Path == "/index.json");
+        Assert.Single(server.Requests, request => request.Path == "/sei/hello.json");
+    }
+
+    [Fact]
     public void Sync_RejectsOverlongArchiveEntryNames()
     {
         using var fixture = new Fixture();

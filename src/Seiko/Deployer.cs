@@ -537,7 +537,7 @@ public static class Deployer
     // Publish a target that the plan recorded as absent without overwriting:
     // the rename itself is the conflict check. If the file appeared between
     // the last look and here, apply the same rule as the check would have.
-    private void PublishCreated(
+    private static void PublishCreated(
         string temp,
         string destination,
         string relative,

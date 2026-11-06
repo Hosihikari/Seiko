@@ -794,7 +794,8 @@ public sealed class SeikoClient
                     allowCritical,
                     adopt,
                     force,
-                    offline);
+                    offline,
+                    preloaded);
             }
 
             return WriteSpecsAndSync(
@@ -851,7 +852,8 @@ public sealed class SeikoClient
         bool allowCritical,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        SourceScope? preloaded = null)
         => SyncLocked(
             root,
             storePath,
@@ -870,7 +872,8 @@ public sealed class SeikoClient
             specs,
             adopt,
             force,
-            offline);
+            offline,
+            preloaded);
 
     private static SyncResult WriteSpecsAndSync(
         string root,
@@ -1028,7 +1031,8 @@ public sealed class SeikoClient
                     allowCritical,
                     adopt,
                     force,
-                    offline);
+                    offline,
+                    preloaded);
             }
 
             return WriteSpecsAndSync(
@@ -1124,52 +1128,42 @@ public sealed class SeikoClient
         }
 
         var writeConfig = latest && targets.Count > 0;
-        if (writeConfig)
+        SourceScope? preloaded = null;
+        try
         {
-            using var session = new DownloadSession(jobs, cancellationToken);
-            var sources = LoadSources(config, root, proxy, session, storePath, offline);
-            using var sourceScope = new SourceScope(sources);
-            foreach (var target in targets)
+            if (writeConfig || (dryRun && targets.Count > 0))
             {
-                var version = FindLatestVersion(sources, target.Name, allowPrerelease, allowCritical)
-                    ?? throw new SeikoException($"no version of {target.Name} found in any source", "source")
-                    {
-                        Hint = "check the name, run `sk source status`, or allow pre-releases with --pre",
-                        HintKey = "hint.source",
-                    };
-                target.Version = $"[{version}]";
+                // The pre-resolve and the sync/preview below share one source
+                // cache; the second resolution still happens, but no metadata
+                // is fetched twice.
+                var preSession = new DownloadSession(jobs, cancellationToken);
+                preloaded = new SourceScope(
+                    LoadSources(config, root, proxy, preSession, storePath, offline),
+                    preSession);
             }
-        }
 
-        var updateNames = targets
-            .Select(spec => spec.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        SyncResult Sync(DeploymentTransaction? transaction) => SyncLocked(
-            root,
-            storePath,
-            allowPrerelease,
-            SyncMode.Normal,
-            jobs,
-            proxy,
-            progress,
-            log,
-            cancellationToken,
-            updateNames,
-            latestInstallable,
-            allowCritical,
-            transaction,
-            adopt: adopt,
-            force: force,
-            offline: offline);
+            if (writeConfig)
+            {
+                foreach (var target in targets)
+                {
+                    var version = FindLatestVersion(preloaded!.Sources, target.Name, allowPrerelease, allowCritical)
+                        ?? throw new SeikoException($"no version of {target.Name} found in any source", "source")
+                        {
+                            Hint = "check the name, run `sk source status`, or allow pre-releases with --pre",
+                            HintKey = "hint.source",
+                        };
+                    target.Version = $"[{version}]";
+                }
+            }
 
-        if (dryRun)
-        {
-            return PreviewWithoutWriting(
+            var updateNames = targets
+                .Select(spec => spec.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            SyncResult Sync(DeploymentTransaction? transaction) => SyncLocked(
                 root,
                 storePath,
-                config.Sei,
                 allowPrerelease,
-                mode: SyncMode.Normal,
+                SyncMode.Normal,
                 jobs,
                 proxy,
                 progress,
@@ -1178,14 +1172,42 @@ public sealed class SeikoClient
                 updateNames,
                 latestInstallable,
                 allowCritical,
-                adopt,
-                force,
-                offline);
-        }
+                transaction,
+                adopt: adopt,
+                force: force,
+                offline: offline,
+                preloaded: preloaded);
 
-        return writeConfig
-            ? WriteSpecsAndSync(root, config.Sei, transaction => Sync(transaction))
-            : Sync(null);
+            if (dryRun)
+            {
+                return PreviewWithoutWriting(
+                    root,
+                    storePath,
+                    config.Sei,
+                    allowPrerelease,
+                    mode: SyncMode.Normal,
+                    jobs,
+                    proxy,
+                    progress,
+                    log,
+                    cancellationToken,
+                    updateNames,
+                    latestInstallable,
+                    allowCritical,
+                    adopt,
+                    force,
+                    offline,
+                    preloaded);
+            }
+
+            return writeConfig
+                ? WriteSpecsAndSync(root, config.Sei, transaction => Sync(transaction))
+                : Sync(null);
+        }
+        finally
+        {
+            preloaded?.Dispose();
+        }
     }
 
     private static string? FindLatestVersion(
