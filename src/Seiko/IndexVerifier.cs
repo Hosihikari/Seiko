@@ -1074,7 +1074,7 @@ public static class IndexVerifier
 
             var declaredTotal = 0L;
             var seenNames = new HashSet<string>(StringComparer.Ordinal);
-            var collisionNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var collisions = new PathCollisions();
             foreach (var entry in archive.Entries)
             {
                 declaredTotal += entry.Length;
@@ -1121,37 +1121,25 @@ public static class IndexVerifier
                     return;
                 }
 
-                var collisionKey = name.Normalize(NormalizationForm.FormC);
-                if (collisionNames.TryGetValue(collisionKey, out var other))
+                if (!collisions.TryAdd(name, out var otherName))
                 {
                     context.Error(
                         "artifact-path",
-                        $"sei '{reference.Sei}' {reference.Version}: archive paths '{other}' and '{name}' differ only by case or Unicode normalization",
+                        $"sei '{reference.Sei}' {reference.Version}: archive paths '{otherName}' and '{name}' differ only by case or Unicode normalization",
                         reference.Path);
                     return;
                 }
-
-                collisionNames[collisionKey] = name;
             }
 
-            var collisionLookup = collisionNames.GetAlternateLookup<ReadOnlySpan<char>>();
-            foreach (var (normalized, original) in collisionNames)
+            foreach (var (_, original) in collisions.Entries)
             {
-                for (var i = 0; i < normalized.Length; i++)
+                if (collisions.FilePrefixOf(original) is { } file)
                 {
-                    if (normalized[i] != '/')
-                    {
-                        continue;
-                    }
-
-                    if (collisionLookup.TryGetValue(normalized.AsSpan(0, i), out var file))
-                    {
-                        context.Error(
-                            "artifact-path",
-                            $"sei '{reference.Sei}' {reference.Version}: archive path '{file}' is both a file and a directory of '{original}'",
-                            reference.Path);
-                        return;
-                    }
+                    context.Error(
+                        "artifact-path",
+                        $"sei '{reference.Sei}' {reference.Version}: archive path '{file}' is both a file and a directory of '{original}'",
+                        reference.Path);
+                    return;
                 }
             }
 
@@ -1336,11 +1324,23 @@ public static class IndexVerifier
                         .Select(member => member.Path));
                 foreach (var target in declared)
                 {
-                    if (seenNames.Contains(target))
+                    // The deployment folds case and Unicode normalization and
+                    // rejects file/directory overlaps; a package that would
+                    // fail there must not pass here (ADR-0024).
+                    if (!collisions.TryAdd(target, out var otherTarget))
                     {
                         context.Error(
                             "manifest-external",
-                            $"{prefix}: external target '{target}' also exists inside the artifact",
+                            $"{prefix}: external target path '{target}' also exists inside the artifact as '{otherTarget}'",
+                            reference.Path);
+                        continue;
+                    }
+
+                    if (collisions.FilePrefixOf(target) is { } fileTarget)
+                    {
+                        context.Error(
+                            "manifest-external",
+                            $"{prefix}: path '{fileTarget}' is both a file and a directory of '{target}'",
                             reference.Path);
                     }
                 }

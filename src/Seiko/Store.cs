@@ -274,8 +274,10 @@ public sealed class Store
         return manifest;
     }
 
-    // An external target may not overwrite a file that came out of the
-    // metadata zip; the two sources would silently disagree.
+    // An external target may not collide with a file that came out of the
+    // metadata zip; the two sources would silently disagree. The rule matches
+    // deployment: exact, case, Unicode normalization, and file/directory
+    // prefix overlaps (ADR-0024).
     private static void EnsureNoTargetCollision(
         List<StoreFileDigest> extracted,
         SeiManifest manifest,
@@ -287,15 +289,27 @@ public sealed class Store
             return;
         }
 
+        var collisions = new PathCollisions();
+        foreach (var digest in extracted)
+        {
+            collisions.TryAdd(digest.Path, out _);
+        }
+
         var targets = (artifact.ExternalFiles ?? []).Select(file => file.Path)
             .Concat((artifact.ExternalArchives ?? []).SelectMany(archive => archive.Members).Select(member => member.Path));
-        var zipPaths = extracted.Select(digest => digest.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var target in targets)
         {
-            if (zipPaths.Contains(target))
+            if (!collisions.TryAdd(target, out var other))
             {
                 throw new SeikoException(
-                    $"{name}: external target path '{target}' also exists inside the artifact",
+                    $"{name}: external target path '{target}' also exists inside the artifact as '{other}'",
+                    "io");
+            }
+
+            if (collisions.FilePrefixOf(target) is { } prefix)
+            {
+                throw new SeikoException(
+                    $"{name}: path '{prefix}' is both a file and a directory of external target '{target}'",
                     "io");
             }
         }

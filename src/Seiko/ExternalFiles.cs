@@ -17,6 +17,10 @@ internal static class ExternalFiles
         }
 
         var paths = new HashSet<string>(StringComparer.Ordinal);
+        // Deployment folds case and Unicode normalization and rejects
+        // file/directory overlaps, so declarations must already be unique
+        // under those rules (ADR-0024).
+        var collisions = new PathCollisions();
         var fileIdentities = new Dictionary<string, ExternalFile>(StringComparer.Ordinal);
         var declaredBytes = 0L;
         foreach (var file in files)
@@ -25,6 +29,20 @@ internal static class ExternalFiles
             if (!paths.Add(file.Path))
             {
                 throw new SeikoException($"{name}: duplicate external target path '{file.Path}'", code);
+            }
+
+            if (!collisions.TryAdd(file.Path, out var otherTarget))
+            {
+                throw new SeikoException(
+                    $"{name}: external target path '{file.Path}' also exists as '{otherTarget}' by case or Unicode normalization",
+                    code);
+            }
+
+            if (collisions.FilePrefixOf(file.Path) is { } filePrefix)
+            {
+                throw new SeikoException(
+                    $"{name}: path '{filePrefix}' is both a file and a directory of external target '{file.Path}'",
+                    code);
             }
 
             EnsureHttps(file.Url, $"external file '{file.Path}'", name, code);
@@ -100,6 +118,20 @@ internal static class ExternalFiles
                 {
                     throw new SeikoException(
                         $"{name}: duplicate external target path '{member.Path}'",
+                        code);
+                }
+
+                if (!collisions.TryAdd(member.Path, out var otherMemberTarget))
+                {
+                    throw new SeikoException(
+                        $"{name}: external target path '{member.Path}' also exists as '{otherMemberTarget}' by case or Unicode normalization",
+                        code);
+                }
+
+                if (collisions.FilePrefixOf(member.Path) is { } memberPrefix)
+                {
+                    throw new SeikoException(
+                        $"{name}: path '{memberPrefix}' is both a file and a directory of external target '{member.Path}'",
                         code);
                 }
             }

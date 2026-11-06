@@ -569,6 +569,42 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsCaseEquivalentExternalTargets()
+    {
+        // The artifact contains hello.txt; the external target differs only by
+        // case, which deployment folds. The zip content is only known with
+        // --check-artifacts.
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("HELLO.txt", "https://vendor.invalid/hello.txt", "data"));
+
+        var checkedResult = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(checkedResult.Findings, finding =>
+            finding.Code == "manifest-external"
+            && finding.Message.Contains("also exists inside", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Verify_RejectsExternalTargetsThatDifferByCase()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].ExternalFiles =
+        [
+            new ExternalFile { Path = "one.txt", Url = "https://vendor.invalid/1", Sha256 = new string('a', 64) },
+            new ExternalFile { Path = "ONE.txt", Url = "https://vendor.invalid/2", Sha256 = new string('b', 64) },
+        ];
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-external");
+        Assert.Contains(result.Findings, finding =>
+            finding.Message.Contains("by case or Unicode normalization", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsReportsForeignLocation()
     {
         using var fixture = NewFixture();
