@@ -147,6 +147,38 @@ internal static class ExternalFiles
         }
     }
 
+    // The derived summary of an artifact's declarations; the index mirrors it
+    // and must agree field by field (ADR-0032, ADR-0037).
+    public static ExternalSummary Summarize(ArtifactManifest? artifact)
+        => new()
+        {
+            Files = artifact?.ExternalFiles?.Count ?? 0,
+            Archives = artifact?.ExternalArchives?.Count ?? 0,
+            Size = (artifact?.ExternalFiles ?? []).Sum(file => file.Size)
+                + (artifact?.ExternalArchives ?? []).Sum(archive => archive.Size),
+            Hosts = Hosts(artifact).ToList(),
+        };
+
+    public static bool SummaryMatches(ExternalSummary declared, ArtifactManifest? artifact)
+    {
+        var expected = Summarize(artifact);
+        if (declared.Files != expected.Files || declared.Archives != expected.Archives)
+        {
+            return false;
+        }
+
+        // Size stays optional metadata: a declaration may leave it at 0.
+        if (declared.Size != 0 && declared.Size != expected.Size)
+        {
+            return false;
+        }
+
+        // Hosts are the disclosure that matters most; a wrong summary must not
+        // pass just because the counts line up.
+        var declaredHosts = (declared.Hosts ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return declaredHosts.SetEquals(expected.Hosts);
+    }
+
     public static IEnumerable<string> Hosts(ArtifactManifest? artifact)
     {
         if (artifact is null)

@@ -605,6 +605,84 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_RejectsAWrongExternalSummaryHost()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].External = new ExternalSummary
+        {
+            Files = 1,
+            Hosts = ["wrong.example"],
+        };
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-external-summary");
+    }
+
+    [Fact]
+    public void Verify_RejectsAWrongExternalSummarySize()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+        var sei = ReadSei(fixture, "hello");
+        var entry = sei.Versions[0].Artifacts[0];
+        entry.External = new ExternalSummary
+        {
+            Files = 1,
+            Size = 999,
+            Hosts = ["vendor.invalid"],
+        };
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-external-summary");
+    }
+
+    [Fact]
+    public void Verify_AcceptsAMatchingExternalSummary()
+    {
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].External = new ExternalSummary
+        {
+            Files = 1,
+            Size = 4,
+            Hosts = ["vendor.invalid"],
+        };
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.DoesNotContain(result.Findings, finding => finding.Code == "artifact-external-summary");
+    }
+
+    [Fact]
+    public void Verify_RejectsAnExternalSummaryWithoutDeclarations()
+    {
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].External = new ExternalSummary
+        {
+            Files = 1,
+            Hosts = ["vendor.invalid"],
+        };
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-external-summary");
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsReportsForeignLocation()
     {
         using var fixture = NewFixture();

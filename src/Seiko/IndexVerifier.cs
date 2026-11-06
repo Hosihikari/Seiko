@@ -779,16 +779,19 @@ public static class IndexVerifier
             }
             else
             {
-                var expected = ExternalFiles.Count(new ArtifactManifest
+                // Same full comparison the sync warning uses, so a verifier
+                // pass cannot hide a wrong host or size the preview trusts
+                // (ADR-0037).
+                var manifestArtifact = new ArtifactManifest
                 {
                     ExternalFiles = artifact.ExternalFiles,
                     ExternalArchives = artifact.ExternalArchives,
-                });
-                if (summary.Files + summary.Archives != expected)
+                };
+                if (!ExternalFiles.SummaryMatches(summary, manifestArtifact))
                 {
                     context.Error(
                         "artifact-external-summary",
-                        $"sei '{name}' {entry.Version} external summary count does not match the declarations",
+                        $"sei '{name}' {entry.Version} external summary does not match the declarations",
                         path);
                     ok = false;
                 }

@@ -499,6 +499,26 @@ public sealed class SeikoClient
         foreach (var sei in resolved)
         {
             var artifact = IndexArtifactFor(sei);
+            // Declarations are the source of truth; the summary is only a
+            // stand-in for indexes that never mirrored them (ADR-0037).
+            if (artifact.ExternalFiles is not null || artifact.ExternalArchives is not null)
+            {
+                var manifest = new ArtifactManifest
+                {
+                    ExternalFiles = artifact.ExternalFiles,
+                    ExternalArchives = artifact.ExternalArchives,
+                };
+                externalItems += ExternalFiles.Count(manifest);
+                externalBytes += (artifact.ExternalFiles ?? []).Sum(file => file.Size)
+                    + (artifact.ExternalArchives ?? []).Sum(archive => archive.Size);
+                foreach (var host in ExternalFiles.Hosts(manifest))
+                {
+                    externalHosts.Add(host);
+                }
+
+                continue;
+            }
+
             if (artifact.External is { } summary)
             {
                 externalItems += summary.Files + summary.Archives;
@@ -511,27 +531,7 @@ public sealed class SeikoClient
                 continue;
             }
 
-            if (artifact.ExternalFiles is null && artifact.ExternalArchives is null)
-            {
-                externalUnknown.Add(sei.Name);
-                continue;
-            }
-
-            externalItems += ExternalFiles.Count(new ArtifactManifest
-            {
-                ExternalFiles = artifact.ExternalFiles,
-                ExternalArchives = artifact.ExternalArchives,
-            });
-            externalBytes += (artifact.ExternalFiles ?? []).Sum(file => file.Size)
-                + (artifact.ExternalArchives ?? []).Sum(archive => archive.Size);
-            foreach (var host in ExternalFiles.Hosts(new ArtifactManifest
-            {
-                ExternalFiles = artifact.ExternalFiles,
-                ExternalArchives = artifact.ExternalArchives,
-            }))
-            {
-                externalHosts.Add(host);
-            }
+            externalUnknown.Add(sei.Name);
         }
 
         return new PreviewResult
@@ -557,27 +557,7 @@ public sealed class SeikoClient
             ?? sei.Artifact;
 
     private static bool ExternalSummaryMatches(ExternalSummary declared, ArtifactManifest? manifest)
-    {
-        var files = manifest?.ExternalFiles?.Count ?? 0;
-        var archives = manifest?.ExternalArchives?.Count ?? 0;
-        if (declared.Files != files || declared.Archives != archives)
-        {
-            return false;
-        }
-
-        // Size is optional metadata (a declaration may leave it at 0).
-        var size = (manifest?.ExternalFiles ?? []).Sum(file => file.Size)
-            + (manifest?.ExternalArchives ?? []).Sum(archive => archive.Size);
-        if (declared.Size != 0 && declared.Size != size)
-        {
-            return false;
-        }
-
-        // Hosts are the disclosure that matters most: a wrong summary must
-        // not silently pass just because the counts line up.
-        var declaredHosts = (declared.Hosts ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return declaredHosts.SetEquals(ExternalFiles.Hosts(manifest));
-    }
+        => ExternalFiles.SummaryMatches(declared, manifest);
 
     private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(
         Store store,
@@ -2491,18 +2471,20 @@ public sealed class SeikoClient
                             artifact.Prerequisites ?? [],
                             artifact.OptionalPeers ?? [],
                             artifact.Conflicts ?? [],
-                            artifact.External is not null
-                                ? artifact.External.Files + artifact.External.Archives
-                                : ExternalFiles.Count(new ArtifactManifest
+                            artifact.ExternalFiles is not null || artifact.ExternalArchives is not null
+                                ? ExternalFiles.Count(new ArtifactManifest
                                 {
                                     ExternalFiles = artifact.ExternalFiles,
                                     ExternalArchives = artifact.ExternalArchives,
-                                }),
-                            artifact.External?.Hosts ?? ExternalFiles.Hosts(new ArtifactManifest
-                            {
-                                ExternalFiles = artifact.ExternalFiles,
-                                ExternalArchives = artifact.ExternalArchives,
-                            }).ToList(),
+                                })
+                                : artifact.External?.Files + artifact.External?.Archives ?? 0,
+                            artifact.ExternalFiles is not null || artifact.ExternalArchives is not null
+                                ? ExternalFiles.Hosts(new ArtifactManifest
+                                {
+                                    ExternalFiles = artifact.ExternalFiles,
+                                    ExternalArchives = artifact.ExternalArchives,
+                                }).ToList()
+                                : artifact.External?.Hosts ?? [],
                             artifact.External is not null
                                 || artifact.ExternalFiles is not null
                                 || artifact.ExternalArchives is not null))
