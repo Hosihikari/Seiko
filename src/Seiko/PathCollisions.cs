@@ -6,74 +6,89 @@ namespace Seiko;
 // and Unicode normalization are folded, and no path may be both a file and a
 // directory prefix of another (ADR-0024). The index verifier, the store and
 // the external declarations share this so a package cannot pass one check and
-// fail the next. Both directions are checked, because the order in which the
-// two colliding paths are declared is irrelevant.
+// fail the next.
 //
-// A package may carry 100,000 entries, so the reverse direction (an existing
-// descendant below the new path) cannot scan every added path. Every add
-// records its ancestor directories with one example descendant instead; the
-// check then costs the path depth.
+// Callers collect every path, then validate once. The check sorts by the
+// normalized key with the separator ordered below every other character, so a
+// file and its descendant are always adjacent; this keeps only one string per
+// path instead of one per ancestor, which used to grow with the square of the
+// path depth.
 internal sealed class PathCollisions
 {
-    private readonly Dictionary<string, string> _byKey = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _descendants = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<Entry> _items = [];
 
     public static string Key(string path) => path.Normalize(NormalizationForm.FormC);
 
-    public IReadOnlyDictionary<string, string> Entries => _byKey;
+    public void Add(string path) => _items.Add(new Entry(Key(path), path, _items.Count));
 
-    // Returns false with the already-added path and why they collide.
-    public bool TryAdd(string path, out PathCollision? collision)
+    // Collisions in the order the later participant was added; the record's
+    // Other is always the file side.
+    public IReadOnlyList<PathCollision> Validate()
     {
-        var key = Key(path);
-        if (_byKey.TryGetValue(key, out var otherKey))
+        if (_items.Count < 2)
         {
-            collision = new PathCollision(otherKey, PathCollisionKind.SamePath);
-            return false;
+            return [];
         }
 
-        for (var i = 0; i < key.Length; i++)
+        var sorted = _items.ToArray();
+        Array.Sort(sorted, Compare);
+        var found = new List<(int Later, PathCollision Collision)>();
+        for (var i = 0; i + 1 < sorted.Length; i++)
         {
-            if (key[i] != '/')
+            var left = sorted[i];
+            var right = sorted[i + 1];
+            if (string.Equals(left.Key, right.Key, StringComparison.OrdinalIgnoreCase))
             {
+                var (first, second) = left.Index <= right.Index ? (left, right) : (right, left);
+                found.Add((second.Index, new PathCollision(first.Path, PathCollisionKind.SamePath)));
                 continue;
             }
 
-            if (_byKey.TryGetValue(key[..i], out var filePrefix))
+            if (right.Key.Length > left.Key.Length
+                && right.Key[left.Key.Length] == '/'
+                && right.Key.AsSpan(0, left.Key.Length).Equals(left.Key.AsSpan(), StringComparison.OrdinalIgnoreCase))
             {
-                collision = new PathCollision(filePrefix, PathCollisionKind.FileBlocksDirectory);
-                return false;
+                // left is the shorter key, so it is always the file side.
+                found.Add((Math.Max(left.Index, right.Index), new PathCollision(left.Path, PathCollisionKind.Prefix)));
             }
         }
 
-        if (_descendants.TryGetValue(key, out var descendant))
-        {
-            collision = new PathCollision(descendant, PathCollisionKind.DirectoryBlocksFile);
-            return false;
-        }
-
-        _byKey[key] = path;
-        for (var i = 0; i < key.Length; i++)
-        {
-            if (key[i] == '/')
-            {
-                _descendants.TryAdd(key[..i], path);
-            }
-        }
-
-        collision = null;
-        return true;
+        return found
+            .OrderBy(item => item.Later)
+            .Select(item => item.Collision)
+            .ToList();
     }
+
+    // Ordinal ignore-case, except that '/' sorts below every other character
+    // so "dir/x" sits next to "dir" and not after "dir!".
+    private static int Compare(Entry left, Entry right)
+    {
+        var length = Math.Min(left.Key.Length, right.Key.Length);
+        for (var i = 0; i < length; i++)
+        {
+            var a = Order(left.Key[i]);
+            var b = Order(right.Key[i]);
+            if (a != b)
+            {
+                return a < b ? -1 : 1;
+            }
+        }
+
+        return left.Key.Length.CompareTo(right.Key.Length);
+    }
+
+    private static char Order(char value)
+        => value == '/' ? '\0' : char.ToUpperInvariant(value);
+
+    private readonly record struct Entry(string Key, string Path, int Index);
 }
 
 internal enum PathCollisionKind
 {
     // Same path modulo case or Unicode normalization.
     SamePath,
-    // The already-added path is a file where the new path needs a directory.
-    FileBlocksDirectory,
-    // The already-added path lives below the new path, which must be a file.
-    DirectoryBlocksFile,
+    // One path is a file where the other needs a directory.
+    Prefix,
 }
 
 internal sealed record PathCollision(string Other, PathCollisionKind Kind);

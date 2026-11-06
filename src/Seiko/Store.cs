@@ -298,21 +298,25 @@ public sealed class Store
         var collisions = new PathCollisions();
         foreach (var digest in extracted)
         {
-            collisions.TryAdd(digest.Path, out _);
+            collisions.Add(digest.Path);
         }
 
-        var targets = (artifact.ExternalFiles ?? []).Select(file => file.Path)
-            .Concat((artifact.ExternalArchives ?? []).SelectMany(archive => archive.Members).Select(member => member.Path));
-        foreach (var target in targets)
+        foreach (var target in (artifact.ExternalFiles ?? []).Select(file => file.Path)
+            .Concat((artifact.ExternalArchives ?? []).SelectMany(archive => archive.Members).Select(member => member.Path)))
         {
-            if (!collisions.TryAdd(target, out var collision))
-            {
-                throw new SeikoException(
-                    collision!.Kind == PathCollisionKind.SamePath
-                        ? $"{name}: external target path '{target}' also exists inside the artifact as '{collision.Other}'"
-                        : $"{name}: path '{collision.Other}' is both a file and a directory of external target '{target}'",
-                    "io");
-            }
+            collisions.Add(target);
+        }
+
+        // One pass over the whole tree tells which paths collide with which;
+        // declarations were already checked against each other on their own.
+        var collision = collisions.Validate().FirstOrDefault();
+        if (collision is not null)
+        {
+            throw new SeikoException(
+                collision.Kind == PathCollisionKind.SamePath
+                    ? $"{name}: path '{collision.Other}' also exists inside the artifact by case or Unicode normalization"
+                    : $"{name}: path '{collision.Other}' is both a file and a directory of another deployed path",
+                "io");
         }
     }
 

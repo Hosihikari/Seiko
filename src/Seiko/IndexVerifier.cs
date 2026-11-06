@@ -1140,14 +1140,17 @@ public static class IndexVerifier
                     return;
                 }
 
-                if (!collisions.TryAdd(name, out var archiveCollision))
-                {
-                    context.Error(
-                        "artifact-path",
-                        artifactCollision(reference, name, archiveCollision!),
-                        reference.Path);
-                    return;
-                }
+                collisions.Add(name);
+            }
+
+            var archiveCollision = collisions.Validate().FirstOrDefault();
+            if (archiveCollision is not null)
+            {
+                context.Error(
+                    "artifact-path",
+                    artifactCollision(reference, archiveCollision),
+                    reference.Path);
+                return;
             }
 
             var manifests = archive.Entries
@@ -1334,15 +1337,17 @@ public static class IndexVerifier
                     // The deployment folds case and Unicode normalization and
                     // rejects file/directory overlaps; a package that would
                     // fail there must not pass here (ADR-0024).
-                    if (!collisions.TryAdd(target, out var targetCollision))
-                    {
-                        context.Error(
-                            "manifest-external",
-                            targetCollision!.Kind == PathCollisionKind.SamePath
-                                ? $"{prefix}: external target path '{target}' also exists inside the artifact as '{targetCollision.Other}'"
-                                : $"{prefix}: path '{targetCollision.Other}' is both a file and a directory of external target '{target}'",
-                            reference.Path);
-                    }
+                    collisions.Add(target);
+                }
+
+                foreach (var targetCollision in collisions.Validate())
+                {
+                    context.Error(
+                        "manifest-external",
+                        targetCollision.Kind == PathCollisionKind.SamePath
+                            ? $"{prefix}: external target path '{targetCollision.Other}' also exists inside the artifact"
+                            : $"{prefix}: path '{targetCollision.Other}' is both a file and a directory of another path",
+                        reference.Path);
                 }
             }
 
@@ -1369,10 +1374,10 @@ public static class IndexVerifier
         }
     }
 
-    private static string artifactCollision(ArtifactRef reference, string name, PathCollision collision)
+    private static string artifactCollision(ArtifactRef reference, PathCollision collision)
         => collision.Kind == PathCollisionKind.SamePath
-            ? $"sei '{reference.Sei}' {reference.Version}: archive paths '{collision.Other}' and '{name}' differ only by case or Unicode normalization"
-            : $"sei '{reference.Sei}' {reference.Version}: archive path '{collision.Other}' is both a file and a directory of '{name}'";
+            ? $"sei '{reference.Sei}' {reference.Version}: archive path '{collision.Other}' differs only by case or Unicode normalization from another archive path"
+            : $"sei '{reference.Sei}' {reference.Version}: archive path '{collision.Other}' is both a file and a directory of another archive path";
 
     private static bool DependenciesEqual(
         List<SeiDependency>? manifestDependencies,

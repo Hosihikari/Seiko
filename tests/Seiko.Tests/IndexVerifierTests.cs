@@ -733,6 +733,55 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_AcceptsManyDeepPaths()
+    {
+        // Deep paths used to cost one retained string per ancestor; the index
+        // now keeps one per path. The archive must still verify cleanly and
+        // report a prefix collision that only the sorted check can find.
+        using var fixture = new Fixture();
+        var files = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < 32; i++)
+        {
+            var depth = string.Join("/", Enumerable.Repeat("d", 500));
+            files[$"top{i}/{depth}/leaf.txt"] = "x";
+        }
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = files }],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Empty(result.Findings);
+    }
+
+    [Fact]
+    public void Verify_RejectsAFilePrefixThatSortsAwayFromItsDirectory()
+    {
+        // '!' sorts above '/', so a plain scan of neighbours would miss these;
+        // the separator ordering must keep "dir" next to "dir/x".
+        using var fixture = NewFixture();
+        var sei = ReadSei(fixture, "hello");
+        sei.Versions[0].Artifacts[0].ExternalFiles =
+        [
+            new ExternalFile { Path = "dir/x", Url = "https://vendor.invalid/x", Sha256 = new string('a', 64) },
+            new ExternalFile { Path = "dir!", Url = "https://vendor.invalid/bang", Sha256 = new string('b', 64) },
+            new ExternalFile { Path = "dir", Url = "https://vendor.invalid/dir", Sha256 = new string('c', 64) },
+        ];
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "artifact-external"
+            && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Verify_CheckArtifactsReportsForeignLocation()
     {
         using var fixture = NewFixture();

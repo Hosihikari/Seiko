@@ -26,26 +26,17 @@ internal static class ExternalFiles
                 code);
         }
 
-        var paths = new HashSet<string>(StringComparer.Ordinal);
         // Deployment folds case and Unicode normalization and rejects
         // file/directory overlaps, so declarations must already be unique
-        // under those rules (ADR-0024).
+        // under those rules (ADR-0024). Collisions are checked once at the end
+        // so the per-target work stays linear.
         var collisions = new PathCollisions();
         var fileIdentities = new Dictionary<string, ExternalFile>(StringComparer.Ordinal);
         var declaredBytes = 0L;
         foreach (var file in files)
         {
             ValidateTarget(file.Path, name, code);
-            if (!paths.Add(file.Path))
-            {
-                throw new SeikoException($"{name}: duplicate external target path '{file.Path}'", code);
-            }
-
-            if (!collisions.TryAdd(file.Path, out var fileCollision))
-            {
-                throw Collision(name, file.Path, fileCollision!, code);
-            }
-
+            collisions.Add(file.Path);
             EnsureHttps(file.Url, $"external file '{file.Path}'", name, code);
             EnsureDigest(file.Sha256, $"external file '{file.Path}'", name, code);
             EnsureSize(file.Size, $"external file '{file.Path}'", name, code);
@@ -114,19 +105,14 @@ internal static class ExternalFiles
                 ValidateMemberName(member.Member, name, code);
                 ValidateTarget(member.Path, name, code);
                 declared.Add(member.Member);
-
-                if (!paths.Add(member.Path))
-                {
-                    throw new SeikoException(
-                        $"{name}: duplicate external target path '{member.Path}'",
-                        code);
-                }
-
-                if (!collisions.TryAdd(member.Path, out var memberCollision))
-                {
-                    throw Collision(name, member.Path, memberCollision!, code);
-                }
+                collisions.Add(member.Path);
             }
+        }
+
+        var collision = collisions.Validate().FirstOrDefault();
+        if (collision is not null)
+        {
+            throw Collision(name, collision, code);
         }
 
         // The same layered budget as artifact extraction (ADR-0024): many
@@ -189,11 +175,11 @@ internal static class ExternalFiles
     public static int Count(ArtifactManifest? artifact)
         => artifact is null ? 0 : (artifact.ExternalFiles?.Count ?? 0) + (artifact.ExternalArchives?.Count ?? 0);
 
-    private static SeikoException Collision(string name, string path, PathCollision collision, string code)
+    private static SeikoException Collision(string name, PathCollision collision, string code)
         => new(
             collision.Kind == PathCollisionKind.SamePath
-                ? $"{name}: external target path '{path}' also exists as '{collision.Other}' by case or Unicode normalization"
-                : $"{name}: path '{collision.Other}' is both a file and a directory of external target '{path}'",
+                ? $"{name}: external target path '{collision.Other}' also exists by case or Unicode normalization"
+                : $"{name}: path '{collision.Other}' is both a file and a directory of another external target",
             code);
 
     private static string Host(string url)
