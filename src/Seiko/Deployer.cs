@@ -254,7 +254,7 @@ public static class Deployer
 
             if (!unchanged)
             {
-                mutations.Add(new Mutation(relative, file));
+                mutations.Add(new Mutation(relative, file, CreatedHere: !exists));
             }
         }
 
@@ -401,6 +401,7 @@ public static class Deployer
             }
 
             var applied = 0;
+            var lateAdoptions = new List<string>();
             foreach (var mutation in mutations)
             {
                 if (mutation.File is null)
@@ -415,6 +416,30 @@ public static class Deployer
                 if (!string.IsNullOrEmpty(parent))
                 {
                     EnsureDirectory(parent, createdDirectories);
+                }
+
+                // The plan saw no file here. If one appeared since, it is
+                // someone else's content: back it up now and apply the normal
+                // unmanaged-path rule rather than overwrite it.
+                var raced = mutation.CreatedHere
+                    && transaction.SnapshotLateCreation(mutation.RelativePath);
+                if (raced)
+                {
+                    if (!adopt && !force)
+                    {
+                        throw new SeikoException(
+                            $"deployment conflict: unmanaged path {mutation.RelativePath} appeared during the deployment; pass --adopt to keep it or --force to overwrite it",
+                            "deploy");
+                    }
+
+                    if (adopt)
+                    {
+                        // Same rule as a path that already existed at plan
+                        // time: keep the user's content and record it. The
+                        // state and snapshot are built after publishing.
+                        lateAdoptions.Add(mutation.RelativePath);
+                        continue;
+                    }
                 }
 
                 if (Directory.Exists(destination))
@@ -461,6 +486,16 @@ public static class Deployer
                 }
 
                 ApplyMode(Native(root, relative), relative, modes[relative]);
+            }
+
+            foreach (var relative in lateAdoptions)
+            {
+                // The state was built before publishing, so the record must be
+                // flipped to adopted now that the content is known.
+                var record = newState.Files[relative];
+                record.Adopted = true;
+                record.Sha256 = Hashing.Sha256File(Native(root, relative));
+                adoptedSources[relative] = Native(root, relative);
             }
 
             WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
@@ -936,7 +971,10 @@ public static class Deployer
         File.Move(temp, path, overwrite: true);
     }
 
-    private sealed record Mutation(string RelativePath, DesiredFile? File, bool Adopted = false);
+    // CreatedHere marks a target that did not exist when the plan was made.
+    // Publishing it must not overwrite a file another process created in the
+    // meantime; the transaction knows no backup for that file (ADR-0019).
+    private sealed record Mutation(string RelativePath, DesiredFile? File, bool CreatedHere = false);
 
     private static string HashStoredFile(DeployedSei sei, string file, string relative)
     {

@@ -67,6 +67,141 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Sync_DoesNotOverwriteAFileCreatedDuringTheDeployment()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture
+            {
+                Files =
+                {
+                    ["a.txt"] = "package-a",
+                    ["b.txt"] = "package-b",
+                },
+            }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        try
+        {
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    File.WriteAllText(Path.Combine(fixture.Root, "b.txt"), "external-user-content");
+                }
+            };
+            var error = Assert.Throws<SeikoException>(
+                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Contains("appeared during the deployment", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        // Rollback keeps the racing content; the new file is the deployer's
+        // leftover and goes away with the transaction.
+        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Null(new SeikoClient().ReadLock(fixture.Root));
+    }
+
+    [Fact]
+    public void Sync_ForceOverwritesAFileCreatedDuringTheDeployment()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture
+            {
+                Files =
+                {
+                    ["a.txt"] = "package-a",
+                    ["b.txt"] = "package-b",
+                },
+            }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        try
+        {
+            // Open the window after a.txt is published, before b.txt.
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    File.WriteAllText(Path.Combine(fixture.Root, "b.txt"), "external-user-content");
+                }
+            };
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, force: true);
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        Assert.Equal("package-a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Equal("package-b", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
+        Assert.NotNull(new SeikoClient().ReadLock(fixture.Root));
+    }
+
+    [Fact]
+    public void Sync_AdoptKeepsAFileCreatedDuringTheDeployment()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture
+            {
+                Files =
+                {
+                    ["a.txt"] = "package-a",
+                    ["b.txt"] = "package-b",
+                },
+            }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        try
+        {
+            Deployer.AppliedForTests.Value = count =>
+            {
+                if (count == 1)
+                {
+                    File.WriteAllText(Path.Combine(fixture.Root, "b.txt"), "external-user-content");
+                }
+            };
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, adopt: true);
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        Assert.Equal("package-a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
+        var state = JsonSerializer.Deserialize(
+            File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
+            SeikoJsonContext.Default.LocalState)!;
+        Assert.True(state.Files["b.txt"].Adopted);
+
+        // The adopted content is in the generation snapshot for rollback.
+        var snapshot = Path.Combine(
+            fixture.Root,
+            ".seiko",
+            "generations",
+            state.Generation.ToString(),
+            "adopted",
+            "b.txt");
+        Assert.Equal("external-user-content", File.ReadAllText(snapshot));
+    }
+
+    [Fact]
     public void Sync_RejectsFileAndDirectoryPrefixConflictBeforeWriting()
     {
         using var fixture = new Fixture();

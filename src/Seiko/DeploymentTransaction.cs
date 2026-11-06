@@ -92,6 +92,33 @@ internal sealed class DeploymentTransaction
         _journal.Entries.Add(entry);
     }
 
+    // A target recorded as absent can still be created by someone else before
+    // it is published. Re-check it at publish time; when it now exists, take
+    // the backup the plan skipped and report true so the caller can apply the
+    // same conflict rule instead of overwriting silently.
+    public bool SnapshotLateCreation(string relative)
+    {
+        var normalized = Normalize(relative);
+        if (!_entries.TryGetValue(normalized, out var entry) || entry.Existed)
+        {
+            return entry?.Existed ?? false;
+        }
+
+        var fullPath = Resolve(_root, normalized);
+        if (!File.Exists(fullPath) || Directory.Exists(fullPath))
+        {
+            return false;
+        }
+
+        entry.Existed = true;
+        entry.UnixMode = GetMode(fullPath);
+        var backup = Resolve(_backupDirectory, normalized);
+        Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+        ReadableFile.Copy(fullPath, backup, overwrite: true);
+        WriteJournalFile(_journalPath, _journal);
+        return true;
+    }
+
     public void WillCreateTemporary(string relative)
     {
         var normalized = Normalize(relative);
