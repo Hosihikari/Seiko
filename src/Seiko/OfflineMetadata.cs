@@ -11,7 +11,6 @@ internal static class OfflineMetadata
         SeikoConfig config,
         string storePath,
         IEnumerable<string> initial,
-        bool followIndexLists = false,
         SeikoLock? lockedGraph = null)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
@@ -39,24 +38,6 @@ internal static class OfflineMetadata
             {
                 missing.Add($"index metadata of source '{source.Id}'");
                 continue;
-            }
-
-            if (!followIndexLists)
-            {
-                continue;
-            }
-
-            // search walks the root list, so every listed name needs an entry.
-            var root = MetadataCache.TryRead(path, SeikoJsonContext.Default.IndexRoot);
-            if (root is null)
-            {
-                missing.Add($"index metadata of source '{source.Id}' (unreadable)");
-                continue;
-            }
-
-            foreach (var name in root.Sei ?? [])
-            {
-                pending.Enqueue(name);
             }
         }
 

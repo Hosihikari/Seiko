@@ -81,6 +81,4 @@ internal static class MetadataCache
         }
     }
 
-    public static string Describe(string storeRoot)
-        => Path.Combine(storeRoot, DirectoryName);
 }

@@ -1262,12 +1262,7 @@ public sealed class SeikoClient
                 problems.Add(ex.Message);
             }
 
-            var catalog = built switch
-            {
-                HttpSource http => http.Catalog,
-                LocalSource local => local.Catalog,
-                _ => null,
-            };
+            var catalog = built?.Catalog;
 
             result.Add(new SourceStatus(
                 source.Id,
