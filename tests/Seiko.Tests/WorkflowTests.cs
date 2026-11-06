@@ -426,6 +426,43 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Outdated_KeepsPrereleasePermissionWhenRangesIntersect()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("lib", new VersionFixture
+        {
+            Version = "1.0.0-alpha",
+            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "alpha" } }],
+        });
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+        });
+        // The direct range names a prerelease; intersecting it with a stable
+        // range drops the alpha endpoint, so the permission must come from the
+        // original constraints.
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("lib", "[1.0.0-alpha,3.0.0)"),
+            new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "lib.json");
+        var sei = System.Text.Json.JsonSerializer.Deserialize<SeiIndex>(
+            File.ReadAllBytes(path),
+            SeikoJsonContext.Default.SeiIndex)!;
+        sei.Versions.Add(new SeiVersionEntry { Version = "2.1.0-beta.1" });
+        File.WriteAllBytes(
+            path,
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+
+        var item = Assert.Single(client.Outdated(fixture.Root), entry => entry.Name == "lib");
+        Assert.Equal("2.1.0-beta.1", item.LatestInRange);
+    }
+
+    [Fact]
     public void Sync_RejectsOverlongArchiveEntryNames()
     {
         using var fixture = new Fixture();

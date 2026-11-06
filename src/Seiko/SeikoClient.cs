@@ -2860,8 +2860,10 @@ public sealed class SeikoClient
             var rid = string.IsNullOrWhiteSpace(lockFile.Target.Rid) ? DefaultRid() : lockFile.Target.Rid;
             // A range that names a prerelease admits them, exactly as the
             // resolver decides; requiring --pre too would hide updates on a
-            // prerelease line the user already chose (ADR-0004).
-            var allowPrereleaseHere = allowPrerelease || Resolver.RangeAllowsPrerelease(range);
+            // prerelease line the user already chose (ADR-0004). The decision
+            // reads the original constraints: intersecting them drops the
+            // explicit prerelease endpoint.
+            var allowPrereleaseHere = allowPrerelease || parsedRanges.Any(Resolver.RangeAllowsPrerelease);
             var candidates = new List<NuGetVersion>();
             foreach (var entry in index.Versions)
             {
