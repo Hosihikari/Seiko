@@ -89,6 +89,8 @@ public sealed class DeployTransactionTests
 
     private static string Other(string name) => name == "a.txt" ? "b.txt" : "a.txt";
 
+    private static string PackageContent(string name) => name == "a.txt" ? "package-a" : "package-b";
+
     private static Fixture TwoFileFixture()
     {
         var fixture = new Fixture();
@@ -146,6 +148,7 @@ public sealed class DeployTransactionTests
             Deployer.AppliedForTests.Value = null;
         }
 
+        // Every target ends up with package content under --force.
         Assert.Equal("package-a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
         Assert.Equal("package-b", File.ReadAllText(Path.Combine(fixture.Root, "b.txt")));
         Assert.NotNull(new SeikoClient().ReadLock(fixture.Root));
@@ -165,7 +168,9 @@ public sealed class DeployTransactionTests
             Deployer.AppliedForTests.Value = null;
         }
 
-        Assert.Equal("package-a", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
+        Assert.Equal(
+            PackageContent(Other(injected[0])),
+            File.ReadAllText(Path.Combine(fixture.Root, Other(injected[0]))));
         Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected[0])));
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
