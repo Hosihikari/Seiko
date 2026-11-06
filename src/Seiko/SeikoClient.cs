@@ -121,7 +121,8 @@ public sealed class SeikoClient
         IReadOnlyList<SeiSpec>? specsOverride = null,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        SourceScope? preloaded = null)
     {
         var pendingTransaction = false;
         if (transaction is null)
@@ -148,11 +149,14 @@ public sealed class SeikoClient
 
         var config = ConfigLoader.Load(root);
         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using var session = new DownloadSession(jobs, downloadCts.Token)
-        {
-            Progress = progress,
-            Log = log,
-        };
+        var session = preloaded?.Session
+            ?? new DownloadSession(jobs, downloadCts.Token)
+            {
+                Progress = progress,
+                Log = log,
+            };
+        session.Progress = progress;
+        session.Log = log;
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
@@ -170,8 +174,8 @@ public sealed class SeikoClient
                 lockedGraph: mode == SyncMode.Normal ? null : existingLock);
         }
 
-        var sources = LoadSources(config, root, proxy, session, storePath, offline);
-        using var sourceScope = new SourceScope(sources);
+        var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
+        using var sourceScope = preloaded is null ? new SourceScope(sources) : null;
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
@@ -735,74 +739,88 @@ public sealed class SeikoClient
         }
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
+        SourceScope? preloaded = null;
         if (defaultRangeTargets.Count > 0 || (existingLock is not null && removedNames.Count > 0))
         {
-            using var session = new DownloadSession(jobs, cancellationToken);
-            var sources = LoadSources(config, root, proxy, session, storePath, offline);
-            using var sourceScope = new SourceScope(sources);
-            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-            var resolved = new Resolver(
-                sources,
-                existingLock,
-                rid,
-                allowPrerelease,
-                updateNames: null,
-                latestInstallable,
-                allowCritical).Resolve(config.Sei);
-
-            foreach (var target in defaultRangeTargets)
-            {
-                var selected = resolved.FirstOrDefault(sei => string.Equals(sei.Name, target.Name, StringComparison.Ordinal))
-                    ?? throw new SeikoException($"no resolved version for {target.Name}", "resolve");
-                target.Version = DefaultAddRange(selected.ParsedVersion);
-            }
-
-            if (existingLock is not null && removedNames.Count > 0)
-            {
-                EnsureRemoveKeepsSelections(existingLock, resolved, removedNames, addNames);
-            }
+            var preSession = new DownloadSession(jobs, cancellationToken);
+            preloaded = new SourceScope(
+                LoadSources(config, root, proxy, preSession, storePath, offline),
+                preSession);
         }
 
-        if (dryRun)
+        try
         {
-            return PreviewWithoutWriting(
-                root,
-                storePath,
-                config.Sei,
-                allowPrerelease,
-                mode: SyncMode.Normal,
-                jobs,
-                proxy,
-                progress,
-                log,
-                cancellationToken,
-                updateNames: null,
-                latestInstallable,
-                allowCritical,
-                adopt,
-                force,
-                offline);
-        }
+            if (preloaded is not null)
+            {
+                var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+                var resolved = new Resolver(
+                    preloaded.Sources,
+                    existingLock,
+                    rid,
+                    allowPrerelease,
+                    updateNames: null,
+                    latestInstallable,
+                    allowCritical).Resolve(config.Sei);
 
-        return WriteSpecsAndSync(
-            root,
-            config.Sei,
-            transaction => SyncLocked(
+                foreach (var target in defaultRangeTargets)
+                {
+                    var selected = resolved.FirstOrDefault(sei => string.Equals(sei.Name, target.Name, StringComparison.Ordinal))
+                        ?? throw new SeikoException($"no resolved version for {target.Name}", "resolve");
+                    target.Version = DefaultAddRange(selected.ParsedVersion);
+                }
+
+                if (existingLock is not null && removedNames.Count > 0)
+                {
+                    EnsureRemoveKeepsSelections(existingLock, resolved, removedNames, addNames);
+                }
+            }
+
+            if (dryRun)
+            {
+                return PreviewWithoutWriting(
+                    root,
+                    storePath,
+                    config.Sei,
+                    allowPrerelease,
+                    mode: SyncMode.Normal,
+                    jobs,
+                    proxy,
+                    progress,
+                    log,
+                    cancellationToken,
+                    updateNames: null,
+                    latestInstallable,
+                    allowCritical,
+                    adopt,
+                    force,
+                    offline);
+            }
+
+            return WriteSpecsAndSync(
                 root,
-                storePath,
-                allowPrerelease,
-                SyncMode.Normal,
-                jobs,
-                proxy,
-                progress,
-                log,
-                cancellationToken,
-                updateNames: null,
-                latestInstallable,
-                allowCritical,
-                transaction,
-                adopt: adopt,
-                force: force));
+                config.Sei,
+                transaction => SyncLocked(
+                    root,
+                    storePath,
+                    allowPrerelease,
+                    SyncMode.Normal,
+                    jobs,
+                    proxy,
+                    progress,
+                    log,
+                    cancellationToken,
+                    updateNames: null,
+                    latestInstallable,
+                    allowCritical,
+                    transaction,
+                    adopt: adopt,
+                    force: force,
+                    preloaded: preloaded));
+        }
+        finally
+        {
+            preloaded?.Dispose();
+        }
     }
 
     // A preview must not recover a pending transaction (ADR-0029); a real
@@ -962,75 +980,89 @@ public sealed class SeikoClient
         }
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
-        if (existingLock is not null)
+        SourceScope? preloaded = null;
+        try
         {
-            using var session = new DownloadSession(jobs, cancellationToken);
-            var sources = LoadSources(config, root, proxy, session, storePath, offline);
-            using var sourceScope = new SourceScope(sources);
-            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-            var resolved = new Resolver(
-                sources,
-                existingLock,
-                rid,
-                allowPrerelease,
-                updateNames: null,
-                latestInstallable,
-                allowCritical).Resolve(config.Sei);
-            EnsureRemoveKeepsSelections(
-                existingLock,
-                resolved,
-                new HashSet<string>(StringComparer.Ordinal) { name },
-                new HashSet<string>(StringComparer.Ordinal));
-        }
+            if (existingLock is not null)
+            {
+                var preSession = new DownloadSession(jobs, cancellationToken);
+                preloaded = new SourceScope(
+                    LoadSources(config, root, proxy, preSession, storePath, offline),
+                    preSession);
+            }
 
-        if (dryRun)
-        {
-            return PreviewWithoutWriting(
+            if (preloaded is not null)
+            {
+                var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+                var resolved = new Resolver(
+                    preloaded.Sources,
+                    existingLock,
+                    rid,
+                    allowPrerelease,
+                    updateNames: null,
+                    latestInstallable,
+                    allowCritical).Resolve(config.Sei);
+                EnsureRemoveKeepsSelections(
+                    existingLock!,
+                    resolved,
+                    new HashSet<string>(StringComparer.Ordinal) { name },
+                    new HashSet<string>(StringComparer.Ordinal));
+            }
+
+            if (dryRun)
+            {
+                return PreviewWithoutWriting(
+                    root,
+                    storePath,
+                    config.Sei,
+                    allowPrerelease,
+                    mode: SyncMode.Normal,
+                    jobs,
+                    proxy,
+                    progress,
+                    log,
+                    cancellationToken,
+                    updateNames: null,
+                    latestInstallable,
+                    allowCritical,
+                    adopt,
+                    force,
+                    offline);
+            }
+
+            return WriteSpecsAndSync(
                 root,
-                storePath,
                 config.Sei,
-                allowPrerelease,
-                mode: SyncMode.Normal,
-                jobs,
-                proxy,
-                progress,
-                log,
-                cancellationToken,
-                updateNames: null,
-                latestInstallable,
-                allowCritical,
-                adopt,
-                force,
-                offline);
+                transaction => SyncLocked(
+                    root,
+                    storePath,
+                    allowPrerelease,
+                    SyncMode.Normal,
+                    jobs,
+                    proxy,
+                    progress,
+                    log,
+                    cancellationToken,
+                    updateNames: null,
+                    latestInstallable,
+                    allowCritical,
+                    transaction,
+                    adopt: adopt,
+                    force: force,
+                    offline: offline,
+                    preloaded: preloaded),
+                purge
+                    ? transaction =>
+                    {
+                        transaction.MoveToTrash(PurgeConfigPath(name));
+                        transaction.MoveToTrash(PurgeDataPath(name));
+                    }
+                    : null);
         }
-
-        return WriteSpecsAndSync(
-            root,
-            config.Sei,
-            transaction => SyncLocked(
-                root,
-                storePath,
-                allowPrerelease,
-                SyncMode.Normal,
-                jobs,
-                proxy,
-                progress,
-                log,
-                cancellationToken,
-                updateNames: null,
-                latestInstallable,
-                allowCritical,
-                transaction,
-                adopt: adopt,
-                force: force,
-                offline: offline),
-            purge
-                ? transaction =>
-                {
-                    transaction.MoveToTrash(PurgeConfigPath(name));
-                    transaction.MoveToTrash(PurgeDataPath(name));
-                }
-                : null);
+        finally
+        {
+            preloaded?.Dispose();
+        }
     }
 
     internal static string PurgeConfigPath(string name)

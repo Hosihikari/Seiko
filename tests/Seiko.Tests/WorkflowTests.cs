@@ -400,6 +400,32 @@ public sealed class WorkflowTests
     }
 
     [Fact]
+    public void Add_FetchesIndexMetadataOncePerCommand()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            "schemaVersion = 2\n"
+            + $"sources = [\n  {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}\n]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = []\n");
+
+        new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory);
+
+        // The default-range pre-resolve and the final sync share one source
+        // cache; the same metadata is not requested twice.
+        Assert.Single(server.Requests, request => request.Path == "/index.json");
+        Assert.Single(server.Requests, request => request.Path == "/sei/hello.json");
+    }
+
+    [Fact]
     public void Sync_RejectsOverlongArchiveEntryNames()
     {
         using var fixture = new Fixture();
