@@ -309,11 +309,10 @@ public sealed class Store
 
         // One pass over the whole tree tells which paths collide with which;
         // declarations were already checked against each other on their own.
-        var collision = collisions.Validate().FirstOrDefault();
-        if (collision is not null)
+        if (collisions.TryFind(out var collision))
         {
             throw new SeikoException(
-                collision.Kind == PathCollisionKind.SamePath
+                collision!.Kind == PathCollisionKind.SamePath
                     ? $"{name}: path '{collision.Other}' also exists inside the artifact by case or Unicode normalization"
                     : $"{name}: path '{collision.Other}' is both a file and a directory of another deployed path",
                 "io");

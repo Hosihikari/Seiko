@@ -13,10 +13,15 @@ namespace Seiko;
 // never disagree with each other. Ancestors are found through a span lookup,
 // which slices without allocating, so no ancestor string is retained (the
 // former per-ancestor keys grew with the square of the path depth).
+//
+// A path that is itself a file for many descendants collides with each of
+// them, so materializing every pair grows with entries times depth. Callers
+// only need one error to reject, so the search stops at the first hit.
 internal sealed class PathCollisions
 {
     private readonly Dictionary<string, int> _firstByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Entry> _items = [];
+    private string[]? _sorted;
 
     public static string Key(string path) => path.Normalize(NormalizationForm.FormC);
 
@@ -25,49 +30,106 @@ internal sealed class PathCollisions
         var key = Key(path);
         _firstByKey.TryAdd(key, _items.Count);
         _items.Add(new Entry(key, path));
+        _sorted = null;
     }
 
-    // Collisions in the order the later participant was added; the record's
-    // Other is always the file side. Additions are complete by now, so an
-    // ancestor may have been added after its descendant; both directions are
-    // reported once, keyed by the later index.
-    public IReadOnlyList<PathCollision> Validate()
+    // The first collision among the collected paths. The record's Other is
+    // always the file side. Every path is already added, so an ancestor is
+    // found whether or not it was declared before its descendant.
+    public bool TryFind(out PathCollision? collision)
     {
-        var found = new List<(int Later, PathCollision Collision)>();
         var lookup = _firstByKey.GetAlternateLookup<ReadOnlySpan<char>>();
-        var reported = new HashSet<(int, int, PathCollisionKind)>();
         for (var index = 0; index < _items.Count; index++)
         {
             var entry = _items[index];
 
-            // Same path modulo case or normalization, reported against the
-            // earliest occurrence. Repeats keep participating below.
+            // Same path modulo case or normalization, against the earliest
+            // occurrence. Repeats keep participating below.
             var first = _firstByKey[entry.Key];
-            if (first != index && reported.Add((first, index, PathCollisionKind.SamePath)))
+            if (first != index)
             {
-                found.Add((
-                    Math.Max(first, index),
-                    new PathCollision(_items[first].Path, PathCollisionKind.SamePath)));
+                collision = new PathCollision(_items[first].Path, PathCollisionKind.SamePath);
+                return true;
             }
 
-            for (var i = 0; i < entry.Key.Length; i++)
+            if (FindBlockingAncestor(entry.Key, index, lookup) is { } file)
             {
-                if (entry.Key[i] == '/'
-                    && lookup.TryGetValue(entry.Key.AsSpan(0, i), out var file)
-                    && file != index
-                    && reported.Add((file, index, PathCollisionKind.Prefix)))
-                {
-                    found.Add((
-                        Math.Max(file, index),
-                        new PathCollision(_items[file].Path, PathCollisionKind.Prefix)));
-                }
+                collision = new PathCollision(_items[file].Path, PathCollisionKind.Prefix);
+                return true;
             }
         }
 
-        return found
-            .OrderBy(item => item.Later)
-            .Select(item => item.Collision)
-            .ToList();
+        collision = null;
+        return false;
+    }
+
+    // Whether one more path would collide with the collected set, without
+    // adding it. Used for external targets against the archive's own names.
+    // Both directions are checked: an existing file blocking the target, and
+    // the target being a file where an existing path needs a directory.
+    public bool TryFindCollisionWith(string path, out PathCollision? collision)
+    {
+        var key = Key(path);
+        if (_firstByKey.TryGetValue(key, out var first))
+        {
+            collision = new PathCollision(_items[first].Path, PathCollisionKind.SamePath);
+            return true;
+        }
+
+        var lookup = _firstByKey.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (FindBlockingAncestor(key, -1, lookup) is { } file)
+        {
+            collision = new PathCollision(_items[file].Path, PathCollisionKind.Prefix);
+            return true;
+        }
+
+        // Descendants: the sorted copy makes this a binary search instead of
+        // a scan per target. It is built once and reused while no path is
+        // added, which is the case for the whole target loop.
+        if (_sorted is null)
+        {
+            _sorted = _items.Select(item => item.Key).ToArray();
+            Array.Sort(_sorted, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var sorted = _sorted;
+        var prefix = key + "/";
+        var at = Array.BinarySearch(sorted, prefix, StringComparer.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            at = ~at;
+        }
+
+        if (at < sorted.Length
+            && sorted[at].Length > prefix.Length
+            && sorted[at].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            collision = new PathCollision(_items[_firstByKey[sorted[at]]].Path, PathCollisionKind.Prefix);
+            return true;
+        }
+
+        collision = null;
+        return false;
+    }
+
+    // Only the collected paths are in the dictionary, so the first hit is the
+    // path being checked itself when it was already added; skip that one.
+    private static int? FindBlockingAncestor(
+        string key,
+        int self,
+        Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> lookup)
+    {
+        for (var i = 0; i < key.Length; i++)
+        {
+            if (key[i] == '/'
+                && lookup.TryGetValue(key.AsSpan(0, i), out var file)
+                && file != self)
+            {
+                return file;
+            }
+        }
+
+        return null;
     }
 
     private readonly record struct Entry(string Key, string Path);
