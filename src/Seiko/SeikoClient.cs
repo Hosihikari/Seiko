@@ -1668,6 +1668,16 @@ public sealed class SeikoClient
                     continue;
                 }
 
+                // Store readers hold the artifact lock; deleting without it can
+                // pull a directory out from under TryGet/EnsureAsync. Busy
+                // artifacts are skipped and picked up by the next clean (ADR-0024).
+                using var artifactLock = ProcessLock.TryAcquire(
+                    Path.Combine(storePath, ".locks", name + ".lock"));
+                if (artifactLock is null)
+                {
+                    continue;
+                }
+
                 try
                 {
                     bytes += DirectorySize(directory);

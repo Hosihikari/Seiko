@@ -584,6 +584,31 @@ public sealed class DeployLinkTests
         Assert.True(File.Exists(DigestPath(fixture)));
     }
 
+    [Fact]
+    public void CacheClean_SkipsAnArtifactHeldByTheStoreLock()
+    {
+        using var fixture = NewFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var digest = new string('d', 64);
+        var orphan = Path.Combine(fixture.StoreDirectory, digest);
+        Directory.CreateDirectory(orphan);
+
+        // While a reader holds the artifact lock the directory must survive.
+        using (ProcessLock.Acquire(
+            Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
+            "test artifact"))
+        {
+            var busy = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+            Assert.True(Directory.Exists(orphan));
+            Assert.Equal(0, busy.Removed);
+        }
+
+        var after = client.CacheClean(fixture.Root, fixture.StoreDirectory);
+        Assert.False(Directory.Exists(orphan));
+        Assert.Equal(1, after.Removed);
+    }
+
     private static Fixture NewFixture()
     {
         var fixture = new Fixture();
