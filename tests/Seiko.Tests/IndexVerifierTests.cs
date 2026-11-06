@@ -585,6 +585,60 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_CheckArtifactsReportsAStalledBody()
+    {
+        using var fixture = NewFixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory)
+        {
+            StallBodyPath = "artifacts/",
+            StallDelay = TimeSpan.FromSeconds(10),
+        };
+        var sei = ReadSei(fixture, "hello");
+        var source = sei.Versions[0].Artifacts[0].Source;
+        source.Url = server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url);
+        WriteSei(fixture, "hello", sei);
+        IndexVerifier.BodyIdleTimeoutOverride = TimeSpan.FromMilliseconds(500);
+        try
+        {
+            var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+            var finding = Assert.Single(result.Findings);
+            Assert.Equal("artifact-read", finding.Code);
+            Assert.Contains("stalled", finding.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            IndexVerifier.BodyIdleTimeoutOverride = null;
+        }
+    }
+
+    [Fact]
+    public void Verify_CheckArtifactsObservesCancellation()
+    {
+        using var fixture = NewFixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory)
+        {
+            StallBodyPath = "artifacts/",
+            StallDelay = TimeSpan.FromSeconds(60),
+        };
+        var sei = ReadSei(fixture, "hello");
+        var source = sei.Versions[0].Artifacts[0].Source;
+        source.Url = server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url);
+        WriteSei(fixture, "hello", sei);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
+
+        var started = DateTime.UtcNow;
+        Assert.ThrowsAny<OperationCanceledException>(() => IndexVerifier.Verify(
+            fixture.SourceDirectory,
+            checkArtifacts: true,
+            cancellationToken: cts.Token));
+
+        Assert.True(
+            DateTime.UtcNow - started < TimeSpan.FromSeconds(20),
+            "cancellation must interrupt the stalled body read");
+    }
+
+    [Fact]
     public void Verify_LogRedactsSignedArtifactUrls()
     {
         using var fixture = NewFixture();

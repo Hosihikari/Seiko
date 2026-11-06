@@ -30,6 +30,12 @@ internal sealed class TestHttpServer : IDisposable
 
     public string TruncateBodyPath { get; set; } = "";
 
+    // When set, matching GET bodies send headers plus one byte and then wait
+    // for this long before finishing (or forever when the delay is large).
+    public string StallBodyPath { get; set; } = "";
+
+    public TimeSpan StallDelay { get; set; } = TimeSpan.FromSeconds(30);
+
     public string UnknownLengthPath { get; set; } = "";
 
     public IReadOnlyList<string?> Authorizations
@@ -147,6 +153,23 @@ internal sealed class TestHttpServer : IDisposable
                     extra,
                     bytes.Length,
                     omitContentLength: unknownLength);
+                return;
+            }
+
+            if (StallBodyPath.Length > 0
+                && relative.Replace('\\', '/').Contains(StallBodyPath, StringComparison.Ordinal))
+            {
+                var header =
+                    $"HTTP/1.1 200 OK\r\nContent-Length: {bytes.Length}\r\n"
+                    + (extra.Count > 0
+                        ? string.Concat(extra.Select(pair => $"{pair.Key}: {pair.Value}\r\n"))
+                        : "")
+                    + "Connection: close\r\n\r\n";
+                var head = Encoding.ASCII.GetBytes(header);
+                await stream.WriteAsync(head);
+                await stream.WriteAsync(bytes.AsMemory(0, 1));
+                await stream.FlushAsync();
+                await Task.Delay(StallDelay, _cts.Token);
                 return;
             }
 

@@ -907,7 +907,7 @@ public static class IndexVerifier
                 }
 
                 using var input = File.OpenRead(local);
-                CopyBounded(input, path, source.Size);
+                CopyBounded(input, path, source.Size, cancellationToken);
             }
             else
             {
@@ -989,17 +989,28 @@ public static class IndexVerifier
         }
 
         using var input = response.Content.ReadAsStream(cancellationToken);
-        CopyBounded(input, path, maxBytes);
+        // A server can send headers and then stall the body; the request
+        // timeout does not cover this read, so the read itself must observe
+        // cancellation and an idle deadline (ADR-0017's bounds).
+        CopyBounded(input, path, maxBytes, cancellationToken);
     }
 
-    private static void CopyBounded(Stream input, string path, long maxBytes)
+    private static TimeSpan BodyIdleTimeout => BodyIdleTimeoutOverride ?? DefaultBodyIdleTimeout;
+
+    private static readonly TimeSpan DefaultBodyIdleTimeout = TimeSpan.FromSeconds(30);
+
+    // Readable by tests; production keeps the default.
+    internal static TimeSpan? BodyIdleTimeoutOverride { get; set; }
+
+    private static void CopyBounded(Stream input, string path, long maxBytes, CancellationToken cancellationToken)
     {
         using var output = File.Create(path);
         var buffer = new byte[81920];
         var total = 0L;
         while (true)
         {
-            var read = input.Read(buffer);
+            cancellationToken.ThrowIfCancellationRequested();
+            var read = ReadWithIdleLimit(input, buffer, cancellationToken);
             if (read == 0)
             {
                 return;
@@ -1017,6 +1028,22 @@ public static class IndexVerifier
     }
 
     private sealed class ArtifactSizeException(string message) : Exception(message);
+
+    // Synchronous Read cannot be cancelled on every stream; racing the read
+    // against the token also covers a stalled body without changing the
+    // verifier's serial structure.
+    private static int ReadWithIdleLimit(Stream input, byte[] buffer, CancellationToken cancellationToken)
+    {
+        var read = input.ReadAsync(buffer, cancellationToken).AsTask();
+        // Wait(budget, token) throws OperationCanceledException when the token
+        // fires, so cancellation is observed without waiting the full budget.
+        if (read.Wait(BodyIdleTimeout, cancellationToken))
+        {
+            return read.GetAwaiter().GetResult();
+        }
+
+        throw new IOException($"artifact response stalled for {BodyIdleTimeout.TotalSeconds} s");
+    }
 
     private static void ValidateManifest(Context context, ArtifactRef reference, string path)
     {
