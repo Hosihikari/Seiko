@@ -229,7 +229,15 @@ public sealed class SeikoClient
             }
         }
 
-        var totalBytes = resolved.Sum(sei => Math.Max(0L, sei.Artifact.Source.Size));
+        var totalBytes = 0L;
+        foreach (var sei in resolved)
+        {
+            // Per-artifact sizes are checked against MaxEntryBytes by the
+            // verifier, but the sum of many valid artifacts can still leave the
+            // range; the figure only drives progress (ADR-0017).
+            totalBytes = ExternalFiles.SaturatingAdd(totalBytes, Math.Max(0L, sei.Artifact.Source.Size));
+        }
+
         session.SeiTotal = resolved.Count;
         session.TotalBytes = totalBytes;
         progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
@@ -514,8 +522,8 @@ public sealed class SeikoClient
                     ExternalArchives = artifact.ExternalArchives,
                 };
                 var external = ExternalFiles.Summarize(manifest);
-                externalItems += ExternalFiles.Count(manifest);
-                externalBytes += external.Size;
+                externalItems = ExternalFiles.SaturatingAdd(externalItems, ExternalFiles.Count(manifest));
+                externalBytes = ExternalFiles.SaturatingAdd(externalBytes, external.Size);
                 foreach (var host in external.Hosts)
                 {
                     externalHosts.Add(host);
@@ -526,8 +534,10 @@ public sealed class SeikoClient
 
             if (artifact.External is { } summary)
             {
-                externalItems += summary.Files + summary.Archives;
-                externalBytes += summary.Size;
+                externalItems = ExternalFiles.SaturatingAdd(
+                    externalItems,
+                    ExternalFiles.SaturatingAdd(summary.Files, summary.Archives));
+                externalBytes = ExternalFiles.SaturatingAdd(externalBytes, summary.Size);
                 foreach (var host in summary.Hosts)
                 {
                     externalHosts.Add(host);

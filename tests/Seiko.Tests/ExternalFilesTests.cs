@@ -932,6 +932,106 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void DryRun_SaturatesTheCrossPackageExternalTotal()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        // Each artifact saturates on its own; the running total across
+        // artifacts must not wrap back around.
+        fixture.AddSei("alpha", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles = [new ExternalFileFixture("a.txt", server.BaseUrl + "external/a", "a")],
+                },
+            ],
+        });
+        fixture.AddSei("beta", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles = [new ExternalFileFixture("b.txt", server.BaseUrl + "external/b", "b")],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(
+            server.BaseUrl, "win-x64", new SpecFixture("alpha", "[1.0.0]"), new SpecFixture("beta", "[1.0.0]"));
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "alpha.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["versions"]![0]!["artifacts"]![0]!["externalFiles"]![0]!["size"] = long.MaxValue;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var preview = new SeikoClient()
+            .Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+            .Preview!;
+
+        Assert.Equal(2, preview.ExternalItems);
+        Assert.Equal(long.MaxValue, preview.ExternalBytes);
+    }
+
+    [Fact]
+    public void DryRun_SaturatesTheCountOfASummaryFallback()
+    {
+        var fixture = new Fixture();
+        using var _ = fixture;
+        // Without declarations the index summary supplies the counts; a huge
+        // file count per artifact overflows the int running total.
+        fixture.AddSei("gamma", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["g.txt"] = "x" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("gamma", "[1.0.0]"));
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "gamma.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        var artifact = node["versions"]![0]!["artifacts"]![0]!.AsObject();
+        artifact["externalFiles"] = null;
+        artifact["externalArchives"] = null;
+        artifact["external"] = JsonNode.Parse(
+            "{\"files\":2147483647,\"archives\":1,\"size\":7,\"hosts\":[\"vendor.invalid\"]}");
+        File.WriteAllText(path, node.ToJsonString());
+
+        var preview = new SeikoClient()
+            .Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+            .Preview!;
+
+        Assert.Equal(int.MaxValue, preview.ExternalItems);
+        Assert.Equal(7, preview.ExternalBytes);
+    }
+
+    [Fact]
+    public void Summarize_KeepsANegativeSizeFollowedByAPositiveOne()
+    {
+        // Sizes reach this sum without validation, so a negative first element
+        // is possible; clamping against a negative total must not saturate.
+        var summary = ExternalFiles.Summarize(new ArtifactManifest
+        {
+            ExternalFiles = [new ExternalFile { Size = -1 }, new ExternalFile { Size = 1 }],
+        });
+
+        Assert.Equal(0, summary.Size);
+    }
+
+    [Fact]
+    public void SaturatingAdd_ClampsOnBothSides()
+    {
+        Assert.Equal(long.MaxValue, ExternalFiles.SaturatingAdd(long.MaxValue, 1));
+        Assert.Equal(long.MaxValue, ExternalFiles.SaturatingAdd(long.MaxValue - 1, 2));
+        Assert.Equal(long.MinValue, ExternalFiles.SaturatingAdd(long.MinValue, -1));
+        Assert.Equal(0, ExternalFiles.SaturatingAdd(-1, 1));
+        Assert.Equal(5, ExternalFiles.SaturatingAdd(2, 3));
+        Assert.Equal(int.MaxValue, ExternalFiles.SaturatingAdd(int.MaxValue, 1));
+        Assert.Equal(int.MinValue, ExternalFiles.SaturatingAdd(int.MinValue, -1));
+    }
+
+    [Fact]
     public void Info_ReportsExternalHostsAndCount()
     {
         var (fixture, server) = Setup();

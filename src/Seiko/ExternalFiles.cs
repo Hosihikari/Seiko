@@ -158,14 +158,28 @@ internal static class ExternalFiles
             Hosts = Hosts(artifact).ToList(),
         };
 
+    // Both totals are estimates shown to the user before anything is fetched
+    // (ADR-0029), so a value past the range saturates instead of throwing: a
+    // checked Sum escapes the typed catch lists in both the preview and the
+    // verifier (ADR-0032). Sizes may also arrive without validation, where a
+    // negative one is allowed, so the clamp must not assume a positive total.
+    public static long SaturatingAdd(long total, long size)
+        => size > 0 && total > long.MaxValue - size ? long.MaxValue
+            : size < 0 && total < long.MinValue - size ? long.MinValue
+            : total + size;
+
+    public static int SaturatingAdd(int total, int count)
+        => count > 0 && total > int.MaxValue - count ? int.MaxValue
+            : count < 0 && total < int.MinValue - count ? int.MinValue
+            : total + count;
+
     private static long SumSize(ArtifactManifest? artifact)
     {
-        // LINQ's checked Sum overflows; the reported figure is an estimate.
         var total = 0L;
         foreach (var size in (artifact?.ExternalFiles ?? []).Select(file => file?.Size ?? 0)
             .Concat((artifact?.ExternalArchives ?? []).Select(archive => archive?.Size ?? 0)))
         {
-            total = size > long.MaxValue - total ? long.MaxValue : total + size;
+            total = SaturatingAdd(total, size);
         }
 
         return total;
