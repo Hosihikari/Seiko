@@ -895,6 +895,43 @@ public sealed class ExternalFilesTests
     }
 
     [Fact]
+    public void DryRun_SaturatesAnOutOfRangeExternalSize()
+    {
+        var (fixture, server) = Setup();
+        using var _ = fixture;
+        using var __ = server;
+        // The declaration is rejected by validation, but the preview reaches
+        // the size sum without validating; it must estimate, not throw.
+        fixture.AddSei("proprietary", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture("a.txt", server.BaseUrl + "external/a", "a"),
+                        new ExternalFileFixture("b.txt", server.BaseUrl + "external/b", "b"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "proprietary.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["versions"]![0]!["artifacts"]![0]!["externalFiles"]![0]!["size"] = long.MaxValue;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var preview = new SeikoClient()
+            .Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+            .Preview!;
+
+        Assert.Equal(2, preview.ExternalItems);
+        Assert.Equal(long.MaxValue, preview.ExternalBytes);
+    }
+
+    [Fact]
     public void Info_ReportsExternalHostsAndCount()
     {
         var (fixture, server) = Setup();

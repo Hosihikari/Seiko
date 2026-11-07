@@ -151,10 +151,25 @@ internal static class ExternalFiles
         {
             Files = artifact?.ExternalFiles?.Count ?? 0,
             Archives = artifact?.ExternalArchives?.Count ?? 0,
-            Size = (artifact?.ExternalFiles ?? []).Sum(file => file?.Size ?? 0)
-                + (artifact?.ExternalArchives ?? []).Sum(archive => archive?.Size ?? 0),
+            // A single out-of-range size is reported by Validate, but the
+            // preview and the sync warning reach this sum without validating
+            // first, so it saturates instead of throwing (ADR-0029, ADR-0037).
+            Size = SumSize(artifact),
             Hosts = Hosts(artifact).ToList(),
         };
+
+    private static long SumSize(ArtifactManifest? artifact)
+    {
+        // LINQ's checked Sum overflows; the reported figure is an estimate.
+        var total = 0L;
+        foreach (var size in (artifact?.ExternalFiles ?? []).Select(file => file?.Size ?? 0)
+            .Concat((artifact?.ExternalArchives ?? []).Select(archive => archive?.Size ?? 0)))
+        {
+            total = size > long.MaxValue - total ? long.MaxValue : total + size;
+        }
+
+        return total;
+    }
 
     public static bool SummaryMatches(ExternalSummary declared, ArtifactManifest? artifact)
     {

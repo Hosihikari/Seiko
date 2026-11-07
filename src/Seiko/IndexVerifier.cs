@@ -753,6 +753,7 @@ public static class IndexVerifier
             ExternalArchives = artifact.ExternalArchives,
         }) > 0)
         {
+            var declarationsValid = true;
             try
             {
                 ExternalFiles.Validate(
@@ -768,6 +769,7 @@ public static class IndexVerifier
             {
                 context.Error("artifact-external", ex.Message, path);
                 ok = false;
+                declarationsValid = false;
             }
 
             var summary = artifact.External;
@@ -777,6 +779,12 @@ public static class IndexVerifier
                     "artifact-external-summary",
                     $"sei '{name}' {entry.Version} has external files but no external summary",
                     path);
+            }
+            else if (!declarationsValid)
+            {
+                // Failed declarations may carry out-of-range values, so the
+                // mirror would be compared against nonsense. The declaration
+                // error already rejects the artifact (ADR-0032).
             }
             else
             {

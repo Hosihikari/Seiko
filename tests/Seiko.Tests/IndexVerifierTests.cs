@@ -650,6 +650,34 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_ReportsAnOutOfRangeExternalSizeInsteadOfOverflowing()
+    {
+        // A single out-of-range size is reported by the declaration check; the
+        // summary comparison must then stay off, or its checked sum overflows
+        // and escapes the typed catch list. The summary is deliberately wrong
+        // so a comparison that did run would add a second finding.
+        using var fixture = ExternalFixture(
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+        var sei = ReadSei(fixture, "hello");
+        var entry = sei.Versions[0].Artifacts[0];
+        entry.ExternalFiles![0].Size = long.MaxValue;
+        entry.External = new ExternalSummary
+        {
+            Files = 1,
+            Size = 1,
+            Hosts = ["vendor.invalid"],
+        };
+        WriteSei(fixture, "hello", sei);
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("artifact-external", finding.Code);
+        Assert.Contains("size is out of range", finding.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Verify_RejectsAWrongExternalSummaryHost()
     {
         using var fixture = ExternalFixture(
