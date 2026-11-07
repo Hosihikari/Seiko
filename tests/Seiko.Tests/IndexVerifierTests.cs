@@ -790,6 +790,51 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
+    public void Verify_SkipsTheCollisionScanForAnAlreadyInvalidExternalDeclaration()
+    {
+        // The zip holds a 500-deep file; the manifest target extends it to 601
+        // levels, so it is both a prefix collision and past the depth limit.
+        // The declaration error is reported and the per-target prefix scan is
+        // skipped, so exactly one finding survives.
+        using var fixture = new Fixture();
+        var ancestor = string.Join("/", Enumerable.Repeat("d", 500));
+        var target = ancestor + "/" + string.Join("/", Enumerable.Repeat("e", 100));
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ancestor] = "x" },
+                    ExternalFiles =
+                    [
+                        new ExternalFileFixture(target, "https://vendor.invalid/x", "x"),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        // Keep the declaration only inside the ZIP manifest: an index-level
+        // declaration is rejected before the manifest is ever opened.
+        var indexPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(indexPath))!;
+        var artifact = node["versions"]![0]!["artifacts"]![0]!.AsObject();
+        artifact.Remove("externalFiles");
+        artifact.Remove("externalArchives");
+        artifact.Remove("external");
+        File.WriteAllText(indexPath, node.ToJsonString());
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("manifest-external", finding.Code);
+        Assert.Contains("too long or too deep", finding.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Verify_RejectsManyAncestorPairsWithoutMaterializingThemAll()
     {
         // 300 nested files plus 300 leaves: every nested file is a directory

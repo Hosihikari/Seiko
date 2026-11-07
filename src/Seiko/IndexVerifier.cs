@@ -1318,6 +1318,7 @@ public static class IndexVerifier
                         reference.Path);
                 }
 
+                var declarationsValid = true;
                 try
                 {
                     ExternalFiles.Validate(manifest.Artifact!, prefix, "manifest-external");
@@ -1325,17 +1326,22 @@ public static class IndexVerifier
                 catch (SeikoException ex)
                 {
                     context.Error("manifest-external", ex.Message, reference.Path);
+                    declarationsValid = false;
                 }
 
                 // External targets must not collide with the archive's own
                 // names under the same folded rules (ADR-0024). The archive
                 // set already has no internal collisions, so a per-target
                 // lookup is enough and stays linear.
+                // A declaration that already failed may carry a target past
+                // the length or depth limit; its per-prefix lookups would then
+                // hash far more than the rejected string is worth, so the
+                // group is skipped once one error is reported.
                 var declared = (manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path)
                     .Concat((manifest.Artifact.ExternalArchives ?? [])
                         .SelectMany(archive => archive.Members)
                         .Select(member => member.Path));
-                foreach (var target in declared)
+                foreach (var target in declarationsValid ? declared : [])
                 {
                     if (collisions.TryFindCollisionWith(target, out var targetCollision))
                     {
