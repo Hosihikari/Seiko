@@ -542,9 +542,54 @@ public sealed class IndexVerifierTests
     }
 
     [Fact]
-    public void Verify_RejectsExternalUrlWithUserinfo()
+    public void Verify_ReportsAnExplicitNullExternalPathInsteadOfThrowing()
     {
+        // JSON `null` binds a null string to a non-nullable model property;
+        // the length check used to dereference it and the verifier's catch
+        // list has no NullReferenceException, so the whole run crashed.
         using var fixture = ExternalFixture(
+            new ExternalFileFixture("vendor/server.bin", "https://vendor.invalid/x", "data"));
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["versions"]![0]!["artifacts"]![0]!["externalFiles"]![0]!["path"] = null;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "artifact-external" && finding.Message.Contains("path is null", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Verify_ReportsNullExternalElementsInsteadOfThrowing()
+    {
+        // A null array element and a null members list both deserialize into
+        // the non-nullable model collections.
+        using var fixture = NewFixture();
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["versions"]![0]!["artifacts"]![0]!["externalFiles"] = JsonNode.Parse("[null]");
+        File.WriteAllText(path, node.ToJsonString());
+
+        var nullElement = IndexVerifier.Verify(fixture.SourceDirectory);
+        Assert.Contains(nullElement.Findings, finding =>
+            finding.Code == "artifact-external" && finding.Message.Contains("declaration is null", StringComparison.Ordinal));
+
+        node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["versions"]![0]!["artifacts"]![0]!.AsObject().Remove("externalFiles");
+        node["versions"]![0]!["artifacts"]![0]!["externalArchives"] = JsonNode.Parse(
+            "[{\"url\":\"https://vendor.invalid/z.zip\",\"sha256\":\"" + new string('a', 64)
+            + "\",\"format\":\"zip\",\"members\":null}]");
+        File.WriteAllText(path, node.ToJsonString());
+
+        var nullMembers = IndexVerifier.Verify(fixture.SourceDirectory);
+        Assert.Contains(nullMembers.Findings, finding =>
+            finding.Code == "artifact-external" && finding.Message.Contains("has no members", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Verify_RejectsExternalUrlWithUserinfo()
+    {        using var fixture = ExternalFixture(
             new ExternalFileFixture(
                 "vendor/server.bin",
                 "https://user:secret@vendor.invalid/server.bin",

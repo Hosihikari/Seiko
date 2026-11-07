@@ -17,8 +17,9 @@ internal static class ExternalFiles
         }
 
         // Cheap pre-check before the per-target work: declarations alone may
-        // already exceed the entry budget (ADR-0024).
-        var declaredTargets = files.Count + archives.Sum(archive => archive.Members.Count);
+        // already exceed the entry budget (ADR-0024). Nulls are tolerated here
+        // and reported by the loops below.
+        var declaredTargets = files.Count + archives.Sum(archive => archive?.Members?.Count ?? 0);
         if (declaredTargets > ArchiveLimits.MaxEntries)
         {
             throw new SeikoException(
@@ -35,6 +36,13 @@ internal static class ExternalFiles
         var declaredBytes = 0L;
         foreach (var file in files)
         {
+            // JSON `null` in an array deserializes to a null element even
+            // though the model list is non-nullable.
+            if (file is null)
+            {
+                throw new SeikoException($"{name}: external file declaration is null", code);
+            }
+
             ValidateTarget(file.Path, name, code);
             collisions.Add(file.Path);
             EnsureHttps(file.Url, $"external file '{file.Path}'", name, code);
@@ -63,6 +71,11 @@ internal static class ExternalFiles
         var archiveIdentities = new Dictionary<string, ExternalArchive>(StringComparer.Ordinal);
         foreach (var archive in archives)
         {
+            if (archive is null)
+            {
+                throw new SeikoException($"{name}: external archive declaration is null", code);
+            }
+
             EnsureHttps(archive.Url, "external archive", name, code);
             EnsureDigest(archive.Sha256, "external archive", name, code);
             EnsureSize(archive.Size, "external archive", name, code);
@@ -92,7 +105,7 @@ internal static class ExternalFiles
                 declaredBytes += archive.Size;
             }
 
-            if (archive.Members.Count == 0)
+            if (archive.Members is null || archive.Members.Count == 0)
             {
                 throw new SeikoException($"{name}: external archive has no members", code);
             }
@@ -102,6 +115,11 @@ internal static class ExternalFiles
             var declared = new HashSet<string>(StringComparer.Ordinal);
             foreach (var member in archive.Members)
             {
+                if (member is null)
+                {
+                    throw new SeikoException($"{name}: external archive member is null", code);
+                }
+
                 ValidateMemberName(member.Member, name, code);
                 ValidateTarget(member.Path, name, code);
                 declared.Add(member.Member);
@@ -125,14 +143,16 @@ internal static class ExternalFiles
     }
 
     // The derived summary of an artifact's declarations; the index mirrors it
-    // and must agree field by field (ADR-0032, ADR-0037).
+    // and must agree field by field (ADR-0032, ADR-0037). A malformed element
+    // is skipped rather than thrown on, because the verifier keeps going after
+    // reporting the structural error (ADR-0020).
     public static ExternalSummary Summarize(ArtifactManifest? artifact)
         => new()
         {
             Files = artifact?.ExternalFiles?.Count ?? 0,
             Archives = artifact?.ExternalArchives?.Count ?? 0,
-            Size = (artifact?.ExternalFiles ?? []).Sum(file => file.Size)
-                + (artifact?.ExternalArchives ?? []).Sum(archive => archive.Size),
+            Size = (artifact?.ExternalFiles ?? []).Sum(file => file?.Size ?? 0)
+                + (artifact?.ExternalArchives ?? []).Sum(archive => archive?.Size ?? 0),
             Hosts = Hosts(artifact).ToList(),
         };
 
@@ -164,8 +184,8 @@ internal static class ExternalFiles
         }
 
         return (artifact.ExternalFiles ?? [])
-            .Select(item => Host(item.Url))
-            .Concat((artifact.ExternalArchives ?? []).Select(item => Host(item.Url)))
+            .Select(item => Host(item?.Url))
+            .Concat((artifact.ExternalArchives ?? []).Select(item => Host(item?.Url)))
             .Where(host => host.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(host => host, StringComparer.OrdinalIgnoreCase);
@@ -181,7 +201,7 @@ internal static class ExternalFiles
                 : $"{name}: path '{collision.Other}' is both a file and a directory of another external target",
             code);
 
-    private static string Host(string url)
+    private static string Host(string? url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "";
 
     // Errors are persisted or handed to MCP callers; a signed external URL
@@ -225,6 +245,13 @@ internal static class ExternalFiles
 
     private static void ValidateTarget(string path, string name, string code)
     {
+        // An explicit JSON null arrives here as a null string, and both the
+        // length bound and the relative-path check read it.
+        if (path is null)
+        {
+            throw new SeikoException($"{name}: external target path is null", code);
+        }
+
         // External targets go through the same ancestor lookups as archive
         // names, whose cost is quadratic in length, so they need the same
         // length and depth bounds (ADR-0024).
@@ -261,6 +288,11 @@ internal static class ExternalFiles
 
     private static void ValidateMemberName(string member, string name, string code)
     {
+        if (member is null)
+        {
+            throw new SeikoException($"{name}: external archive member name is null", code);
+        }
+
         var normalized = NormalizeMember(member);
         if (normalized.Length == 0
             || normalized.EndsWith('/')

@@ -513,10 +513,10 @@ public sealed class SeikoClient
                     ExternalFiles = artifact.ExternalFiles,
                     ExternalArchives = artifact.ExternalArchives,
                 };
+                var external = ExternalFiles.Summarize(manifest);
                 externalItems += ExternalFiles.Count(manifest);
-                externalBytes += (artifact.ExternalFiles ?? []).Sum(file => file.Size)
-                    + (artifact.ExternalArchives ?? []).Sum(archive => archive.Size);
-                foreach (var host in ExternalFiles.Hosts(manifest))
+                externalBytes += external.Size;
+                foreach (var host in external.Hosts)
                 {
                     externalHosts.Add(host);
                 }
