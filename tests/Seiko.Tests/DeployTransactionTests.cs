@@ -501,6 +501,11 @@ public sealed class DeployTransactionTests
         transaction.WillChange("seiko.conf");
         transaction.WriteJournal();
 
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "extra"));
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "extra", "index.json"),
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+
         new SeikoClient().SourceAdd(fixture.Root, "extra", "extra/index.json");
         DeploymentTransaction.Recover(fixture.Root, stateDirectory);
 

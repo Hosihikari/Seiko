@@ -5,6 +5,56 @@ namespace Seiko.Tests;
 public sealed class LocalSourceTests
 {
     [Fact]
+    public void SourceAdd_ReportsAMissingLocalIndex()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.SourceAdd(fixture.Root, "extra", Path.Combine(fixture.Root, "missing")));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("index not found", error.Message);
+        Assert.NotNull(error.HintKey);
+        Assert.DoesNotContain(
+            client.ListSources(fixture.Root),
+            source => source.Id == "extra");
+    }
+
+    [Fact]
+    public void SourceAdd_AcceptsADirectoryWithAnIndex()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var directory = Path.Combine(fixture.Root, "extra");
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(
+            Path.Combine(directory, "index.json"),
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+
+        new SeikoClient().SourceAdd(fixture.Root, "extra", directory);
+
+        Assert.Contains(
+            new SeikoClient().ListSources(fixture.Root),
+            source => source.Id == "extra");
+    }
+
+    [Fact]
+    public void SourceAdd_DoesNotProbeAnHttpIndex()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+
+        // An unreachable host must still be accepted: `source add` is offline.
+        new SeikoClient().SourceAdd(fixture.Root, "remote", "https://example.invalid/index.json");
+
+        Assert.Contains(
+            new SeikoClient().ListSources(fixture.Root),
+            source => source.Id == "remote");
+    }
+
+    [Fact]
     public void SourceIndexMayNameTheDirectory()
     {
         using var fixture = new Fixture();

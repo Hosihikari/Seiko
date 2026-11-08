@@ -1349,6 +1349,24 @@ public sealed class SeikoClient
             .Where(host => host.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // A local index that does not exist would only fail at the next load,
+        // after the config was rewritten. Check it now; an http(s) index is
+        // not probed, so `source add` stays offline.
+        if (!index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !index.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            var indexPath = LocalSource.ResolvePath(index, root);
+            if (!File.Exists(indexPath))
+            {
+                throw new SeikoException($"source '{id}': index not found: {indexPath}", "source")
+                {
+                    Hint = "pass the index file or the directory that holds it",
+                    HintKey = "hint.source-path",
+                };
+            }
+        }
+
         config.Sources.Add(new SourceConfig
         {
             Id = id,
