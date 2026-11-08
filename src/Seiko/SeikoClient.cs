@@ -176,18 +176,18 @@ public sealed class SeikoClient
         if (offline)
         {
             // Collect every missing cached entry before constructing sources,
-            // which would otherwise fail on the first one. A replay only needs
-            // the locked graph, not every historical relation target.
+            // which would otherwise fail on the first one. Only `--frozen`
+            // replays; every other mode resolves with the options below.
             // The proposed set, not the on-disk one: an `add` has not written
             // its declarations yet, so the file would still name the old set.
-            // Every other option is the run's too, so the accepted graph is
-            // the one the real resolution would accept.
             OfflineMetadata.Verify(
                 config,
                 storePath,
                 root,
                 specs,
-                lockedGraph: mode == SyncMode.Normal ? null : existingLock,
+                // Only `--frozen` reads no resolver; `--locked` resolves like a
+                // normal run and then compares against the lock.
+                frozenGraph: mode == SyncMode.Frozen ? existingLock : null,
                 allowPrerelease: allowPrerelease,
                 allowCritical: allowCritical,
                 // The probe must resolve what this run will: same lock (for
@@ -770,20 +770,6 @@ public sealed class SeikoClient
         var bare = additions.Where(addition => addition.Path is not null
             && !addition.Raw.Contains('/', StringComparison.Ordinal)
             && !addition.Raw.Contains('\\', StringComparison.Ordinal)).ToList();
-        if (bare.Count > 0 && config.Sources.Count > 0)
-        {
-            using var probeSession = new DownloadSession(jobs, cancellationToken);
-            using var probe = new SourceScope(
-                LoadSources(config, root, proxy, probeSession, storePath, offline));
-            // The entry's own origin declaration is not a second meaning; only
-            // a configured index source can make the token ambiguous.
-            EnsureUnambiguousPaths(
-                bare,
-                config,
-                probe.Sources.Where(source => source is not OriginSource).ToList(),
-                root,
-                storePath);
-        }
 
         // Paths are read before anything is written: the manifest supplies the
         // name the declaration is filed under, and it must be the only one
@@ -898,8 +884,32 @@ public sealed class SeikoClient
         }
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
+
+        // The pre-resolution below reads metadata before SyncLocked's own
+        // pre-check would, so it has to be pre-checked too — otherwise it
+        // fails on the first gap with nothing summarised. Same proposed set,
+        // origin and options as the run, minus what the run adds itself.
+        if (offline)
+        {
+            OfflineMetadata.Verify(
+                config,
+                storePath,
+                root,
+                config.Sei,
+                allowPrerelease: allowPrerelease,
+                allowCritical: allowCritical,
+                existing: existingLock,
+                rid: string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid,
+                latestInstallable: latestInstallable);
+        }
+
+        // The ambiguity check reads source indexes, so it belongs here, after
+        // the pre-check has had the first word. `bare.Count > 0` makes the
+        // scope worth keeping: the run below reuses it.
         SourceScope? preloaded = null;
-        if (defaultRangeTargets.Count > 0 || (existingLock is not null && removedNames.Count > 0))
+        if (defaultRangeTargets.Count > 0
+            || (existingLock is not null && removedNames.Count > 0)
+            || (bare.Count > 0 && config.Sources.Count > 0))
         {
             var preSession = new DownloadSession(jobs, cancellationToken);
             preloaded = new SourceScope(
@@ -909,7 +919,20 @@ public sealed class SeikoClient
 
         try
         {
-            if (preloaded is not null)
+            if (bare.Count > 0 && config.Sources.Count > 0)
+            {
+                // The entry's own origin declaration is not a second meaning;
+                // only a configured index source can make the token ambiguous.
+                EnsureUnambiguousPaths(
+                    bare,
+                    config,
+                    preloaded!.Sources.Where(source => source is not OriginSource).ToList(),
+                    root,
+                    storePath);
+            }
+
+            if (preloaded is not null && (defaultRangeTargets.Count > 0
+                || (existingLock is not null && removedNames.Count > 0)))
             {
                 var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
                 var resolved = new Resolver(

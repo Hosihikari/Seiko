@@ -12,7 +12,7 @@ internal static class OfflineMetadata
         string storePath,
         string root,
         IReadOnlyList<SeiSpec> specs,
-        SeikoLock? lockedGraph = null,
+        SeikoLock? frozenGraph = null,
         bool allowPrerelease = false,
         bool allowCritical = false,
         SeikoLock? existing = null,
@@ -22,21 +22,33 @@ internal static class OfflineMetadata
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
 
-        // A replay is fully described by the lock: check each locked name and
-        // stop. Its relations are not re-walked, so no resolver run is needed.
-        // Root indexes are not required: the replay only reads per-name
-        // metadata, which is cached by URL.
-        if (lockedGraph is not null)
+        // `--frozen` is the one mode that never resolves: it reads the locked
+        // source of every entry and then every other source's index for the
+        // same names (the cross-source check), then compares. So the check is
+        // a replay of exactly those reads, with the same readability rule as
+        // the real cache read and with "a cached 404" told apart from "no
+        // cached answer". `--locked` resolves normally and takes the path
+        // below with the lock passed in.
+        if (frozenGraph is not null)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var locked in lockedGraph.Sei)
+            foreach (var locked in frozenGraph.Sei)
             {
-                if (seen.Add(locked.Name)
-                    && !string.Equals(locked.Source, OriginPaths.SourceId, StringComparison.Ordinal))
+                if (!seen.Add(locked.Name)
+                    || string.Equals(locked.Source, OriginPaths.SourceId, StringComparison.Ordinal))
                 {
-                    if (!HasIndex(config, root, storePath, locked.Source, locked.Name))
+                    // Origin entries are read from disk, not from the cache.
+                    continue;
+                }
+
+                CheckLockedRead(config, root, storePath, locked.Source, locked.Name, missing,
+                    crossCheck: false);
+                foreach (var source in config.Sources)
+                {
+                    if (!string.Equals(source.Id, locked.Source, StringComparison.Ordinal))
                     {
-                        missing.Add($"sei/{locked.Name}.json from source '{locked.Source}'");
+                        CheckLockedRead(config, root, storePath, source.Id, locked.Name, missing,
+                            crossCheck: true);
                     }
                 }
             }
@@ -51,9 +63,9 @@ internal static class OfflineMetadata
 
         // The probe runs the real resolver with the planned declarations and
         // options, so candidate admission, ranges, pre-release hints, yank and
-        // critical all come from one place. A name with no cached answer is
-        // recorded and stepped over instead of aborting the walk, so one pass
-        // lists every reachable gap.
+        // critical all come from one place. The source records every read
+        // whose answer is missing, and the run collects every graph it
+        // reaches, so one pass finds the gaps on all of them.
         var targetRid = string.IsNullOrWhiteSpace(rid) ? SeikoClient.DefaultRid() : rid;
         using var probe = new ProbeSource(config, root, storePath, targetRid);
         var resolver = new Resolver(
@@ -65,21 +77,22 @@ internal static class OfflineMetadata
             allowPrerelease,
             updateNames,
             latestInstallable,
-            allowCritical);
+            allowCritical,
+            probe.OnSolution,
+            collectAll: true);
         SeikoException? failure = null;
         try
         {
-            probe.CrossCheck(resolver.Resolve(specs));
+            resolver.Resolve(specs);
         }
-        catch (SeikoException ex) when (ex.Code is "source" or "resolve")
+        catch (SeikoException ex) when (ex.Code is "source" or "resolve" or "checksum")
         {
             failure = ex;
         }
 
         // The gaps beat the failure: once the cache is whole the real run
-        // reports the same thing. A spent search budget is the exception —
-        // parts of the graph were never visited, so the list says so instead
-        // of passing itself off as complete.
+        // reports the same thing. Even a checksum failure on a stale origin
+        // file must not hide a gap that was already read.
         foreach (var (source, name) in probe.Missing)
         {
             missing.Add($"sei/{name}.json from source '{source}'");
@@ -87,16 +100,30 @@ internal static class OfflineMetadata
 
         if (missing.Count > 0)
         {
-            throw Missing(missing, resolver.BudgetExhausted);
+            throw failure is null
+                ? Missing(missing, resolver.Incomplete)
+                : Combined(failure, missing, resolver.Incomplete);
         }
 
         if (failure is not null)
         {
-            // No gap explains the stop and nothing was left unvisited: the
-            // cache is whole and the real run will report the same conflict.
+            // Nothing was reported as a gap, so the failure speaks for itself.
             throw failure;
         }
     }
+
+    // A failure met after gaps were read carries them along: the gaps are
+    // what to refill, the failure is why the walk could not go on. The code
+    // stays the failure's, since it is still the reason the run stops.
+    private static SeikoException Combined(
+        SeikoException failure,
+        IEnumerable<string> gaps,
+        bool incomplete)
+        => new(
+            $"{failure.Message} (offline: missing cached metadata: {string.Join("; ", gaps)}"
+            + (incomplete ? "; the probe hit a search limit, so the list may be incomplete" : "")
+            + ")",
+            failure.Code ?? "source");
 
     private static SeikoException Missing(IEnumerable<string> missing, bool incomplete = false)
         => new(
@@ -107,12 +134,11 @@ internal static class OfflineMetadata
             + "Run the command once online, then retry offline",
             "source");
 
-    // The sources the probe resolves against. It answers like the real list
-    // and records, per name, the first source whose cache entry is absent —
-    // even when a later source has the name, because the offline run throws
-    // at the earlier source before ever asking the later one (first source
-    // wins, ADR-0014). Only when no source answers does a placeholder stand
-    // in so the walk can continue; a cached 404 is an answer, not a gap.
+    // The sources the probe resolves against, plus the gap log. Every read
+    // goes to the real list in order; a source whose cache has no answer is
+    // reported at the moment it is read, and every such source is reported —
+    // the real offline run stops at the first one, so a later one is a second
+    // retry it would need. A cached 404 is an answer and reports nothing.
     private sealed class ProbeSource : ISeiSource, IDisposable
     {
         private readonly List<ISeiSource> _real = [];
@@ -121,23 +147,33 @@ internal static class OfflineMetadata
 
         public ProbeSource(SeikoConfig config, string root, string storePath, string rid)
         {
-            if (config.Origin.Count > 0)
+            try
             {
-                _real.Add(new OriginSource(config.Origin, root, rid, storePath));
-            }
+                if (config.Origin.Count > 0)
+                {
+                    _real.Add(new OriginSource(config.Origin, root, rid, storePath));
+                }
 
-            foreach (var source in config.Sources)
+                foreach (var source in config.Sources)
+                {
+                    if (IsHttp(source))
+                    {
+                        var probe = new HttpSource(source, storePath);
+                        _probes.Add(probe);
+                        _real.Add(probe);
+                    }
+                    else
+                    {
+                        // A configured local index that is gone fails here; the
+                        // probes built so far still have a session each.
+                        _real.Add(new LocalSource(source, root));
+                    }
+                }
+            }
+            catch
             {
-                if (IsHttp(source))
-                {
-                    var probe = new HttpSource(source, storePath);
-                    _probes.Add(probe);
-                    _real.Add(probe);
-                }
-                else
-                {
-                    _real.Add(new LocalSource(source, root));
-                }
+                Dispose();
+                throw;
             }
         }
 
@@ -151,40 +187,35 @@ internal static class OfflineMetadata
 
         public SeiIndex? GetSei(string name)
         {
-            string? unknown = null;
+            var answered = false;
             for (var i = 0; i < _real.Count; i++)
             {
-                var index = _real[i].GetSei(name);
-                if (index is not null)
+                var read = Read(i, name);
+                if (read is not null)
                 {
-                    if (unknown is not null)
-                    {
-                        Missing.Add((unknown, name));
-                    }
-
-                    _owner[name] = i;
-                    return index;
+                    _owner.TryAdd(name, i);
+                    return read;
                 }
 
-                unknown ??= Unknown(i, name);
+                answered |= _real[i] is HttpSource http && http.IsCacheUnknown(name);
             }
 
-            if (unknown is null)
+            if (!answered)
             {
                 return null;
             }
 
-            Missing.Add((unknown, name));
+            // Somebody read this name and could not fill it; the walk must go
+            // on past it to find the rest.
             return Placeholder(name);
         }
 
-        // The real cross-source check asks every other source for each
-        // resolved name, and the offline run fails on the first cache gap it
-        // meets there (ADR-0014, ADR-0028). The check inside Resolve cannot do
-        // this because it only ever sees this one aggregate source, so the
-        // same reads are replayed here; only metadata gets read, nothing is
-        // compared.
-        public void CrossCheck(IReadOnlyList<ResolvedSei> resolved)
+        // The graph the rest of the run would cross-check. The check inside
+        // Resolve only ever sees this one aggregate source, so the other
+        // sources are read here exactly the way CrossSourceCheck reads them;
+        // whatever they lack is a gap, whether or not the check itself would
+        // then fail. Only a trusted framework-level handler wants this.
+        public void OnSolution(IReadOnlyList<ResolvedSei> resolved)
         {
             foreach (var sei in resolved)
             {
@@ -197,18 +228,24 @@ internal static class OfflineMetadata
 
                 for (var i = 0; i < _real.Count; i++)
                 {
-                    if (i != owner
-                        && _real[i].GetSei(sei.Name) is null
-                        && Unknown(i, sei.Name) is { } id)
+                    if (i != owner)
                     {
-                        Missing.Add((id, sei.Name));
+                        Read(i, sei.Name);
                     }
                 }
             }
         }
 
-        private string? Unknown(int index, string name)
-            => _real[index] is HttpSource http && http.IsCacheUnknown(name) ? http.Id : null;
+        private SeiIndex? Read(int index, string name)
+        {
+            var read = _real[index].GetSei(name);
+            if (read is null && _real[index] is HttpSource http && http.IsCacheUnknown(name))
+            {
+                Missing.Add((http.Id, name));
+            }
+
+            return read;
+        }
 
         public string ResolveArtifact(ArtifactLocation source) => source.Url;
 
@@ -251,27 +288,68 @@ internal static class OfflineMetadata
             };
     }
 
-    private static bool HasIndex(SeikoConfig config, string root, string storePath, string sourceId, string name)
+    // One read the replay will make. The rule matches the real cache read:
+    // a recorded 404 is an answer, a missing or unreadable file is not, and
+    // only a read source that is missing an answer is a gap. The cross-source
+    // pass reads a different source, so its gaps point at the file itself
+    // rather than hinting at the locked source.
+    private static void CheckLockedRead(
+        SeikoConfig config,
+        string root,
+        string storePath,
+        string sourceId,
+        string name,
+        SortedSet<string> missing,
+        bool crossCheck)
     {
         var source = config.Sources.FirstOrDefault(
             item => string.Equals(item.Id, sourceId, StringComparison.Ordinal));
         if (source is null)
         {
-            return false;
+            missing.Add($"source '{sourceId}' for {name} is not configured");
+            return;
         }
 
+        string path;
         if (IsHttp(source))
         {
-            // A cached 404 does not help a replay: it fails with "not in
-            // source" instead of a cache miss, so either way it cannot run.
-            var uri = new Uri(new Uri(source.Index), $"sei/{name}.json");
-            return File.Exists(MetadataCache.PathFor(storePath, uri.AbsoluteUri));
+            path = MetadataCache.PathFor(storePath, new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
+            if (MetadataCache.IsMissing(path))
+            {
+                // Known absent upstream. The replay will report "not in
+                // source"; refetching online may well answer 404 again.
+                if (!crossCheck)
+                {
+                    missing.Add($"sei/{name}.json from source '{sourceId}' (recorded as absent)");
+                }
+
+                return;
+            }
+        }
+        else
+        {
+            // Same resolution the real LocalSource does: relative to the
+            // install root, never to the store. A local file always answers.
+            var index = LocalSource.ResolvePath(source.Index, root);
+            var local = Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json");
+            if (!File.Exists(local))
+            {
+                missing.Add($"sei/{name}.json from source '{sourceId}'");
+            }
+
+            return;
         }
 
-        // Same resolution the real LocalSource does: relative to the install
-        // root, never to the store.
-        var index = LocalSource.ResolvePath(source.Index, root);
-        return File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"));
+        if (!File.Exists(path))
+        {
+            missing.Add($"sei/{name}.json from source '{sourceId}'");
+            return;
+        }
+
+        if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
+        {
+            missing.Add($"sei/{name}.json from source '{sourceId}' (unreadable)");
+        }
     }
 
     // Search walks each source's own root list, so offline readiness must keep

@@ -39,9 +39,14 @@ public sealed class Resolver
     private readonly Dictionary<string, ForcedPick> _forced;
     private readonly bool _checkAmbiguity;
     private readonly SearchBudget _budget;
+    private readonly Action<IReadOnlyList<ResolvedSei>>? _onSolution;
+    private readonly bool _collectAll;
     private IReadOnlyList<SeiSpec> _specs = [];
+    private HashSet<string> _directNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<VersionRange>> _unknownConstraints = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private bool _hintsGrew;
+    private List<IReadOnlyList<ResolvedSei>>? _collected;
 
     public Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -50,7 +55,9 @@ public sealed class Resolver
         bool allowPrerelease,
         IReadOnlySet<string>? updateNames = null,
         bool latestInstallable = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        Action<IReadOnlyList<ResolvedSei>>? onSolution = null,
+        bool collectAll = false)
         : this(
             sources,
             existingLock,
@@ -61,7 +68,9 @@ public sealed class Resolver
             allowCritical,
             new Dictionary<string, ForcedPick>(StringComparer.Ordinal),
             checkAmbiguity: true,
-            new SearchBudget())
+            new SearchBudget(),
+            onSolution,
+            collectAll)
     {
     }
 
@@ -75,7 +84,10 @@ public sealed class Resolver
         bool allowCritical,
         Dictionary<string, ForcedPick> forced,
         bool checkAmbiguity,
-        SearchBudget budget)
+        SearchBudget budget,
+        Action<IReadOnlyList<ResolvedSei>>? onSolution = null,
+        bool collectAll = false,
+        List<IReadOnlyList<ResolvedSei>>? collected = null)
     {
         _sources = sources;
         _lock = existingLock;
@@ -87,6 +99,9 @@ public sealed class Resolver
         _forced = forced;
         _checkAmbiguity = checkAmbiguity;
         _budget = budget;
+        _onSolution = onSolution;
+        _collectAll = collectAll;
+        _collected = collected;
     }
 
     public IReadOnlyList<string> Warnings()
@@ -96,9 +111,11 @@ public sealed class Resolver
         return warnings;
     }
 
-    // True when the work budget ran out: parts of the graph may never have
-    // been visited, so a caller collecting gaps cannot call its list complete.
-    public bool BudgetExhausted => _budget.Exhausted;
+    // True when a search limit stopped the walk: parts of the graph may never
+    // have been visited, so a caller collecting gaps cannot call its list
+    // complete. The limits live on the shared budget so a child probe's
+    // exhaustion counts too.
+    public bool Incomplete => _budget.Exhausted || _budget.DepthSpent;
 
     private List<string> SkippedWarnings()
     {
@@ -115,6 +132,23 @@ public sealed class Resolver
     public IReadOnlyList<ResolvedSei> Resolve(IReadOnlyList<SeiSpec> specs)
     {
         _specs = specs;
+        // A collecting run wants every graph it reaches, not only the answer:
+        // the sources it read are the gaps somebody has to fill. Every leaf
+        // solution is reported as soon as it is found, so an optional set that
+        // cannot be solved is still measured up to the point it fails.
+        _collected = _collectAll ? _collected ?? [] : null;
+        try
+        {
+            return ResolveWithPreference(specs);
+        }
+        finally
+        {
+            _collected = null;
+        }
+    }
+
+    private IReadOnlyList<ResolvedSei> ResolveWithPreference(IReadOnlyList<SeiSpec> specs)
+    {
         var result = ResolveOnce(specs);
         if (!_checkAmbiguity)
         {
@@ -197,7 +231,7 @@ public sealed class Resolver
 
     private IReadOnlyList<ResolvedSei> ResolveOnce(IReadOnlyList<SeiSpec> specs)
     {
-        var directNames = new HashSet<string>(StringComparer.Ordinal);
+        var directNames = _directNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
             if (!SeiName.IsValid(spec.Name))
@@ -226,13 +260,18 @@ public sealed class Resolver
 
             if (Search(0))
             {
-                foreach (var sei in _assigned.Values)
-                {
-                    sei.Direct = directNames.Contains(sei.Name);
-                }
+                return Answer(directNames);
+            }
 
-                CrossSourceCheck.Verify(_sources, _assigned.Values, "checksum");
-                return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();            }
+            // A collecting run never lets a leaf end the walk, so an ordinary
+            // "no solution" is not a stop signal here: every graph found has
+            // already been reported and the first one is answered.
+            if (_collectAll && _collected is { Count: > 0 })
+            {
+                // The walk has backtracked past every leaf, so nothing is
+                // assigned any more; the first collected graph is the answer.
+                return _collected[0].ToList();
+            }
 
             if (!_hintsGrew)
             {
@@ -250,16 +289,50 @@ public sealed class Resolver
         }
     }
 
+    // The accepted graph, in lock order. A collecting run also reports it
+    // here: in that mode a found leaf does not end the search, so the answer
+    // the caller gets is the first one found.
+    private List<ResolvedSei> Answer(HashSet<string> directNames)
+    {
+        foreach (var sei in _assigned.Values)
+        {
+            sei.Direct = directNames.Contains(sei.Name);
+        }
+
+        CrossSourceCheck.Verify(_sources, _assigned.Values, "checksum");
+        return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+    }
+
     private bool Search(int index)
     {
         if (index > MaxSearchDepth)
         {
+            _budget.DepthSpent = true;
             throw Fail($"dependency resolution exceeded the depth budget of {MaxSearchDepth}");
         }
 
         if (index >= _pending.Count)
         {
-            return ValidateFinalSolution();
+            var solved = ValidateFinalSolution();
+            if (solved && _collectAll)
+            {
+                // Report the leaf and keep looking: the next sibling is more
+                // graph the real run may read. A placeholder answers for its
+                // name here even where the real version could not, so only
+                // visiting every branch keeps a required fallback (a lower
+                // version with its own dependencies) from being skipped.
+                foreach (var sei in _assigned.Values)
+                {
+                    sei.Direct = _directNames.Contains(sei.Name);
+                }
+
+                var answer = _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+                _collected?.Add(answer);
+                _onSolution?.Invoke(answer);
+                return false;
+            }
+
+            return solved;
         }
 
         var requirement = _pending[index];
@@ -270,10 +343,28 @@ public sealed class Resolver
 
         if (_assigned.TryGetValue(requirement.Name, out var existing))
         {
-            // A placeholder's version is invented, so only a placeholder
-            // answers for that name; the range is not checked against it.
-            if (existing.Entry.ProbeUnknown
-                || requirement.Range.Satisfies(existing.ParsedVersion))
+            if (existing.Entry.ProbeUnknown)
+            {
+                // The version is invented, so the range is not judged against
+                // it — but two known ranges can still contradict each other,
+                // and then no answer for this name could satisfy both. That is
+                // the one thing already-cached metadata proves, so it has to
+                // fail the branch and send the search to another one.
+                var ranges = _unknownConstraints[requirement.Name];
+                ranges.Add(requirement.Range);
+                if (!Overlap(ranges))
+                {
+                    _lastConflict = new SeikoException(
+                        $"version ranges for {requirement.Name} contradict each other ({string.Join(", ", ranges.Distinct())}); "
+                        + $"latest from {Describe(requirement.From)}",
+                        "resolve");
+                    return false;
+                }
+
+                return Search(index + 1);
+            }
+
+            if (requirement.Range.Satisfies(existing.ParsedVersion))
             {
                 return Search(index + 1);
             }
@@ -325,6 +416,17 @@ public sealed class Resolver
                 PackageDeprecated = indexData.Deprecated,
             };
             _assigned[requirement.Name] = resolved;
+            if (entry.ProbeUnknown)
+            {
+                // Everything already pending for the name is a known range
+                // too; the placeholder satisfies all of them at once, which
+                // is exactly the over-fit this bookkeeping guards against.
+                _unknownConstraints[requirement.Name] = _pending
+                    .Where(item => string.Equals(item.Name, requirement.Name, StringComparison.Ordinal))
+                    .Select(item => item.Range)
+                    .Distinct()
+                    .ToList();
+            }
 
             var pendingBeforeVersion = _pending.Count;
             AddDependencies(entry.Dependencies, requirement.Name, requirement.Name);
@@ -804,6 +906,8 @@ public sealed class Resolver
         {
             [owner.Name] = new ForcedPick(owner.Version, artifact),
         };
+        // The child explores alternative artifacts; its reads are real reads
+        // of the same sources, so a collecting run wants them too.
         var probe = new Resolver(
             _sources,
             _lock,
@@ -814,7 +918,10 @@ public sealed class Resolver
             _allowCritical,
             forced,
             checkAmbiguity: false,
-            _budget);
+            _budget,
+            _onSolution,
+            _collectAll,
+            _collected);
         try
         {
             probe.ResolveOnce(_specs);
@@ -867,9 +974,25 @@ public sealed class Resolver
                 return false;
             }
 
-            // A placeholder's version is invented, so its range is not judged.
+            // A placeholder's version is invented, so its range is not judged
+            // against it — but it is still a known requirement on that name,
+            // and it may contradict one recorded elsewhere.
             var range = ParseRange(relation.Version, relation.Name);
-            if (!target.Entry.ProbeUnknown && !range.Satisfies(target.ParsedVersion))
+            if (target.Entry.ProbeUnknown)
+            {
+                _unknownConstraints[relation.Name].Add(range);
+                if (!Overlap(_unknownConstraints[relation.Name]))
+                {
+                    _lastConflict = Fail(
+                        $"version ranges for {relation.Name} contradict each other "
+                        + $"({string.Join(", ", _unknownConstraints[relation.Name].Distinct())})");
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!range.Satisfies(target.ParsedVersion))
             {
                 _lastConflict = Fail(
                     $"{label} '{relation.Name}' for {owner} {resolved.Version} is {target.Version}, which does not satisfy {relation.Version ?? "*"}");
@@ -903,6 +1026,25 @@ public sealed class Resolver
         }
 
         return true;
+    }
+
+    // Whether any version could satisfy all of them. NuGet answers an empty
+    // intersection with the degenerate `(0.0.0, 0.0.0)`; an unbounded answer
+    // has no bounds at all.
+    private static bool Overlap(IReadOnlyList<VersionRange> ranges)
+    {
+        var common = VersionRange.CommonSubSet(ranges);
+        if (common.MinVersion is null && common.MaxVersion is null)
+        {
+            return true;
+        }
+
+        return !(common.MinVersion is { } min
+            && common.MaxVersion is { } max
+            && min.Equals(max)
+            && min.Equals(NuGetVersion.Parse("0.0.0"))
+            && !common.IsMinInclusive
+            && !common.IsMaxInclusive);
     }
 
     private bool HintAllows(string name, NuGetVersion version)
@@ -973,6 +1115,8 @@ public sealed class Resolver
     private sealed class SearchBudget
     {
         public bool Exhausted { get; private set; }
+
+        public bool DepthSpent { get; set; }
 
         public bool TryConsume()
         {
