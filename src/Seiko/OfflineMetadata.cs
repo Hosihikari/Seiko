@@ -13,7 +13,8 @@ internal static class OfflineMetadata
         string root,
         IEnumerable<string> initial,
         SeikoLock? lockedGraph = null,
-        bool allowPrerelease = false)
+        bool allowPrerelease = false,
+        bool allowCritical = false)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var httpSources = config.Sources
@@ -21,6 +22,27 @@ internal static class OfflineMetadata
             .Select(source => (Source: source, IndexUri: new Uri(source.Index)))
             .ToList();
         var pending = new Queue<string>(initial);
+        // Every range any enqueued edge imposes on a name, mirroring what the
+        // resolver's pending list would hold. It grows as edges are added, so
+        // a transitive range prunes as reliably as a declared one.
+        var ranges = new Dictionary<string, List<NuGet.Versioning.VersionRange>>(StringComparer.Ordinal);
+        void Impose(string name, string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)
+                || text.Trim() == "*"
+                || !NuGet.Versioning.VersionRange.TryParse(text, out var parsed))
+            {
+                return;
+            }
+
+            if (!ranges.TryGetValue(name, out var list))
+            {
+                ranges[name] = list = [];
+            }
+
+            list.Add(parsed);
+        }
+
         if (lockedGraph is not null)
         {
             // A replay is fully described by the lock: every name it needs is
@@ -53,16 +75,16 @@ internal static class OfflineMetadata
             }
         }
 
-        // Declared ranges, so only versions the resolver would consider are
-        // walked (ADR-0027). A name is only ever declared once.
-        var constraints = config.Sei
-            .Where(spec => !string.IsNullOrWhiteSpace(spec.Version))
+        foreach (var spec in config.Sei)
+        {
+            Impose(spec.Name, spec.Version);
+        }
+        // A yanked version stays a candidate when the lock already holds it.
+        var lockedVersions = (lockedGraph?.Sei ?? [])
+            .Where(sei => NuGet.Versioning.NuGetVersion.TryParse(sei.Version, out _))
             .ToDictionary(
-                spec => spec.Name,
-                spec => spec.Version is { } text
-                    && NuGet.Versioning.VersionRange.TryParse(text, out var range)
-                        ? range
-                        : null,
+                sei => sei.Name,
+                sei => NuGet.Versioning.NuGetVersion.Parse(sei.Version),
                 StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var pendingOrigin = new SortedSet<string>(StringComparer.Ordinal);
@@ -150,9 +172,12 @@ internal static class OfflineMetadata
                 found,
                 pending,
                 rid,
-                constraints.TryGetValue(lookup, out var range) && range is not null ? [range] : [],
+                ranges.TryGetValue(lookup, out var imposed) ? imposed : [],
                 allowPrerelease,
-                lookup);
+                allowCritical,
+                lockedVersions.TryGetValue(lookup, out var locked) ? locked : null,
+                lookup,
+                Impose);
         }
 
         // Origin entries last, repeated until the graph stops growing: only then
@@ -183,7 +208,7 @@ internal static class OfflineMetadata
                         }
 
                         var added = new Queue<string>();
-                        Enqueue(manifest, added, rid, [], allowPrerelease, name);
+                        Enqueue(manifest, added, rid, [], allowPrerelease, allowCritical, null, name, Impose);
                         foreach (var dependency in added)
                         {
                             if (seen.Add(dependency))
@@ -381,15 +406,18 @@ internal static class OfflineMetadata
             // be supplied by a dependency of the candidate file itself cannot
             // hold; a false here must not skip a file that would pull its own
             // prerequisite in, so `Holds` is asked with the file's own names.
-            if (selector is not null && !Holds(selector, known, rangesOf, spec.Paths[i], root))
+            var full = LocalSource.ResolvePath(spec.Paths[i], root);
+            var candidate = File.Exists(full)
+                ? full
+                : storeRoot is null ? full : OriginSnapshotPath(storeRoot, spec.Name) ?? full;
+            if (selector is not null && !Holds(selector, known, rangesOf, spec.Paths[i], root, candidate))
             {
                 continue;
             }
 
-            // The original is preferred; a deleted one is answered by the
-            // snapshot with the same digest, if it is still there.
-            var full = LocalSource.ResolvePath(spec.Paths[i], root);
-            if (File.Exists(full))
+            // The original is preferred; a deleted one is answered by a
+            // snapshot, if one is still there.
+            if (candidate == full)
             {
                 yield return full;
                 continue;
@@ -411,12 +439,16 @@ internal static class OfflineMetadata
         ISet<string> graph,
         Func<string, string?> rangeOf,
         string stored,
-        string root)
+        string root,
+        string candidate)
     {
         // Names the candidate itself declares still count as reachable, even
-        // though they are not in the queue yet (ADR-0027, ADR-0044).
-        var own = OriginManifest.Dependencies(OriginPaths.Resolve(stored, root))
-            ?.Versions.SelectMany(version => version.Dependencies.Select(relation => relation.Name))
+        // though they are not in the queue yet — at the package and at the
+        // artifact level, since both feed the graph (ADR-0027, ADR-0044).
+        var own = OriginManifest.Dependencies(candidate)
+            ?.Versions.SelectMany(version => version.Dependencies
+                .Concat(version.Artifacts.SelectMany(artifact => artifact?.Dependencies ?? []))
+                .Select(relation => relation.Name))
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var item in selector.Prerequisites)
@@ -522,7 +554,10 @@ internal static class OfflineMetadata
         string rid,
         IReadOnlyList<NuGet.Versioning.VersionRange> constraints,
         bool allowPrerelease,
-        string name)
+        bool allowCritical,
+        NuGet.Versioning.NuGetVersion? lockedVersion,
+        string name,
+        Action<string, string?> impose)
     {
         foreach (var entry in index.Versions ?? [])
         {
@@ -531,22 +566,34 @@ internal static class OfflineMetadata
                 continue;
             }
 
+            // The same gate the resolver applies before a version can become a
+            // candidate: every pending range must admit it, pre-releases only
+            // when allowed or when a range asks for them, and neither yanked
+            // nor critical versions unless they are the locked one or critical
+            // is explicitly allowed (Resolver.Candidates).
             if (constraints.Count > 0 && !constraints.All(constraint => constraint.Satisfies(version)))
             {
                 continue;
             }
 
-            if (version.IsPrerelease && !allowPrerelease)
+            if (version.IsPrerelease
+                && !allowPrerelease
+                && !constraints.Any(Resolver.RangeAllowsPrerelease))
             {
                 continue;
             }
 
-            if (entry.Yanked)
+            if (entry.Yanked && !version.Equals(lockedVersion))
             {
                 continue;
             }
 
-            EnqueueEntry(entry, pending, rid);
+            if (Retirement.IsCritical(entry) && !allowCritical)
+            {
+                continue;
+            }
+
+            EnqueueEntry(entry, pending, rid, impose);
         }
     }
 
@@ -554,10 +601,15 @@ internal static class OfflineMetadata
     // optional peers and conflicts are merely checked against what is already
     // assigned, so their indexes are never read (Resolver, ADR-0027). Only
     // artifacts that fit this platform are considered, matching selection.
-    private static void EnqueueEntry(SeiVersionEntry entry, Queue<string> pending, string rid)
+    private static void EnqueueEntry(
+        SeiVersionEntry entry,
+        Queue<string> pending,
+        string rid,
+        Action<string, string?> impose)
     {
         foreach (var relation in entry.Dependencies)
         {
+            impose(relation.Name, relation.Version);
             pending.Enqueue(relation.Name);
         }
 
@@ -567,6 +619,7 @@ internal static class OfflineMetadata
         {
             foreach (var relation in artifact!.Dependencies)
             {
+                impose(relation.Name, relation.Version);
                 pending.Enqueue(relation.Name);
             }
         }

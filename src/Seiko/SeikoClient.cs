@@ -186,7 +186,8 @@ public sealed class SeikoClient
                 root,
                 specs.Select(spec => spec.Name),
                 lockedGraph: mode == SyncMode.Normal ? null : existingLock,
-                allowPrerelease: allowPrerelease);
+                allowPrerelease: allowPrerelease,
+                allowCritical: allowCritical);
         }
 
         var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
@@ -810,7 +811,10 @@ public sealed class SeikoClient
             }
 
             originTargets.Add(existingOrigin ?? AddOrigin(config, manifest));
-            if (!originTargets[^1].Paths.Contains(addition.Path!, StringComparer.Ordinal))
+            if (!originTargets[^1].Paths.Any(existing => string.Equals(
+                    OriginPaths.Resolve(existing, root),
+                    full,
+                    StringComparison.Ordinal)))
             {
                 // Re-adding a path refreshes its condition slot but must not
                 // duplicate the declaration.

@@ -1052,6 +1052,61 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void OfflinePrecheck_TreatsASelfSuppliedPrerequisiteAsReachable()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("c", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        // B is not a direct declaration and is not cached; the file itself
+        // depends on B and C, and its selector asks that B exist. Only a
+        // candidate-aware check keeps the file, which then pulls both in.
+        var origin = fixture.WriteOrigin(
+            "hello",
+            "1.0.0",
+            "hello.txt",
+            "one",
+            dependencies: [("b", null), ("c", null)],
+            dependencyLevel: "artifact");
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "\"dist/hello.sei\"",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"b\", version = \"*\" } ] } ]");
+
+        // Prime nothing; the pre-check must accept and the walk must report
+        // B and C rather than skipping the only candidate.
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Rel(fixture, origin),
+            storeRoot: fixture.StoreDirectory,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("sei/b.json", error.Message);
+        Assert.Contains("sei/c.json", error.Message);
+    }
+
+    [Fact]
+    public void Add_DoesNotDeclareTheSameFileTwiceUnderDifferentSpellings()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+        // `./dist/../dist/hello.sei` reaches the same file by another spelling;
+        // the second add must refresh the condition, not append a duplicate.
+        // Another spelling of the same file: the second add must refresh the
+        // condition, not append a duplicate declaration.
+        client.Add(fixture.Root, "./" + Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+
+        Assert.Single(Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths);
+    }
+
+    [Fact]
     public void Add_RejectsAFileUrlInput()
     {
         using var fixture = new Fixture();
