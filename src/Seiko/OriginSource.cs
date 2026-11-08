@@ -44,9 +44,10 @@ internal sealed class OriginSource : ISeiSource
     // path may name a snapshot when the original is gone.
     public static string ReadName(string path, string? storePath = null)
     {
+        string? name = null;
         if (!File.Exists(path) && storePath is not null)
         {
-            path = SnapshotByStem(storePath, path) ?? path;
+            path = SnapshotByStem(storePath, path, out name) ?? path;
         }
 
         var manifest = ReadManifestHeader(path);
@@ -191,14 +192,28 @@ internal sealed class OriginSource : ISeiSource
         };
     }
 
-    // The original if it is still there, otherwise the snapshot with exactly
-    // that digest; a rebuilt original is caught by the caller's digest check.
+    // The original if it is still there — verified against the lock, because a
+    // warm cache would otherwise never read it — otherwise the snapshot with
+    // exactly that digest (ADR-0044).
     private string LockedFile(string name, string stored, string digest)
     {
         var path = OriginPaths.Resolve(stored, Root);
         if (File.Exists(path))
         {
-            return path;
+            var actual = Hashing.Sha256File(path);
+            if (string.Equals(actual, digest, StringComparison.Ordinal))
+            {
+                return path;
+            }
+
+            throw new SeikoException(
+                $"{name}: the origin file changed since it was locked "
+                + $"({digest} locked, {actual} read)",
+                "checksum")
+            {
+                Hint = "rebuild under a new version, or run `sk remove` and add the file again",
+                HintKey = "hint.origin-changed",
+            };
         }
 
         if (StoreRoot is not null)
@@ -396,32 +411,85 @@ internal sealed class OriginSource : ISeiSource
         return manifest;
     }
 
-    // Snapshots are named after the sei, so a file name like `hello-1.0.0.sei`
-    // cannot address them by itself. Every snapshot is tried until one
-    // declares the stem, which also covers the plain `hello.sei` case.
-    private static string? SnapshotByStem(string storePath, string path)
+    // Used only for an unknown path: every snapshot is read until one declares
+    // a name the stem can belong to. A prefix match alone is not enough, since
+    // `hello` is a prefix of `hello-tools`; the manifest decides, and an
+    // ambiguous stem is refused rather than resolved by timestamp.
+    private static string? SnapshotByStem(string storePath, string path, out string? name)
     {
         var folder = OriginSnapshot.Folder(storePath);
         if (!Directory.Exists(folder))
         {
+            name = null;
             return null;
         }
 
-        var stem = Path.GetFileNameWithoutExtension(path);
-        foreach (var candidate in Directory.EnumerateFiles(folder, "*.sei")
-            .OrderByDescending(File.GetLastWriteTimeUtc))
+        var matches = new List<string>();
+        foreach (var candidate in Directory.EnumerateFiles(folder, "*.sei"))
         {
-            var declared = Path.GetFileName(candidate);
-            var dash = declared.LastIndexOf('-');
-            var name = dash < 0 ? Path.GetFileNameWithoutExtension(declared) : declared[..dash];
-            if (string.Equals(name, stem, StringComparison.Ordinal)
-                || stem.StartsWith(name + "-", StringComparison.Ordinal))
+            SeiManifest? manifest;
+            try
             {
-                return candidate;
+                manifest = ReadManifestHeader(candidate);
+            }
+            catch (SeikoException)
+            {
+                continue;
+            }
+
+            if (manifest is null || string.IsNullOrEmpty(manifest.Name))
+            {
+                continue;
+            }
+
+            if (OriginPaths.StemMatches(path, manifest.Name))
+            {
+                matches.Add(candidate);
             }
         }
 
-        return null;
+        if (matches.Count == 0)
+        {
+            name = null;
+            return null;
+        }
+
+        name = ReadManifestHeader(matches[0])!.Name;
+
+        // Two different names can both fit the stem (`hello` and `hello-tools`
+        // for hello-tools-win); the most specific one wins. Snapshots of the
+        // same name are not ambiguous, so they collapse to the newest.
+        var names = matches
+            .ToDictionary(
+                candidate => candidate,
+                candidate => ReadManifestHeader(candidate)!.Name,
+                StringComparer.Ordinal);
+        var distinct = names.Values.Distinct(StringComparer.Ordinal).ToList();
+        if (distinct.Count > 1)
+        {
+            // Keep the names no other name is a prefix of: `hello-tools`
+            // survives `hello`, since the file stem starts with the longer one.
+            var wider = distinct
+                .Where(value => distinct.All(other => other == value
+                    || !other.StartsWith(value + "-", StringComparison.Ordinal)))
+                .ToList();
+            if (wider.Count != 1)
+            {
+                throw new SeikoException(
+                    $"{Path.GetFileName(path)} matches several origin names ({string.Join(", ", wider)}); "
+                    + "rename it so only one applies",
+                    "usage");
+            }
+
+            distinct = wider;
+        }
+
+        var chosenName = distinct[0];
+        name = chosenName;
+        return matches
+            .Where(candidate => string.Equals(names[candidate], chosenName, StringComparison.Ordinal))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .First();
     }
 
     // Reads the root manifest entry only. The size limit applies to that entry,

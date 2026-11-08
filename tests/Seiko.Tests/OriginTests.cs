@@ -553,8 +553,6 @@ public sealed class OriginTests
         // A plain indexed artifact that also mirrors the optional field.
         var indexPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
         var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(indexPath))!;
-        node["versions"]![0]!["artifacts"]![0]!["originPath"] = "dist/elsewhere.sei";
-        File.WriteAllText(indexPath, node.ToJsonString());
 
         // The path is outside the install root, so a fixed cwd-relative read
         // (the old code) would miss it and a root-relative one would find it;
@@ -567,6 +565,7 @@ public sealed class OriginTests
         node["versions"]![0]!["artifacts"]![0]!["originPath"] =
             Path.GetRelativePath(Directory.GetCurrentDirectory(), Path.Combine(elsewhere, "elsewhere.sei"))
                 .Replace('\\', '/');
+        File.WriteAllText(indexPath, node.ToJsonString());
 
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -647,13 +646,28 @@ public sealed class OriginTests
         path = fixture.WriteOrigin("hello", "1.0.1", "hello.txt", "two");
         client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
-        // Remove the original and both unpacked trees, so the refetch has to go
-        // through the snapshot chosen by digest rather than by recency.
+        // Remove the original and every unpacked tree, including the target
+        // generation's. The current lock only names 1.0.1, so the cache is
+        // cleared wholesale: otherwise rollback would never refetch and the
+        // snapshot binding would go untested.
         File.Delete(Path.Combine(fixture.Root, path));
-        foreach (var sei in client.ReadLock(fixture.Root)!.Sei)
+        foreach (var directory in Directory.GetDirectories(fixture.StoreDirectory))
         {
-            File.Delete(Path.Combine(fixture.StoreDirectory, ".meta", sei.Artifact.Sha256 + ".json"));
-            Directory.Delete(Path.Combine(fixture.StoreDirectory, sei.Artifact.Sha256), recursive: true);
+            if (Path.GetFileName(directory) is "." or "origin" || Path.GetFileName(directory) is ".locks" or ".metadata" or ".partial")
+            {
+                continue;
+            }
+
+            Directory.Delete(directory, recursive: true);
+        }
+
+        var meta = Path.Combine(fixture.StoreDirectory, ".meta");
+        if (Directory.Exists(meta))
+        {
+            foreach (var file in Directory.GetFiles(meta))
+            {
+                File.Delete(file);
+            }
         }
 
         client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1);
@@ -669,27 +683,27 @@ public sealed class OriginTests
         using var fixture = new Fixture();
         fixture.AddSei("lib", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteConfig("win-x64");
-        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-a.sei");
-        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-b.sei");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "from-a", fileName: "hello-a.sei");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "from-b", fileName: "hello-b.sei");
         WriteOriginConfig(
             fixture,
             "hello",
             "\"dist/hello-a.sei\", \"dist/hello-b.sei\"",
-            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] }, "
-            + "{ rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] } ]",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] }, "
+            + "{ rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]",
             "lib");
 
-        // Both selectors match the rid; only the first is satisfiable.
+        // Both selectors match the rid; only the second is satisfiable, so the
+        // old "first selector" pairing would pick the wrong condition.
         var client = new SeikoClient();
-        client.Add(fixture.Root, Rel(fixture, "dist/hello-a.sei"), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, "dist/hello-b.sei"), storeRoot: fixture.StoreDirectory);
         var locked = Assert.Single(client.ReadLock(fixture.Root)!.Sei, item => item.Name == "hello");
-        Assert.Equal("dist/hello-a.sei", locked.OriginPath);
+        Assert.Equal("dist/hello-b.sei", locked.OriginPath);
 
         client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
 
-        Assert.Equal("dist/hello-a.sei", Assert.Single(
-            client.ReadLock(fixture.Root)!.Sei,
-            item => item.Name == "hello").OriginPath);
+        // The deployed bytes prove which file the replay actually used.
+        Assert.Equal("from-b", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]
@@ -699,14 +713,112 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-1.0.0.sei");
-        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path));
         File.Delete(Path.Combine(fixture.Root, path));
 
-        // No --store: the default path must still find the snapshot, and the
-        // snapshot is named after the sei, not the file.
-        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+        // No --store on either call: the default store must hold the snapshot,
+        // and it is named after the sei rather than the file.
+        client.Add(fixture.Root, Rel(fixture, path));
 
         Assert.Equal("dist/hello-1.0.0.sei", Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths[0]);
+    }
+
+    [Fact]
+    public void Add_PrefersTheMoreSpecificOriginNameWhenStemsOverlap()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools", fileName: "hello-tools-win.sei");
+        client.Add(fixture.Root, Rel(fixture, tools));
+        // `hello` is a prefix of `hello-tools`; its snapshot is newer.
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base", fileName: "hello.sei");
+        client.Add(fixture.Root, Rel(fixture, "dist/hello.sei"));
+        File.Delete(Path.Combine(fixture.Root, tools));
+
+        client.Add(fixture.Root, Rel(fixture, tools));
+
+        Assert.Contains(
+            ConfigLoader.Load(fixture.Root).Origin,
+            origin => string.Equals(origin.Name, "hello-tools", StringComparison.Ordinal));
+        Assert.Equal("tools", File.ReadAllText(Path.Combine(fixture.Root, "tools.txt")));
+    }
+
+    [Fact]
+    public void Frozen_RejectsARewrittenFileWithAWarmCache()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        client.Add(fixture.Root, Rel(fixture, path));
+
+        // Same version, same relations, different payload; the tree stays.
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "two");
+
+        var frozen = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var preview = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen, dryRun: true));
+
+        Assert.Equal("checksum", frozen.Code);
+        Assert.Equal("checksum", preview.Code);
+    }
+
+    [Fact]
+    public void CacheVerify_ReportsADamagedSnapshot()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        new SeikoClient().Add(
+            fixture.Root,
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            storeRoot: fixture.StoreDirectory);
+        var snapshot = Assert.Single(Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")));
+        File.WriteAllText(snapshot, "tampered");
+
+        var findings = new SeikoClient().CacheVerify(fixture.StoreDirectory);
+
+        Assert.Contains(findings, finding => finding.Code == "cache-origin-corrupt");
+    }
+
+    [Fact]
+    public void OfflinePrecheck_FollowsTheSelectedSelectorRange()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("lib", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("other", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("lib", "[1.0.0]"));
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-a.sei");
+        // The second file needs lib@2 and pulls a package only it names; the
+        // declaration pins lib@1, so that dependency must not be required.
+        fixture.WriteOrigin(
+            "hello",
+            "1.0.0",
+            "hello.txt",
+            "two",
+            fileName: "hello-b.sei",
+            dependencies: [("other", null)]);
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "\"dist/hello-a.sei\", \"dist/hello-b.sei\"",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] }, "
+            + "{ rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]",
+            "lib");
+
+        // Cached for lib (matched above) but not for `other`.
+        new SeikoClient().Add(fixture.Root, Rel(fixture, "dist/hello-a.sei"), storeRoot: fixture.StoreDirectory);
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Rel(fixture, "dist/hello-b.sei"),
+            storeRoot: fixture.StoreDirectory,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        // hello-b is now the declared path, so its own dependency is required.
+        Assert.Contains("sei/other.json", error.Message);
     }
 
     [Fact]

@@ -150,7 +150,9 @@ internal sealed class Fixture : IDisposable
             Name = name,
             Version = version,
             Dependencies = ToDependencies(
-                (dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version))),
+                string.Equals(dependencyLevel, "artifact", StringComparison.Ordinal)
+                    ? []
+                    : (dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version))),
             Prerequisites = ToDependencies(
                 (manifestPrerequisites ?? []).Select(item => new DepFixture(item.Name, item.Version))),
             Artifact = new ArtifactManifest

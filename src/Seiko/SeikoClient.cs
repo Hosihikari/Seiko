@@ -1094,8 +1094,14 @@ public sealed class SeikoClient
                 continue;
             }
 
+            // When the bytes came from a snapshot there is nothing to capture;
+            // the path is the original only when the file still exists.
             var full = OriginPaths.Resolve(stored, origin.Root);
-            if (File.Exists(full))
+            if (File.Exists(full)
+                && string.Equals(
+                    Path.GetFullPath(sei.Artifact.Source.Url),
+                    Path.GetFullPath(full),
+                    StringComparison.Ordinal))
             {
                 OriginSnapshot.Capture(storePath, sei.Name, full, sei.Artifact.Source.Sha256);
             }
@@ -1243,10 +1249,9 @@ public sealed class SeikoClient
     }
 
     // A deleted original is still a usable declaration when a snapshot exists.
-    // Snapshots are named after the sei, not the file, so a suffixed file name
-    // (`hello-1.0.0.sei`) cannot identify them; the declared name wins when
-    // the declaration already knows it, otherwise the file stem is a guess
-    // that only the manifest read can confirm.
+    // Snapshots are named after the sei, not the file, so identity is the
+    // declared name (from an existing declaration or the lock) or, for an
+    // unknown path, the name its own manifest declares.
     private static bool HasSnapshotFor(string storePath, string storedPath, string? declaredName)
     {
         var folder = OriginSnapshot.Folder(storePath);
@@ -1255,21 +1260,22 @@ public sealed class SeikoClient
             return false;
         }
 
-        var stem = Path.GetFileNameWithoutExtension(storedPath);
-        foreach (var snapshot in Directory.EnumerateFiles(folder, "*.sei"))
+        if (declaredName is not null)
         {
-            var declared = Path.GetFileName(snapshot);
-            var dash = declared.LastIndexOf('-');
-            var name = dash < 0 ? Path.GetFileNameWithoutExtension(declared) : declared[..dash];
-            if (string.Equals(name, stem, StringComparison.Ordinal)
-                || stem.StartsWith(name + "-", StringComparison.Ordinal)
-                || string.Equals(name, declaredName, StringComparison.Ordinal))
-            {
-                return true;
-            }
+            return Directory.EnumerateFiles(folder, declaredName + "-*.sei").Any();
         }
 
-        return false;
+        return Directory.EnumerateFiles(folder, "*.sei").Any(
+            snapshot => OriginPaths.StemMatches(storedPath, SnapshotName(snapshot)));
+    }
+
+    // The name is the part before the digest; a name may itself contain '-',
+    // so the last '-' is the separator.
+    private static string SnapshotName(string snapshot)
+    {
+        var file = Path.GetFileNameWithoutExtension(snapshot);
+        var dash = file.LastIndexOf('-');
+        return dash < 0 ? file : file[..dash];
     }
 
     private sealed record AddSpecification(string? Name, string? Version, string? Path, string Raw);
@@ -1799,6 +1805,28 @@ public sealed class SeikoClient
         if (!Directory.Exists(storePath))
         {
             return findings;
+        }
+
+        // Origin snapshots are the last fallback of a replay; a damaged one
+        // has to be visible here or the gap only shows up at rollback time.
+        var snapshotFolder = OriginSnapshot.Folder(storePath);
+        if (Directory.Exists(snapshotFolder))
+        {
+            foreach (var snapshot in Directory.EnumerateFiles(snapshotFolder, "*.sei"))
+            {
+                var name = Path.GetFileName(snapshot);
+                var dash = name.LastIndexOf('-');
+                var expected = Path.GetFileNameWithoutExtension(name[(dash + 1)..]);
+                var actual = Hashing.Sha256File(snapshot);
+                if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    findings.Add(new CacheFinding(
+                        "error",
+                        "cache-origin-corrupt",
+                        "origin snapshot content does not match its digest",
+                        snapshot));
+                }
+            }
         }
 
         foreach (var directory in ArtifactDirectories(storePath))

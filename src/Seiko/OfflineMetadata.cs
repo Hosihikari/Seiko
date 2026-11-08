@@ -69,11 +69,14 @@ internal static class OfflineMetadata
             {
                 if (lockedGraph is null && originIndexes.TryGetValue(name, out var originSpec))
                 {
-                    var known = pending.ToHashSet(StringComparer.Ordinal);
+                    var versionsOf = VersionsOf(config);
+                    // Names already seen plus those still queued: the graph is
+                    // the whole set, not just the unprocessed remainder.
+                    var known = seen.Concat(pending).ToHashSet(StringComparer.Ordinal);
                     // Only the files this environment would actually use: a
                     // path selected for another platform cannot add cache
                     // requirements (ADR-0027 selection rules).
-                    foreach (var full in OriginFiles(originSpec, root, rid, storePath, known))
+                    foreach (var full in OriginFiles(originSpec, root, rid, storePath, known, versionsOf))
                     {
                         if (OriginManifest.Dependencies(full) is { } manifest)
                         {
@@ -270,7 +273,12 @@ internal static class OfflineMetadata
     // origin name at least as broad as the resolver's is the point; a missing
     // file is still reported by the source itself later.
     private static IEnumerable<string> OriginFiles(
-        OriginSpec spec, string root, string rid, string? storeRoot, ISet<string> known)
+        OriginSpec spec,
+        string root,
+        string rid,
+        string? storeRoot,
+        ISet<string> known,
+        Func<string, string?> versionsOf)
     {
         for (var i = 0; i < spec.Paths.Count; i++)
         {
@@ -283,10 +291,10 @@ internal static class OfflineMetadata
                 continue;
             }
 
-            // A condition on a package that is not in the graph at all cannot
-            // hold, so that file's relations are not a cache requirement.
-            if (selector is not null
-                && selector.Prerequisites.Any(item => !known.Contains(item.Name)))
+            // A condition on a package that is not in the graph at all, or on a
+            // version range the graph cannot satisfy, cannot hold; that file's
+            // relations are then not a cache requirement (ADR-0027).
+            if (selector is not null && !Holds(selector, known, versionsOf))
             {
                 continue;
             }
@@ -307,9 +315,46 @@ internal static class OfflineMetadata
         }
     }
 
+    // A selector can only apply if every package it names is in the graph and
+    // its allowed range admits the version the declaration pins. Nothing here
+    // resolves; a range that cannot be judged yet is treated as holding.
+    private static bool Holds(
+        OriginSelector selector,
+        ISet<string> graph,
+        Func<string, string?> versionsOf)
+    {
+        foreach (var item in selector.Prerequisites)
+        {
+            if (!graph.Contains(item.Name))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(item.Version) || item.Version.Trim() == "*")
+            {
+                continue;
+            }
+
+            if (NuGet.Versioning.VersionRange.TryParse(item.Version, out var range)
+                && versionsOf(item.Name) is { } pinned
+                && NuGet.Versioning.NuGetVersion.TryParse(pinned, out var version)
+                && !range.Satisfies(version))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // A stored snapshot beats nothing: the file name carries the digest, so a
     // rebuilt original cannot shadow it. The newest one is the best guess for
     // listing dependencies; the resolver still checks the real digest later.
+    private static Func<string, string?> VersionsOf(SeikoConfig config)
+        => name => config.Sei
+            .FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))?
+            .Version;
+
     private static string? OriginSnapshotPath(string storeRoot, string name)
     {
         var folder = OriginSnapshot.Folder(storeRoot);
@@ -373,10 +418,11 @@ internal static class OfflineMetadata
         }
     }
 
-    // Only relations that put a package into the graph: dependencies and
-    // prerequisites. Optional peers and conflicts are read solely when the
-    // target is already there, so requiring their metadata would be a cache
-    // demand the resolver never makes (ADR-0027).
+    // Only dependencies put a package into the graph. Prerequisites do not
+    // (ADR-0027), but they still have to resolve once their owner is selected,
+    // so their metadata is a real cache requirement — as are the artifact-level
+    // versions of both. Optional peers and conflicts are only read when the
+    // target is already there, so they are skipped.
     private static void EnqueueEntry(SeiVersionEntry entry, Queue<string> pending)
     {
         foreach (var relation in entry.Dependencies.Concat(entry.Prerequisites))
