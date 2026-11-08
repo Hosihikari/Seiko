@@ -185,7 +185,8 @@ public sealed class SeikoClient
                 storePath,
                 root,
                 specs.Select(spec => spec.Name),
-                lockedGraph: mode == SyncMode.Normal ? null : existingLock);
+                lockedGraph: mode == SyncMode.Normal ? null : existingLock,
+                allowPrerelease: allowPrerelease);
         }
 
         var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
@@ -781,7 +782,7 @@ public sealed class SeikoClient
         foreach (var addition in additions.Where(addition => addition.Path is not null))
         {
             var full = OriginPaths.Resolve(addition.Path!, root);
-            var declaredName = DeclaredOriginName(config, full);
+            var declaredName = DeclaredOriginName(config, root, full);
             var declaredOrigin = declaredName is null
                 ? null
                 : config.Origin.First(origin => string.Equals(origin.Name, declaredName, StringComparison.Ordinal));
@@ -1247,7 +1248,7 @@ public sealed class SeikoClient
             // A bare token was normalized against the working directory, so it
             // may be the copy in cwd rather than the declared location; the
             // declaration is matched on the file name instead (ADR-0044).
-            var declared = DeclaredOriginName(config, addition.Raw);
+            var declared = DeclaredOriginName(config, root, addition.Path!);
             var name = OriginSource.ReadName(addition.Path!, root, storePath, declared, LockedDigest(root, declared));
             if (sources.Any(source => source.GetSei(name) is not null))
             {
@@ -1272,12 +1273,14 @@ public sealed class SeikoClient
     // unknown path, the name its own manifest declares.
     // The origin entry that already declares this exact path, if any. Its name
     // is the identity, so nothing has to be inferred from the file name.
-    private static string? DeclaredOriginName(SeikoConfig config, string token)
-        => config.Origin.FirstOrDefault(origin => origin.Paths.Any(candidate =>
-                string.Equals(
-                    Path.GetFileName(candidate),
-                    Path.GetFileName(token),
-                    StringComparison.Ordinal)))?.Name;
+    private static string? DeclaredOriginName(SeikoConfig config, string root, string storedPath)
+    {
+        var full = OriginPaths.Resolve(storedPath, root);
+        return config.Origin.FirstOrDefault(origin => origin.Paths.Any(candidate => string.Equals(
+                OriginPaths.Resolve(candidate, root),
+                full,
+                StringComparison.Ordinal)))?.Name;
+    }
 
     // The digest a lock pinned for this sei, if any: the exact bytes to prefer.
     private static string? LockedDigest(string root, string? name)

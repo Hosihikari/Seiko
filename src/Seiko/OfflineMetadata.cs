@@ -12,7 +12,8 @@ internal static class OfflineMetadata
         string storePath,
         string root,
         IEnumerable<string> initial,
-        SeikoLock? lockedGraph = null)
+        SeikoLock? lockedGraph = null,
+        bool allowPrerelease = false)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var httpSources = config.Sources
@@ -52,6 +53,17 @@ internal static class OfflineMetadata
             }
         }
 
+        // Declared ranges, so only versions the resolver would consider are
+        // walked (ADR-0027). A name is only ever declared once.
+        var constraints = config.Sei
+            .Where(spec => !string.IsNullOrWhiteSpace(spec.Version))
+            .ToDictionary(
+                spec => spec.Name,
+                spec => spec.Version is { } text
+                    && NuGet.Versioning.VersionRange.TryParse(text, out var range)
+                        ? range
+                        : null,
+                StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var pendingOrigin = new SortedSet<string>(StringComparer.Ordinal);
         while (pending.Count > 0)
@@ -134,7 +146,13 @@ internal static class OfflineMetadata
                 return;
             }
 
-            Enqueue(found, pending, rid);
+            Enqueue(
+                found,
+                pending,
+                rid,
+                constraints.TryGetValue(lookup, out var range) && range is not null ? [range] : [],
+                allowPrerelease,
+                lookup);
         }
 
         // Origin entries last, repeated until the graph stops growing: only then
@@ -165,7 +183,7 @@ internal static class OfflineMetadata
                         }
 
                         var added = new Queue<string>();
-                        Enqueue(manifest, added, rid);
+                        Enqueue(manifest, added, rid, [], allowPrerelease, name);
                         foreach (var dependency in added)
                         {
                             if (seen.Add(dependency))
@@ -359,10 +377,11 @@ internal static class OfflineMetadata
                 continue;
             }
 
-            // A condition on a package that is not in the graph at all, or on a
-            // version range the graph cannot satisfy, cannot hold; that file's
-            // relations are then not a cache requirement (ADR-0027).
-            if (selector is not null && !Holds(selector, known, rangesOf))
+            // A condition on a package that is not in the graph and could not
+            // be supplied by a dependency of the candidate file itself cannot
+            // hold; a false here must not skip a file that would pull its own
+            // prerequisite in, so `Holds` is asked with the file's own names.
+            if (selector is not null && !Holds(selector, known, rangesOf, spec.Paths[i], root))
             {
                 continue;
             }
@@ -390,11 +409,19 @@ internal static class OfflineMetadata
     private static bool Holds(
         OriginSelector selector,
         ISet<string> graph,
-        Func<string, string?> rangeOf)
+        Func<string, string?> rangeOf,
+        string stored,
+        string root)
     {
+        // Names the candidate itself declares still count as reachable, even
+        // though they are not in the queue yet (ADR-0027, ADR-0044).
+        var own = OriginManifest.Dependencies(OriginPaths.Resolve(stored, root))
+            ?.Versions.SelectMany(version => version.Dependencies.Select(relation => relation.Name))
+            .ToHashSet(StringComparer.Ordinal);
+
         foreach (var item in selector.Prerequisites)
         {
-            if (!graph.Contains(item.Name))
+            if (!graph.Contains(item.Name) && own?.Contains(item.Name) != true)
             {
                 return false;
             }
@@ -486,10 +513,39 @@ internal static class OfflineMetadata
         }
     }
 
-    private static void Enqueue(SeiIndex index, Queue<string> pending, string rid)
+    // Versions are filtered the way the resolver filters candidates: by the
+    // declared ranges, pre-release allowance and yank state. Without an index
+    // entry (an origin manifest) only the single version exists.
+    private static void Enqueue(
+        SeiIndex index,
+        Queue<string> pending,
+        string rid,
+        IReadOnlyList<NuGet.Versioning.VersionRange> constraints,
+        bool allowPrerelease,
+        string name)
     {
         foreach (var entry in index.Versions ?? [])
         {
+            if (!NuGet.Versioning.NuGetVersion.TryParse(entry.Version, out var version))
+            {
+                continue;
+            }
+
+            if (constraints.Count > 0 && !constraints.All(constraint => constraint.Satisfies(version)))
+            {
+                continue;
+            }
+
+            if (version.IsPrerelease && !allowPrerelease)
+            {
+                continue;
+            }
+
+            if (entry.Yanked)
+            {
+                continue;
+            }
+
             EnqueueEntry(entry, pending, rid);
         }
     }
@@ -571,6 +627,7 @@ internal static class OriginManifest
                         [
                             new ArtifactEntry
                             {
+                                Rid = manifest.Artifact?.Rid,
                                 Dependencies = manifest.Artifact?.Dependencies ?? [],
                                 Prerequisites = manifest.Artifact?.Prerequisites ?? [],
                                 OptionalPeers = manifest.Artifact?.OptionalPeers ?? [],

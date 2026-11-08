@@ -50,8 +50,9 @@ internal sealed class OriginSource : ISeiSource
         string? lockedDigest = null)
     {
         var path = OriginPaths.Resolve(storedPath, root);
-        // A declaration is the identity; a file name can fit more than one sei
-        // (`hello-tools-win.sei` fits `hello`), so it is never re-derived.
+        // A declaration pinned to this very path is the identity; a file name
+        // can fit more than one sei, so it is never re-derived. A declaration
+        // for a different path says nothing about these bytes.
         if (declaredName is not null)
         {
             return declaredName;

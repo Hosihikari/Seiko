@@ -937,32 +937,118 @@ public sealed class OriginTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
-        // The declaration files `dist/hello-tools-win.sei` under `hello`; the
-        // copy in the working directory, however, is hello-tools' own artifact
-        // under the same name. A name taken from the bytes would say
-        // hello-tools; only the declaration says hello.
         fixture.AddSei("hello", new VersionFixture { Version = "9.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("hello-tools", new VersionFixture { Version = "9.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteConfig("win-x64");
         var shared = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base", fileName: "hello-tools-win.sei");
-        var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools");
         client.Add(fixture.Root, Rel(fixture, shared), storeRoot: fixture.StoreDirectory);
-        client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
 
+        // The token is a bare name in the working directory, so it takes the
+        // declaration branch; the copy there is hello's own artifact.
         var local = Path.Combine(Directory.GetCurrentDirectory(), "hello-tools-win.sei");
-        File.Copy(Path.Combine(fixture.Root, tools), local, overwrite: true);
+        File.Copy(Path.Combine(fixture.Root, shared), local, overwrite: true);
         try
         {
-            // Both names are source packages, so the message must name `hello`
-            // (the declared identity) and not `hello-tools` (the bytes').
             var error = Assert.Throws<SeikoException>(
                 () => client.Add(fixture.Root, "hello-tools-win.sei", storeRoot: fixture.StoreDirectory));
+            // `hello` is a source package, so the message must offer it.
             Assert.Contains("'hello' for the source", error.Message);
         }
         finally
         {
             File.Delete(local);
         }
+    }
+
+    [Fact]
+    public void Add_ReadsTheNewFileIdentityForADifferentDirectoryWithTheSameName()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        fixture.AddSei("hello", new VersionFixture { Version = "9.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+        // A different package whose file carries the same name, in another
+        // directory. It is written and moved away first, because the hello
+        // artifact below would otherwise overwrite it.
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "elsewhere"));
+        File.Move(
+            Path.Combine(fixture.Root, fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools", fileName: "hello-tools-win.sei")),
+            Path.Combine(fixture.Root, "elsewhere/hello-tools-win.sei"));
+
+        // `hello` is declared at dist/hello-tools-win.sei — the same basename.
+        var shared = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base", fileName: "hello-tools-win.sei");
+        client.Add(fixture.Root, Rel(fixture, shared), storeRoot: fixture.StoreDirectory);
+
+        // The token carries a path, so the declaration branch only applies if
+        // the paths really are the same; here they are not, so the identity has
+        // to come from the new file. Reusing `hello` would fail on the same
+        // path twice; reading the bytes lands it on `hello-tools`.
+        client.Add(fixture.Root, Rel(fixture, "elsewhere/hello-tools-win.sei"), storeRoot: fixture.StoreDirectory);
+
+        Assert.Contains(
+            ConfigLoader.Load(fixture.Root).Origin,
+            origin => origin.Name == "hello-tools"
+                && origin.Paths.Any(path => path.Contains("elsewhere", StringComparison.Ordinal)));
+
+    }
+
+    [Fact]
+    public void OfflinePrecheck_IgnoresVersionsOutsideTheDeclaredRange()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // lib 2.0.0 is the only version that depends on `extra`; the
+        // declaration pins 1.0.0, so `extra` must not be required.
+        fixture.AddSei(
+            "lib",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("extra", null)],
+                Artifacts = [new ArtifactFixture()],
+            });
+        fixture.AddSei("extra", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("lib", "[1.0.0]"));
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("lib", null)]);
+
+        // Prime the cache for lib and the origin, then drop only extra's, so a
+        // pre-check that walked lib 2.0.0 would now fail.
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true);
+
+        Assert.Single(new SeikoClient().ReadLock(fixture.Root)!.Sei, item => item.Name == "lib");
+    }
+
+    [Fact]
+    public void OfflinePrecheck_KeepsASelectorWhosePrerequisiteItSuppliesItself()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("c", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        // The file's own artifact depends on B and C; its selector also wants B
+        // to exist. B is therefore not in the graph yet when the selector is
+        // judged, but the file supplies it itself.
+        var origin = fixture.WriteOrigin(
+            "hello",
+            "1.0.0",
+            "hello.txt",
+            "one",
+            dependencies: [("b", null), ("c", null)],
+            dependencyLevel: "artifact");
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "\"dist/hello.sei\"",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"b\", version = \"*\" } ] } ]",
+            "b");
+
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true);
+
+        Assert.Single(new SeikoClient().ReadLock(fixture.Root)!.Sei, item => item.Name == "c");
     }
 
     [Fact]
