@@ -3020,7 +3020,18 @@ public sealed class OriginTests
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
-        Assert.Contains("sei/cold.json", error.Message);
+        // The third artifact is reached: cold is read, which is the point.
+        Assert.Equal(
+            new[]
+            {
+                "sei/absent.json from source 'second'",
+                "sei/cold.json from source 'first'",
+                "sei/cold.json from source 'second'",
+                "sei/x.json from source 'first'",
+                "sei/y.json from source 'second'",
+                "sei/z.json from source 'second'",
+            },
+            Gaps(error.Message));
     }
 
     // The two artifacts are equally specific, so the run reports an ambiguity
@@ -3378,7 +3389,18 @@ public sealed class OriginTests
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
-        Assert.Contains("sei/cold.json", error.Message);
+        // Everything below is a gap too; cold is the one that only gets read
+        // because the deeper version's range survived.
+        Assert.Equal(
+            new[]
+            {
+                "sei/absent.json from source 'second'",
+                "sei/cold.json from source 'first'",
+                "sei/cold.json from source 'second'",
+                "sei/x.json from source 'first'",
+                "sei/y.json from source 'second'",
+            },
+            Gaps(error.Message));
     }
 
     [Fact]
@@ -3431,7 +3453,7 @@ public sealed class OriginTests
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
         Assert.Equal("source", error.Code);
-        Assert.Contains("sei/x.json from source 'http'", error.Message);
+        Assert.Equal(["sei/x.json from source 'http'"], Gaps(error.Message));
         Assert.Contains("invalid sei index for x", error.Message);
     }
 
@@ -3440,50 +3462,74 @@ public sealed class OriginTests
     {
         using var fixture = new Fixture();
         using var first = new TestHttpServer(fixture.SourceDirectory);
-        var second = new Fixture();
-        using var secondServer = new TestHttpServer(second.SourceDirectory);
         var broken = Path.Combine(fixture.Root, "broken");
+        var local = Path.Combine(fixture.Root, "local-index");
         Directory.CreateDirectory(broken);
+        Directory.CreateDirectory(Path.Combine(local, "sei"));
         File.WriteAllText(Path.Combine(broken, "index.json"), "{\"schemaVersion\":99,\"sei\":[]}");
+        File.WriteAllText(Path.Combine(local, "index.json"), "{\"schemaVersion\":2,\"sei\":[]}");
         fixture.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        second.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        fixture.WriteHttpConfig(first.BaseUrl, "win-x64");
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
-            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")).Replace(
-                "\n]\n",
-                $"\n  {{ id = \"broken\", index = \"{broken.Replace('\\', '/')}/index.json\" }}\n]\n",
-                StringComparison.Ordinal));
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"http\", index = \"{first.BaseUrl}index.json\" }}, "
+            + $"{{ id = \"broken\", index = \"{broken.Replace('\\', '/')}/index.json\" }}, "
+            + $"{{ id = \"local\", index = \"{local.Replace('\\', '/')}/index.json\" }} ]\n"
+            + "rid = \"win-x64\"\nsei = []\n");
         var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("x", null)]);
         Assert.Throws<SeikoException>(
             () => new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory));
         var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
         var firstIndex = new Uri(first.BaseUrl.TrimEnd('/') + "/index.json");
-        var secondIndex = new Uri(secondServer.BaseUrl.TrimEnd('/') + "/index.json");
-        var secondX = MetadataCache.PathFor(fixture.StoreDirectory, new Uri(secondIndex, "sei/x.json").AbsoluteUri);
         var keep = new[]
         {
             MetadataCache.PathFor(fixture.StoreDirectory, firstIndex.AbsoluteUri),
             MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/x.json").AbsoluteUri),
-            MetadataCache.PathFor(fixture.StoreDirectory, secondIndex.AbsoluteUri),
         }.Where(File.Exists).ToDictionary(path => path, File.ReadAllBytes);
-        Directory.Delete(cache, recursive: true);
+        if (Directory.Exists(cache))
+        {
+            Directory.Delete(cache, recursive: true);
+        }
+
         Directory.CreateDirectory(cache);
         foreach (var (path, bytes) in keep)
         {
             File.WriteAllBytes(path, bytes);
         }
 
-        // The first source answers x fine; the second's cache is truncated.
-        // The construction failure of the third source still outranks the
-        // read-time error, as the real run fails on it first.
-        File.WriteAllText(secondX, "{");
+        // The local source's x is truncated json: this read really throws at
+        // the source boundary (the HTTP cache shortcut would just be a gap).
+        // The earlier construction failure of the broken source still wins.
+        File.WriteAllText(Path.Combine(local, "sei", "x.json"), "{");
 
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
+        // Both are present: the construction failure first, the read-time one
+        // beside it, and the gap that was read before either.
         Assert.Equal("source", error.Code);
         Assert.Contains("schemaVersion 99", error.Message);
+        Assert.Contains("invalid sei index for x", error.Message);
+        Assert.Contains("sei/x.json from source 'http'", error.Message);
+    }
+
+    [Theory]
+    [InlineData("offline: missing cached metadata: sei/a.json from source 'http'. Run the command once online, then retry offline",
+        "sei/a.json from source 'http'")]
+    [InlineData("offline: missing cached metadata: sei/a.json from source 'http'. The probe hit a search limit, so the list may be incomplete. Run the command once online, then retry offline",
+        "sei/a.json from source 'http'")]
+    [InlineData("some failure (offline: missing cached metadata: sei/a.json from source 'http')",
+        "sei/a.json from source 'http'")]
+    [InlineData("some failure (offline: missing cached metadata: sei/a.json from source 'mirror. west')",
+        "sei/a.json from source 'mirror. west'")]
+    [InlineData("offline: missing cached metadata: sei/a.json from source 'mirror (west)'. Run the command once online, then retry offline",
+        "sei/a.json from source 'mirror (west)'")]
+    [InlineData("offline: missing cached metadata: sei/a.json from source 'mirror (west)'; sei/b.json from source 'http'. The probe hit a search limit, so the list may be incomplete. Run the command once online, then retry offline",
+        "sei/a.json from source 'mirror (west)'; sei/b.json from source 'http'")]
+    public void Gaps_ParsesEveryMessageShape(string message, string expected)
+    {
+        Assert.Equal(expected.Split("; "), Gaps(message));
     }
 
     [Fact]
@@ -3608,31 +3654,40 @@ public sealed class OriginTests
     // The gap entries of an offline summary, in order, without the prose. A
     // failure-carrying message wraps the list in parentheses, and the search
     // limit note may follow it.
+    // The gap entries of an offline summary. Two shapes exist and are told
+    // apart by their wrapper, not by punctuation inside the entries: the
+    // plain sentence ends at its fixed closing sentences, the Combined one at
+    // the wrapper's own final parenthesis. Source ids may contain ". " or
+    // parentheses without either being mistaken for the end.
     private static string[] Gaps(string message)
     {
-        // The known shapes: either the plain sentence ("... metadata: <list>.
-        // Run ..."), optionally with a search-limit note, or a Combined
-        // wrapper ("... metadata: <list>)") possibly followed by prose. The
-        // list itself ends at the wrapper's ")" or at the fixed sentence, so
-        // a source id containing ". " survives.
-        var list = message
-            .Split("missing cached metadata: ", StringSplitOptions.None)[1];
-        var note = list.IndexOf("; the probe hit", StringComparison.Ordinal);
-        if (note >= 0)
-        {
-            list = list[..note];
-        }
+        const string Marker = "missing cached metadata: ";
+        var start = message.IndexOf(Marker, StringComparison.Ordinal);
+        var rest = message[(start + Marker.Length)..];
 
-        var close = list.IndexOf(")", StringComparison.Ordinal);
-        if (close >= 0)
+        string list;
+        if (rest.EndsWith(")", StringComparison.Ordinal))
         {
-            list = list[..close];
+            // Combined: everything up to the wrapper's closing parenthesis,
+            // minus a possible search-limit note.
+            var close = rest.LastIndexOf(')');
+            list = rest[..close];
+            var note = list.LastIndexOf("; the probe hit", StringComparison.Ordinal);
+            if (note >= 0)
+            {
+                list = list[..note];
+            }
         }
-
-        var sentence = list.LastIndexOf(". Run the command once online", StringComparison.Ordinal);
-        if (sentence >= 0)
+        else
         {
-            list = list[..sentence];
+            // Plain: the fixed tail, with or without the limit sentence.
+            var tail = rest.LastIndexOf(". Run the command once online", StringComparison.Ordinal);
+            list = rest[..tail];
+            var note = list.LastIndexOf(". The probe hit", StringComparison.Ordinal);
+            if (note >= 0)
+            {
+                list = list[..note];
+            }
         }
 
         return list.Split("; ", StringSplitOptions.None);

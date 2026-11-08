@@ -119,8 +119,19 @@ internal static class OfflineMetadata
 
         // A source that cannot be built outranks anything the probe could
         // still say: the real run fails on construction, before it resolves.
-        // Gaps still ride along, as everywhere else.
-        failure = probe.SourceFailures.FirstOrDefault() ?? failure;
+        // A failure already read is still worth showing beside it. Gaps ride
+        // along, as everywhere else.
+        if (probe.SourceFailures.FirstOrDefault() is { } built)
+        {
+            failure = failure is null || ReferenceEquals(failure, built)
+                ? built
+                : new SeikoException($"{built.Message}; also: {failure.Message}", built.Code ?? "source", built)
+                {
+                    Hint = built.Hint,
+                    HintKey = built.HintKey,
+                };
+        }
+
         return new VerifyResult(missing, failure, resolver.Incomplete);
     }
 
