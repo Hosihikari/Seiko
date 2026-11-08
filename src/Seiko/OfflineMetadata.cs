@@ -69,10 +69,11 @@ internal static class OfflineMetadata
             {
                 if (lockedGraph is null && originIndexes.TryGetValue(name, out var originSpec))
                 {
+                    var known = pending.ToHashSet(StringComparer.Ordinal);
                     // Only the files this environment would actually use: a
                     // path selected for another platform cannot add cache
                     // requirements (ADR-0027 selection rules).
-                    foreach (var full in OriginFiles(originSpec, root, rid, storePath))
+                    foreach (var full in OriginFiles(originSpec, root, rid, storePath, known))
                     {
                         if (OriginManifest.Dependencies(full) is { } manifest)
                         {
@@ -269,7 +270,7 @@ internal static class OfflineMetadata
     // origin name at least as broad as the resolver's is the point; a missing
     // file is still reported by the source itself later.
     private static IEnumerable<string> OriginFiles(
-        OriginSpec spec, string root, string rid, string? storeRoot)
+        OriginSpec spec, string root, string rid, string? storeRoot, ISet<string> known)
     {
         for (var i = 0; i < spec.Paths.Count; i++)
         {
@@ -278,6 +279,14 @@ internal static class OfflineMetadata
                 && !string.IsNullOrWhiteSpace(selector.Rid)
                 && !string.Equals(selector.Rid, "*", StringComparison.Ordinal)
                 && !string.Equals(selector.Rid, rid, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // A condition on a package that is not in the graph at all cannot
+            // hold, so that file's relations are not a cache requirement.
+            if (selector is not null
+                && selector.Prerequisites.Any(item => !known.Contains(item.Name)))
             {
                 continue;
             }
@@ -364,12 +373,13 @@ internal static class OfflineMetadata
         }
     }
 
+    // Only relations that put a package into the graph: dependencies and
+    // prerequisites. Optional peers and conflicts are read solely when the
+    // target is already there, so requiring their metadata would be a cache
+    // demand the resolver never makes (ADR-0027).
     private static void EnqueueEntry(SeiVersionEntry entry, Queue<string> pending)
     {
-        foreach (var relation in entry.Dependencies
-            .Concat(entry.Prerequisites)
-            .Concat(entry.OptionalPeers)
-            .Concat(entry.Conflicts))
+        foreach (var relation in entry.Dependencies.Concat(entry.Prerequisites))
         {
             pending.Enqueue(relation.Name);
         }
@@ -377,9 +387,7 @@ internal static class OfflineMetadata
         foreach (var artifact in entry.Artifacts ?? [])
         {
             foreach (var relation in (artifact?.Dependencies ?? [])
-                .Concat(artifact!.Prerequisites ?? [])
-                .Concat(artifact.OptionalPeers ?? [])
-                .Concat(artifact.Conflicts ?? []))
+                .Concat(artifact!.Prerequisites ?? []))
             {
                 pending.Enqueue(relation.Name);
             }

@@ -386,7 +386,9 @@ public sealed class SeikoClient
         var rid = sei.Artifact.Rid ?? "*";
         // Local files are not cross-checked against an index entry, so the
         // preview says so rather than implying the usual verification.
-        var origin = sei.Artifact.OriginPath is { } path
+        // Only a real origin artifact is unverified; an indexed artifact may
+        // carry the same field purely as display data.
+        var origin = sei.Source is OriginSource && sei.Artifact.OriginPath is { } path
             ? $"; from origin {path}, not index-verified"
             : "";
         diagnostics.Add(new PreviewDiagnostic(
@@ -491,7 +493,8 @@ public sealed class SeikoClient
                 old?.Version,
                 sei.Version,
                 sei.Source.Id,
-                sei.Artifact.Source.Sha256));
+                sei.Artifact.Source.Sha256,
+                sei.Source is not OriginSource));
         }
 
         foreach (var removed in previous.Keys
@@ -719,9 +722,10 @@ public sealed class SeikoClient
         bool offline = false)
     {
         root = Path.GetFullPath(root);
+        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         var workingDirectory = Directory.GetCurrentDirectory();
         var additions = specifications
-            .Select(specification => ParseAddSpecification(specification, root, workingDirectory, storeRoot))
+            .Select(specification => ParseAddSpecification(specification, root, workingDirectory, storePath))
             .ToList();
         var removals = (remove ?? [])
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -738,7 +742,6 @@ public sealed class SeikoClient
         RequireOnline(offline, dryRun, "add", additions);
 
         cancellationToken.ThrowIfCancellationRequested();
-        var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         RootRegistry.Register(storePath, root);
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
@@ -763,7 +766,7 @@ public sealed class SeikoClient
         // giving that name (ADR-0044).
         foreach (var addition in additions.Where(addition => addition.Path is not null))
         {
-            var manifest = OriginSource.ReadName(OriginPaths.Resolve(addition.Path!, root), storeRoot);
+            var manifest = OriginSource.ReadName(OriginPaths.Resolve(addition.Path!, root), storePath);
             var existingOrigin = config.Origin.FirstOrDefault(
                 origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
             var declared = config.Sei.FirstOrDefault(
@@ -1072,7 +1075,7 @@ public sealed class SeikoClient
         foreach (var locked in lockFile.Sei.Where(
             sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
         {
-            origin.PreferLocked(locked.Name, locked.OriginPath!, locked.Artifact.Sha256);
+            origin.PreferLocked(locked.Name, locked);
         }
     }
 
@@ -1170,7 +1173,7 @@ public sealed class SeikoClient
         string specification,
         string root,
         string workingDirectory,
-        string? storeRoot)
+        string storePath)
     {
         // A path wins on shape alone, so `hello.sei` can never be a nice
         // accident. Once it looks like a path, `@range` is not accepted: one
@@ -1185,7 +1188,7 @@ public sealed class SeikoClient
             }
 
             var full = OriginPaths.Normalize(specification, root, workingDirectory);
-            if (!File.Exists(OriginPaths.Resolve(full, root)) && !HasSnapshotFor(storeRoot, full))
+            if (!File.Exists(OriginPaths.Resolve(full, root)) && !HasSnapshotFor(storePath, full, null))
             {
                 throw new SeikoException($"origin file not found: {full}", "usage");
             }
@@ -1211,7 +1214,7 @@ public sealed class SeikoClient
         IReadOnlyList<AddSpecification> additions,
         IReadOnlyList<ISeiSource> sources,
         string root,
-        string storeRoot)
+        string storePath)
     {
         foreach (var addition in additions)
         {
@@ -1221,7 +1224,7 @@ public sealed class SeikoClient
                 continue;
             }
 
-            var name = OriginSource.ReadName(OriginPaths.Resolve(addition.Path, root), storeRoot);
+            var name = OriginSource.ReadName(OriginPaths.Resolve(addition.Path, root), storePath);
             if (sources.Any(source => source.GetSei(name) is not null))
             {
                 throw new SeikoException(
@@ -1239,23 +1242,34 @@ public sealed class SeikoClient
         return origin;
     }
 
-    // A deleted original is still a usable declaration when a snapshot exists;
-    // the file name stem identifies it before any manifest can be read.
-    private static bool HasSnapshotFor(string? storeRoot, string storedPath)
+    // A deleted original is still a usable declaration when a snapshot exists.
+    // Snapshots are named after the sei, not the file, so a suffixed file name
+    // (`hello-1.0.0.sei`) cannot identify them; the declared name wins when
+    // the declaration already knows it, otherwise the file stem is a guess
+    // that only the manifest read can confirm.
+    private static bool HasSnapshotFor(string storePath, string storedPath, string? declaredName)
     {
-        if (storeRoot is null)
-        {
-            return false;
-        }
-
-        var folder = OriginSnapshot.Folder(Path.GetFullPath(storeRoot));
+        var folder = OriginSnapshot.Folder(storePath);
         if (!Directory.Exists(folder))
         {
             return false;
         }
 
         var stem = Path.GetFileNameWithoutExtension(storedPath);
-        return Directory.EnumerateFiles(folder, stem + "-*.sei").Any();
+        foreach (var snapshot in Directory.EnumerateFiles(folder, "*.sei"))
+        {
+            var declared = Path.GetFileName(snapshot);
+            var dash = declared.LastIndexOf('-');
+            var name = dash < 0 ? Path.GetFileNameWithoutExtension(declared) : declared[..dash];
+            if (string.Equals(name, stem, StringComparison.Ordinal)
+                || stem.StartsWith(name + "-", StringComparison.Ordinal)
+                || string.Equals(name, declaredName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private sealed record AddSpecification(string? Name, string? Version, string? Path, string Raw);

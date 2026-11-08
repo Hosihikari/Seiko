@@ -134,7 +134,8 @@ internal sealed class Fixture : IDisposable
         (string Name, string? Version)[]? dependencies = null,
         (string Name, string? Version)[]? manifestPrerequisites = null,
         string? fileName = null,
-        string? dependencyLevel = null)
+        string? dependencyLevel = null,
+        (string Name, string? Version)[]? artifactPrerequisites = null)
     {
         var directory = Path.Combine(Root, "dist");
         Directory.CreateDirectory(directory);
@@ -156,13 +157,12 @@ internal sealed class Fixture : IDisposable
             {
                 Layout = "root",
                 Rid = rid,
+                Prerequisites = ToDependencies(
+                    (artifactPrerequisites ?? prerequisites ?? [])
+                        .Select(item => new DepFixture(item.Name, item.Version))),
                 Dependencies = string.Equals(dependencyLevel, "artifact", StringComparison.Ordinal)
                     ? ToDependencies((dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version)))
                     : [],
-                // The manifest never carries the selector condition; a caller
-                // that needs one uses the selector path instead.
-                Prerequisites = ToDependencies(
-                    (prerequisites ?? []).Select(item => new DepFixture(item.Name, item.Version))),
             },
         };
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
@@ -171,7 +171,7 @@ internal sealed class Fixture : IDisposable
             AddEntry(zip, file, Encoding.UTF8.GetBytes(content));
         }
 
-        return "dist/" + name + ".sei";
+        return "dist/" + (fileName ?? name + ".sei");
     }
 
     public void AddSei(string name, params VersionFixture[] versions)

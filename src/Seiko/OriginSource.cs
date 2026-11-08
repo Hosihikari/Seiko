@@ -10,7 +10,10 @@ internal sealed class OriginSource : ISeiSource
 {
     private readonly Dictionary<string, OriginSpec> _specs;
     private readonly Dictionary<string, string> _preferred = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _lockedPath = new(StringComparer.Ordinal);
+    // The locked replay record, keyed by name: path, digest and the artifact
+    // conditions the lock pinned. A replay builds from these instead of
+    // re-choosing from the current declaration.
+    private readonly Dictionary<string, LockedOrigin> _locked = new(StringComparer.Ordinal);
     private readonly string _rid;
 
     public OriginSource(IEnumerable<OriginSpec> specs, string root, string rid, string? storeRoot = null)
@@ -39,11 +42,11 @@ internal sealed class OriginSource : ISeiSource
 
     // Used by `add` before the declaration exists; reads the name only. The
     // path may name a snapshot when the original is gone.
-    public static string ReadName(string path, string? storeRoot = null)
+    public static string ReadName(string path, string? storePath = null)
     {
-        if (!File.Exists(path) && storeRoot is not null)
+        if (!File.Exists(path) && storePath is not null)
         {
-            path = LatestSnapshotIgnorePath(storeRoot, path) ?? path;
+            path = SnapshotByStem(storePath, path) ?? path;
         }
 
         var manifest = ReadManifestHeader(path);
@@ -64,12 +67,13 @@ internal sealed class OriginSource : ISeiSource
 
     public string ResolveArtifact(ArtifactLocation source) => source.Url;
 
-    // Used by `--frozen`: the lock already names the path and the bytes, so
-    // both are bound rather than re-read from the current declaration.
-    public void PreferLocked(string name, string path, string sha256)
+    // Used by `--frozen` and rollback: the lock names the path, the bytes and
+    // the artifact conditions, so all three are bound rather than re-read.
+    public void PreferLocked(string name, LockedSei locked)
     {
-        _lockedPath[name] = path;
-        _preferred[name] = Hashing.NormalizeSha256(sha256);
+        var digest = Hashing.NormalizeSha256(locked.Artifact.Sha256);
+        _preferred[name] = digest;
+        _locked[name] = new LockedOrigin(locked.OriginPath!, digest, locked.Artifact);
     }
 
     public Task DownloadAsync(
@@ -134,10 +138,86 @@ internal sealed class OriginSource : ISeiSource
     {
         // A replay names the file, so its path replaces whatever the current
         // declaration would pick — including when several selectors match.
-        var chosen = _lockedPath.TryGetValue(spec.Name, out var locked)
-            ? [(locked, Choose(spec)[0].Selector)]
-            : Choose(spec);
+        return _locked.TryGetValue(spec.Name, out var locked)
+            ? BuildLocked(spec, locked)
+            : BuildChosen(spec);
 
+    }
+
+    // A replay uses exactly what the lock pinned: the stored path, its digest
+    // and the artifact conditions of that entry. Nothing is re-chosen from the
+    // current declaration, so a declaration edited since cannot shift it.
+    private SeiIndex BuildLocked(OriginSpec spec, LockedOrigin locked)
+    {
+        var path = LockedFile(spec.Name, locked.Path, locked.Digest);
+        var manifest = ReadManifest(path, spec.Name);
+        var artifact = manifest.Artifact!;
+        return new SeiIndex
+        {
+            Name = manifest.Name,
+            OriginPaths = spec.Paths,
+            OriginSelectors = spec.Selectors,
+            Versions =
+            [
+                new SeiVersionEntry
+                {
+                    Version = manifest.Version,
+                    Dependencies = manifest.Dependencies,
+                    Prerequisites = manifest.Prerequisites,
+                    OptionalPeers = manifest.OptionalPeers,
+                    Conflicts = manifest.Conflicts,
+                    Artifacts =
+                    [
+                        new ArtifactEntry
+                        {
+                            Rid = locked.Artifact.Rid,
+                            Prerequisites = locked.Artifact.Prerequisites,
+                            Dependencies = locked.Artifact.Dependencies,
+                            OptionalPeers = locked.Artifact.OptionalPeers,
+                            Conflicts = locked.Artifact.Conflicts,
+                            Layout = artifact.Layout,
+                            Modes = artifact.Modes,
+                            Source = new ArtifactLocation
+                            {
+                                Url = path,
+                                Sha256 = locked.Digest,
+                                Size = new FileInfo(path).Length,
+                            },
+                            OriginPath = locked.Path,
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
+    // The original if it is still there, otherwise the snapshot with exactly
+    // that digest; a rebuilt original is caught by the caller's digest check.
+    private string LockedFile(string name, string stored, string digest)
+    {
+        var path = OriginPaths.Resolve(stored, Root);
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        if (StoreRoot is not null)
+        {
+            var snapshot = OriginSnapshot.SnapshotPath(StoreRoot, name, digest);
+            if (File.Exists(snapshot))
+            {
+                return snapshot;
+            }
+        }
+
+        throw new SeikoException(
+            $"{name}: the origin file is gone and {digest} has no snapshot",
+            "checksum");
+    }
+
+    private SeiIndex BuildChosen(OriginSpec spec)
+    {
+        var chosen = Choose(spec);
         var artifacts = new List<ArtifactEntry>();
         SeiManifest? first = null;
         foreach (var (stored, selector) in chosen)
@@ -278,6 +358,8 @@ internal sealed class OriginSource : ISeiSource
         return matches;
     }
 
+    private sealed record LockedOrigin(string Path, string Digest, LockedArtifact Artifact);
+
     private SeiManifest ReadManifest(string path, string name)
     {
         var manifest = ReadManifestHeader(path)
@@ -314,18 +396,32 @@ internal sealed class OriginSource : ISeiSource
         return manifest;
     }
 
-    private static string? LatestSnapshotIgnorePath(string storeRoot, string path)
+    // Snapshots are named after the sei, so a file name like `hello-1.0.0.sei`
+    // cannot address them by itself. Every snapshot is tried until one
+    // declares the stem, which also covers the plain `hello.sei` case.
+    private static string? SnapshotByStem(string storePath, string path)
     {
-        var folder = OriginSnapshot.Folder(storeRoot);
+        var folder = OriginSnapshot.Folder(storePath);
         if (!Directory.Exists(folder))
         {
             return null;
         }
 
         var stem = Path.GetFileNameWithoutExtension(path);
-        return Directory.EnumerateFiles(folder, stem + "-*.sei")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
+        foreach (var candidate in Directory.EnumerateFiles(folder, "*.sei")
+            .OrderByDescending(File.GetLastWriteTimeUtc))
+        {
+            var declared = Path.GetFileName(candidate);
+            var dash = declared.LastIndexOf('-');
+            var name = dash < 0 ? Path.GetFileNameWithoutExtension(declared) : declared[..dash];
+            if (string.Equals(name, stem, StringComparison.Ordinal)
+                || stem.StartsWith(name + "-", StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     // Reads the root manifest entry only. The size limit applies to that entry,

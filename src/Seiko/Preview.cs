@@ -6,7 +6,10 @@ public sealed record PlannedChange(
     string? From,
     string? To,
     string? Source,
-    string? Artifact);
+    string? Artifact,
+    // False for a local file: nothing cross-checked it against an index entry
+    // (ADR-0044). Present regardless of --diagnostics.
+    bool IndexVerified = true);
 
 public sealed record PreviewBlock(string Code, string Message);
 

@@ -381,9 +381,8 @@ public sealed class OriginTests
             "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] } ]",
             "lib");
 
-        // lib is direct, so its presence proves nothing; the artifact only
-        // applies if the selector condition holds, so the install succeeds
-        // with the selector and would fail without it.
+        // lib is direct, so its presence proves nothing; the assertion is that
+        // the selector's condition reached the locked artifact.
         new SeikoClient().Add(
             fixture.Root,
             Rel(fixture, "dist/hello.sei"),
@@ -399,15 +398,19 @@ public sealed class OriginTests
         using var fixture = new Fixture();
         fixture.AddSei("lib", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteConfig("win-x64");
-        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", manifestPrerequisites: [("lib", "[1.0.0]")]);
+        // The manifest carries the same name at the artifact level, so the
+        // merge path under test is the one that runs.
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", artifactPrerequisites: [("lib", "[1.0.0]")]);
         WriteOriginConfig(
             fixture,
             "hello",
             "dist/hello.sei",
-            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]");
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]",
+            "lib");
 
-        // The manifest wants lib [1.0.0], the selector [2.0.0]. Dropping the
-        // selector range would accept lib 1.0.0; keeping both admits nothing.
+        // lib 1.0.0 satisfies the manifest range but not the selector's.
+        // Keeping only the manifest range would accept it, so this fails only
+        // if both ranges are enforced.
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root,
             Rel(fixture, "dist/hello.sei"),
@@ -553,12 +556,17 @@ public sealed class OriginTests
         node["versions"]![0]!["artifacts"]![0]!["originPath"] = "dist/elsewhere.sei";
         File.WriteAllText(indexPath, node.ToJsonString());
 
-        // A real file at that path with different bytes must not be captured
-        // or compared; the field is display data on an indexed artifact.
-        Directory.CreateDirectory(Path.Combine(fixture.Root, "dist"));
-        File.WriteAllBytes(
-            Path.Combine(fixture.Root, "dist/elsewhere.sei"),
-            [1, 2, 3]);
+        // The path is outside the install root, so a fixed cwd-relative read
+        // (the old code) would miss it and a root-relative one would find it;
+        // either way it must not be captured or compared.
+        var elsewhere = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-origin-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllBytes(Path.Combine(elsewhere, "elsewhere.sei"), [1, 2, 3]);
+        node["versions"]![0]!["artifacts"]![0]!["originPath"] =
+            Path.GetRelativePath(Directory.GetCurrentDirectory(), Path.Combine(elsewhere, "elsewhere.sei"))
+                .Replace('\\', '/');
 
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -576,6 +584,8 @@ public sealed class OriginTests
         fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        // Only the artifact carries them, so reading the package level alone
+        // would report nothing.
         var origin = fixture.WriteOrigin(
             "hello",
             "1.0.0",
@@ -591,7 +601,8 @@ public sealed class OriginTests
             offline: true));
 
         Assert.Equal("source", error.Code);
-        Assert.Contains("sei/", error.Message);
+        Assert.Contains("sei/a.json", error.Message);
+        Assert.Contains("sei/b.json", error.Message);
     }
 
     [Fact]
@@ -621,6 +632,81 @@ public sealed class OriginTests
 
         Assert.Equal("source", error.Code);
         Assert.Contains("sei/a.json", error.Message);
+    }
+
+    [Fact]
+    public void Rollback_RefetchesTheOlderGenerationFromItsOwnSnapshot()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+
+        // Second generation with a different version; both snapshots exist.
+        path = fixture.WriteOrigin("hello", "1.0.1", "hello.txt", "two");
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+
+        // Remove the original and both unpacked trees, so the refetch has to go
+        // through the snapshot chosen by digest rather than by recency.
+        File.Delete(Path.Combine(fixture.Root, path));
+        foreach (var sei in client.ReadLock(fixture.Root)!.Sei)
+        {
+            File.Delete(Path.Combine(fixture.StoreDirectory, ".meta", sei.Artifact.Sha256 + ".json"));
+            Directory.Delete(Path.Combine(fixture.StoreDirectory, sei.Artifact.Sha256), recursive: true);
+        }
+
+        client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1);
+
+        Assert.Equal("one", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+        // The newer snapshot must still be there for the generation it belongs to.
+        Assert.Equal(2, Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")).Length);
+    }
+
+    [Fact]
+    public void Frozen_PicksTheLockedSelectorConditionWithTwoMatchingRids()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("lib", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-a.sei");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-b.sei");
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "\"dist/hello-a.sei\", \"dist/hello-b.sei\"",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] }, "
+            + "{ rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] } ]",
+            "lib");
+
+        // Both selectors match the rid; only the first is satisfiable.
+        var client = new SeikoClient();
+        client.Add(fixture.Root, Rel(fixture, "dist/hello-a.sei"), storeRoot: fixture.StoreDirectory);
+        var locked = Assert.Single(client.ReadLock(fixture.Root)!.Sei, item => item.Name == "hello");
+        Assert.Equal("dist/hello-a.sei", locked.OriginPath);
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+
+        Assert.Equal("dist/hello-a.sei", Assert.Single(
+            client.ReadLock(fixture.Root)!.Sei,
+            item => item.Name == "hello").OriginPath);
+    }
+
+    [Fact]
+    public void Add_FindsASnapshotForASuffixedFileNameOnTheDefaultStore()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-1.0.0.sei");
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+        File.Delete(Path.Combine(fixture.Root, path));
+
+        // No --store: the default path must still find the snapshot, and the
+        // snapshot is named after the sei, not the file.
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+
+        Assert.Equal("dist/hello-1.0.0.sei", Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths[0]);
     }
 
     [Fact]

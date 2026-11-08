@@ -1005,7 +1005,7 @@ static int Sync(
                         sei.Name,
                         sei.Version,
                         sei.Source,
-                        sei.OriginPath is null))
+                        !string.Equals(sei.Source, "origin", StringComparison.Ordinal)))
                     .ToList()))); 
         return 0;
     }
