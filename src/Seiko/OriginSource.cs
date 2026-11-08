@@ -2,19 +2,19 @@ using System.Text.Json;
 
 namespace Seiko;
 
-// A direct declaration backed by a local .sei file, presented to the resolver
-// as the first source so it wins over anything configured (ADR-0044). It
-// answers exactly one name with exactly one version and one artifact: a
-// degenerate index, not a new source kind.
+// Every origin declaration, presented to the resolver as one source that
+// answers before anything configured (ADR-0044). Each name is a degenerate
+// index: one version, one artifact per matching selector. All entries share
+// the reserved `origin` id, so the lock tells them apart by `originPath`.
 internal sealed class OriginSource : ISeiSource
 {
-    private readonly OriginSpec _spec;
+    private readonly Dictionary<string, OriginSpec> _specs;
+    private readonly Dictionary<string, string> _preferred = new(StringComparer.Ordinal);
     private readonly string _rid;
-    private string? _preferred;
 
-    public OriginSource(OriginSpec spec, string root, string rid, string? storeRoot = null)
+    public OriginSource(IEnumerable<OriginSpec> specs, string root, string rid, string? storeRoot = null)
     {
-        _spec = spec;
+        _specs = specs.ToDictionary(spec => spec.Name, StringComparer.Ordinal);
         Root = root;
         _rid = rid;
         StoreRoot = storeRoot;
@@ -28,31 +28,18 @@ internal sealed class OriginSource : ISeiSource
 
     public SeiCatalog? Catalog => null;
 
-    public IndexRoot Index => new() { Sei = [_spec.Name] };
+    public IndexRoot Index => new()
+    {
+        Sei = _specs.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList(),
+    };
 
     public SeiIndex? GetSei(string name)
-        => string.Equals(name, _spec.Name, StringComparison.Ordinal) ? Build() : null;
+        => _specs.TryGetValue(name, out var spec) ? Build(spec) : null;
 
     // Used by `add` before the declaration exists; reads the name only.
     public static string ReadName(string path)
     {
-        using var archive = System.IO.Compression.ZipFile.OpenRead(path);
-        var entry = archive.Entries
-            .FirstOrDefault(item => ArchiveLimits.NormalizeName(item.FullName) == "sei.json")
-            ?? throw new SeikoException(
-                $"{Path.GetFileName(path)}: artifact has no root sei.json",
-                "io");
-        SeiManifest? manifest;
-        try
-        {
-            using var stream = entry.Open();
-            manifest = JsonSerializer.Deserialize(stream, SeikoJsonContext.Default.SeiManifest);
-        }
-        catch (JsonException ex)
-        {
-            throw new SeikoException($"{Path.GetFileName(path)}: invalid sei.json ({ex.Message})", "io");
-        }
-
+        var manifest = ReadManifestHeader(path);
         if (manifest is null || string.IsNullOrWhiteSpace(manifest.Name))
         {
             throw new SeikoException($"{Path.GetFileName(path)}: sei.json has no name", "io");
@@ -70,43 +57,23 @@ internal sealed class OriginSource : ISeiSource
 
     public string ResolveArtifact(ArtifactLocation source) => source.Url;
 
-    private string? SnapshotFor(string name)
-    {
-        if (StoreRoot is null)
-        {
-            return null;
-        }
-
-        if (_preferred is not null)
-        {
-            var exact = OriginSnapshot.SnapshotPath(StoreRoot, name, _preferred);
-            return File.Exists(exact) ? exact : null;
-        }
-
-        var directory = OriginSnapshot.Folder(StoreRoot);
-        if (!Directory.Exists(directory))
-        {
-            return null;
-        }
-
-        return Directory.EnumerateFiles(directory, name + "-*.sei")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
-    }
+    // Used by `--frozen`: the lock already names the bytes, so a snapshot is
+    // chosen by that digest rather than by recency.
+    public void PreferDigest(string name, string sha256)
+        => _preferred[name] = Hashing.NormalizeSha256(sha256);
 
     // The stored form for the lock: relative to the install root.
-
-    // Used by `--frozen` and `--locked`: the lock already names the bytes, so
-    // the snapshot is chosen by that digest rather than by recency.
-    public void PreferDigest(string sha256) => _preferred = Hashing.NormalizeSha256(sha256);
     public string? PathOf(ArtifactEntry artifact)
     {
         var full = artifact.Source.Url;
-        foreach (var stored in _spec.Paths)
+        foreach (var spec in _specs.Values)
         {
-            if (string.Equals(OriginPaths.Resolve(stored, Root), full, StringComparison.Ordinal))
+            foreach (var stored in spec.Paths)
             {
-                return stored;
+                if (string.Equals(OriginPaths.Resolve(stored, Root), full, StringComparison.Ordinal))
+                {
+                    return stored;
+                }
             }
         }
 
@@ -124,10 +91,8 @@ internal sealed class OriginSource : ISeiSource
         // The original file is the first choice; the store snapshot only
         // covers a deleted or moved original. The caller verifies the digest
         // either way, so a rewritten file that no longer matches fails there.
-        var sourcePath = File.Exists(source.Url)
-            ? source.Url
-            : OriginSnapshot.SnapshotPath(StoreRoot ?? Root, name, source.Sha256);
-        if (!File.Exists(sourcePath))
+        var sourcePath = File.Exists(source.Url) ? source.Url : SnapshotFor(name, source.Sha256);
+        if (sourcePath is null || !File.Exists(sourcePath))
         {
             throw new SeikoException(
                 $"{name}: neither the origin file nor the store snapshot for {source.Sha256} exists",
@@ -141,124 +106,226 @@ internal sealed class OriginSource : ISeiSource
         return Task.CompletedTask;
     }
 
-    private SeiIndex Build()
+    private string? SnapshotFor(string name, string sha256)
     {
-        var chosen = Choose();
-        var path = OriginPaths.Resolve(chosen.Path, Root);
-        // Resolution reads the manifest too, so a missing original has to fall
-        // back before the download stage. The digest is not known yet; any
-        // snapshot of this name that is picked still has to survive the
-        // caller's digest check, and a stale one fails there.
-        if (!File.Exists(path) && StoreRoot is not null)
+        if (StoreRoot is null)
         {
-            path = SnapshotFor(_spec.Name) ?? path;
+            return null;
         }
 
-        if (!File.Exists(path))
+        // A replay names the bytes; only a live resolution may fall back to
+        // whatever snapshot happens to exist.
+        if (_preferred.TryGetValue(name, out var preferred))
         {
-            throw new SeikoException(
-                $"{_spec.Name}: the origin file is gone and no snapshot matches"
-                + (_preferred is null ? "; add it again" : $"; {_preferred} has no snapshot"),
-                "checksum");
+            var exact = OriginSnapshot.SnapshotPath(StoreRoot, name, preferred);
+            return File.Exists(exact) ? exact : null;
         }
 
-        var manifest = ReadManifest(path, _spec.Name);
-        if (ExternalFiles.Count(manifest.Artifact) > 0)
+        if (sha256.Length > 0)
         {
-            throw new SeikoException(
-                $"{manifest.Name}: a local file cannot serve external files",
-                "source");
+            var current = OriginSnapshot.SnapshotPath(StoreRoot, name, sha256);
+            if (File.Exists(current))
+            {
+                return current;
+            }
         }
 
-        var artifact = manifest.Artifact!;
-        var location = new ArtifactLocation
+        var directory = OriginSnapshot.Folder(StoreRoot);
+        return Directory.Exists(directory)
+            ? Directory.EnumerateFiles(directory, name + "-*.sei")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault()
+            : null;
+    }
+
+    private SeiIndex Build(OriginSpec spec)
+    {
+        var chosen = Choose(spec);
+        var artifacts = new List<ArtifactEntry>();
+        SeiManifest? first = null;
+        foreach (var (stored, selector) in chosen)
         {
-            Url = path,
-            Sha256 = Hashing.Sha256File(path),
-            Size = new FileInfo(path).Length,
-        };
+            var path = OriginPaths.Resolve(stored, Root);
+            // Resolution reads the manifest too, so a missing original has to
+            // fall back before the download stage.
+            if (!File.Exists(path))
+            {
+                path = SnapshotFor(spec.Name, string.Empty) ?? path;
+            }
+
+            if (!File.Exists(path))
+            {
+                throw new SeikoException(
+                    $"{spec.Name}: the origin file is gone and no snapshot matches"
+                    + (_preferred.TryGetValue(spec.Name, out var wanted)
+                        ? $"; {wanted} has no snapshot"
+                        : "; add it again"),
+                    "checksum");
+            }
+
+            var manifest = ReadManifest(path, spec.Name);
+            if (ExternalFiles.Count(manifest.Artifact) > 0)
+            {
+                throw new SeikoException(
+                    $"{manifest.Name}: a local file cannot serve external files",
+                    "source");
+            }
+
+            if (first is null)
+            {
+                first = manifest;
+            }
+            else if (!string.Equals(first.Version, manifest.Version, StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"{spec.Name}: origin files declare different versions "
+                    + $"('{first.Version}' and '{manifest.Version}')",
+                    "resolve");
+            }
+
+            var artifact = manifest.Artifact!;
+            artifacts.Add(new ArtifactEntry
+            {
+                // The selector already filtered by rid; this is the manifest's
+                // own field, so the store's index cross-check still holds.
+                Rid = artifact.Rid,
+                Prerequisites = Merge(artifact.Prerequisites, selector.Prerequisites),
+                Dependencies = artifact.Dependencies,
+                OptionalPeers = artifact.OptionalPeers,
+                Conflicts = artifact.Conflicts,
+                Layout = artifact.Layout,
+                Modes = artifact.Modes,
+                Source = new ArtifactLocation
+                {
+                    Url = path,
+                    Sha256 = Hashing.Sha256File(path),
+                    Size = new FileInfo(path).Length,
+                },
+                OriginPath = stored,
+            });
+        }
+
         return new SeiIndex
         {
-            Name = manifest.Name,
+            Name = spec.Name,
+            OriginPaths = spec.Paths,
+            OriginSelectors = spec.Selectors,
             Versions =
             [
                 new SeiVersionEntry
                 {
-                    Version = manifest.Version,
-                    Dependencies = manifest.Dependencies,
-                    Prerequisites = manifest.Prerequisites,
-                    OptionalPeers = manifest.OptionalPeers,
-                    Conflicts = manifest.Conflicts,
-                    Artifacts =
-                    [
-                        new ArtifactEntry
-                        {
-                            Rid = chosen.Selector?.Rid,
-                            Prerequisites = artifact.Prerequisites,
-                            Dependencies = artifact.Dependencies,
-                            OptionalPeers = artifact.OptionalPeers,
-                            Conflicts = artifact.Conflicts,
-                            Layout = artifact.Layout,
-                            Modes = artifact.Modes,
-                            Source = location,
-                        },
-                    ],
+                    Version = first!.Version,
+                    Dependencies = first.Dependencies,
+                    Prerequisites = first.Prerequisites,
+                    OptionalPeers = first.OptionalPeers,
+                    Conflicts = first.Conflicts,
+                    Artifacts = artifacts,
                 },
             ],
         };
     }
 
-    // Declarations are parallel to their selectors; the first one whose
-    // condition holds wins. Two matching a condition with nothing to tell them
-    // apart is an ambiguity the user has to resolve, matching how the resolver
-    // treats equal artifact conditions.
-    private (string Path, OriginSelector? Selector) Choose()
+    // Both sets must hold for the file to apply, so the artifact carries the
+    // union; the resolver evaluates it like any other condition.
+    private static List<SeiDependency> Merge(
+        List<SeiDependency> intrinsic,
+        List<SeiDependency> fromSelector)
     {
-        var matches = new List<(string Path, OriginSelector? Selector)>();
-        for (var i = 0; i < _spec.Paths.Count; i++)
+        var merged = intrinsic
+            .Select(item => new SeiDependency { Name = item.Name, Version = item.Version })
+            .ToList();
+        foreach (var item in fromSelector)
         {
-            var selector = _spec.Selectors[i];
+            if (!merged.Any(existing => string.Equals(existing.Name, item.Name, StringComparison.Ordinal)))
+            {
+                merged.Add(new SeiDependency { Name = item.Name, Version = item.Version });
+            }
+        }
+
+        return merged;
+    }
+
+    // Every selector whose rid matches is a candidate; the resolver's own
+    // prerequisite matching then chooses between them, so a file whose
+    // condition does not hold is never installed. Two candidates with the same
+    // normalized condition leave it no way to choose (ADR-0044).
+    private List<(string Path, OriginSelector Selector)> Choose(OriginSpec spec)
+    {
+        var matches = new List<(string Path, OriginSelector Selector)>();
+        for (var i = 0; i < spec.Paths.Count; i++)
+        {
+            var selector = spec.Selectors[i];
             if (string.IsNullOrWhiteSpace(selector.Rid)
                 || string.Equals(selector.Rid, "*", StringComparison.Ordinal)
                 || string.Equals(selector.Rid, _rid, StringComparison.OrdinalIgnoreCase))
             {
-                matches.Add((_spec.Paths[i], selector));
+                matches.Add((spec.Paths[i], selector));
             }
         }
 
         if (matches.Count == 0)
         {
             throw new SeikoException(
-                $"{_spec.Name}: no origin file matches rid '{_rid}'",
+                $"{spec.Name}: no origin file matches rid '{_rid}'",
                 "resolve");
         }
 
-        var first = matches[0].Selector;
-        var ambiguous = matches
-            .Skip(1)
-            .FirstOrDefault(match => string.Equals(
-                ArtifactConditions.Key(first?.Rid, first?.Prerequisites),
-                ArtifactConditions.Key(match.Selector?.Rid, match.Selector?.Prerequisites),
-                StringComparison.Ordinal));
-        if (ambiguous.Path is not null)
+        for (var i = 1; i < matches.Count; i++)
         {
-            throw new SeikoException(
-                $"{_spec.Name}: origin paths '{matches[0].Path}' and '{ambiguous.Path}' have the same condition",
-                "resolve");
+            if (string.Equals(
+                ArtifactConditions.Key(matches[0].Selector.Rid, matches[0].Selector.Prerequisites),
+                ArtifactConditions.Key(matches[i].Selector.Rid, matches[i].Selector.Prerequisites),
+                StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"{spec.Name}: origin paths '{matches[0].Path}' and '{matches[i].Path}' have the same condition",
+                    "resolve");
+            }
         }
 
-        return matches[0];
+        return matches;
     }
 
     private SeiManifest ReadManifest(string path, string name)
     {
-        if (new FileInfo(path).Length > ArchiveLimits.MaxManifestBytes)
+        var manifest = ReadManifestHeader(path)
+            ?? throw new SeikoException($"{Path.GetFileName(path)}: sei.json is empty", "io");
+
+        // 1 predates the artifact object; there is no migration layer for
+        // local files (ADR-0044, ADR-0031).
+        if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
         {
             throw new SeikoException(
-                $"{Path.GetFileName(path)} exceeds the {ArchiveLimits.MaxManifestBytes}-byte manifest limit",
-                "checksum");
+                $"{Path.GetFileName(path)}: unsupported sei.json schemaVersion {manifest.SchemaVersion}",
+                "io");
         }
 
+        if (manifest.Artifact is null)
+        {
+            throw new SeikoException($"{Path.GetFileName(path)}: sei.json has no artifact object", "io");
+        }
+
+        if (!string.Equals(manifest.Name, name, StringComparison.Ordinal))
+        {
+            throw new SeikoException(
+                $"{Path.GetFileName(path)}: sei.json declares name '{manifest.Name}', expected '{name}'",
+                "usage");
+        }
+
+        if (!OriginPaths.StemMatches(path, manifest.Name))
+        {
+            throw new SeikoException(
+                $"{Path.GetFileName(path)}: file name must start with '{manifest.Name}'",
+                "usage");
+        }
+
+        return manifest;
+    }
+
+    // Reads the root manifest entry only. The size limit applies to that entry,
+    // not to the package (ADR-0024 limits the manifest read on its own).
+    private static SeiManifest? ReadManifestHeader(string path)
+    {
         System.IO.Compression.ZipArchive archive;
         try
         {
@@ -281,51 +348,22 @@ internal sealed class OriginSource : ISeiSource
                     "io");
             }
 
-            SeiManifest? manifest;
+            if (manifests[0].Length > ArchiveLimits.MaxManifestBytes)
+            {
+                throw new SeikoException(
+                    $"{Path.GetFileName(path)}: sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
+                    "checksum");
+            }
+
             try
             {
                 using var stream = manifests[0].Open();
-                manifest = JsonSerializer.Deserialize(stream, SeikoJsonContext.Default.SeiManifest);
+                return JsonSerializer.Deserialize(stream, SeikoJsonContext.Default.SeiManifest);
             }
             catch (JsonException ex)
             {
                 throw new SeikoException($"{Path.GetFileName(path)}: invalid sei.json ({ex.Message})", "io");
             }
-
-            if (manifest is null)
-            {
-                throw new SeikoException($"{Path.GetFileName(path)}: sei.json is empty", "io");
-            }
-
-            // 1 predates the artifact object; there is no migration layer for
-            // local files (ADR-0044, ADR-0031).
-            if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
-            {
-                throw new SeikoException(
-                    $"{Path.GetFileName(path)}: unsupported sei.json schemaVersion {manifest.SchemaVersion}",
-                    "io");
-            }
-
-            if (manifest.Artifact is null)
-            {
-                throw new SeikoException($"{Path.GetFileName(path)}: sei.json has no artifact object", "io");
-            }
-
-            if (!string.Equals(manifest.Name, name, StringComparison.Ordinal))
-            {
-                throw new SeikoException(
-                    $"{Path.GetFileName(path)}: sei.json declares name '{manifest.Name}', expected '{name}'",
-                    "usage");
-            }
-
-            if (!OriginPaths.StemMatches(path, manifest.Name))
-            {
-                throw new SeikoException(
-                    $"{Path.GetFileName(path)}: file name must start with '{manifest.Name}'",
-                    "usage");
-            }
-
-            return manifest;
         }
     }
 }

@@ -230,11 +230,12 @@ public static class ConfigWriter
 
     private static string SelectorText(OriginSelector selector)
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(selector.Rid))
+        var parts = new List<string>
         {
-            parts.Add($"rid = \"{Escape(selector.Rid)}\"");
-        }
+            // An empty object binds to no children, so the count would not be
+            // recoverable; an explicit `*` is the same condition, spelled out.
+            $"rid = \"{Escape(string.IsNullOrWhiteSpace(selector.Rid) ? "*" : selector.Rid)}\"",
+        };
 
         if (selector.Prerequisites.Count > 0)
         {
@@ -245,7 +246,7 @@ public static class ConfigWriter
             parts.Add($"prerequisites = [{string.Join(", ", items)}]");
         }
 
-        return parts.Count == 0 ? "{ }" : $"{{ {string.Join(", ", parts)} }}";
+        return $"{{ {string.Join(", ", parts)} }}";
     }
 
     private static List<string> BuildSpecsBlock(string section, IReadOnlyList<SeiSpec> specs)

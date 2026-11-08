@@ -119,6 +119,8 @@ public sealed class SeikoClient
         DeploymentTransaction? transaction = null,
         bool dryRun = false,
         IReadOnlyList<SeiSpec>? specsOverride = null,
+        IReadOnlyList<OriginSpec>? originsOverride = null,
+        bool originsOverrideAllowed = false,
         bool adopt = false,
         bool force = false,
         bool offline = false,
@@ -140,7 +142,10 @@ public sealed class SeikoClient
             }
         }
 
-        if (offline && mode == SyncMode.Normal && !dryRun)
+        // `add <path>` resolves from a local file, so a normal resolution is
+        // allowed offline when the caller says so; `OfflineMetadata.Verify`
+        // below still reports every dependency it cannot get from cache.
+        if (offline && mode == SyncMode.Normal && !dryRun && !originsOverrideAllowed)
         {
             throw new SeikoException(
                 "offline: sync needs --locked or --frozen; add/remove/update require a network update of cached metadata",
@@ -161,17 +166,23 @@ public sealed class SeikoClient
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
         var specs = specsOverride ?? config.Sei;
+        if (originsOverride is not null)
+        {
+            config.Origin = [.. originsOverride];
+        }
 
         if (offline)
         {
             // Collect every missing cached entry before constructing sources,
             // which would otherwise fail on the first one. A replay only needs
             // the locked graph, not every historical relation target.
+            // The proposed set, not the on-disk one: an `add` has not written
+            // its declarations yet, so the file would still name the old set.
             OfflineMetadata.Verify(
                 config,
                 storePath,
                 root,
-                config.Sei.Select(spec => spec.Name),
+                specs.Select(spec => spec.Name),
                 lockedGraph: mode == SyncMode.Normal ? null : existingLock);
         }
 
@@ -202,9 +213,10 @@ public sealed class SeikoClient
             if (sources.FirstOrDefault(sei => string.Equals(sei.Id, OriginPaths.SourceId, StringComparison.Ordinal))
                 is OriginSource origin)
             {
-                foreach (var locked in existingLock.Sei.Where(sei => sei.OriginPath is not null))
+                foreach (var locked in existingLock.Sei.Where(
+                    sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
                 {
-                    origin.PreferDigest(locked.Artifact.Sha256);
+                    origin.PreferDigest(locked.Name, locked.Artifact.Sha256);
                 }
             }
 
@@ -373,10 +385,15 @@ public sealed class SeikoClient
     private static void Describe(ResolvedSei sei, List<PreviewDiagnostic> diagnostics)
     {
         var rid = sei.Artifact.Rid ?? "*";
+        // Local files are not cross-checked against an index entry, so the
+        // preview says so rather than implying the usual verification.
+        var origin = sei.Artifact.OriginPath is { } path
+            ? $"; from origin {path}, not index-verified"
+            : "";
         diagnostics.Add(new PreviewDiagnostic(
             sei.Name,
             "artifact",
-            $"selected {sei.Artifact.Source.Sha256} from source '{sei.Source.Id}' (rid {rid})"));
+            $"selected {sei.Artifact.Source.Sha256} from source '{sei.Source.Id}' (rid {rid}){origin}"));
 
         foreach (var dependency in sei.Entry.Dependencies)
         {
@@ -734,6 +751,14 @@ public sealed class SeikoClient
         var defaultRangeTargets = new List<SeiSpec>();
         var originTargets = new List<OriginSpec>();
 
+        if (additions.Any(addition => addition.Path is not null))
+        {
+            using var probeSession = new DownloadSession(jobs, cancellationToken);
+            using var probe = new SourceScope(
+                LoadSources(config, root, proxy, probeSession, storePath, offline));
+            EnsureUnambiguousPaths(additions, probe.Sources, root);
+        }
+
         // Paths are read before anything is written: the manifest supplies the
         // name the declaration is filed under, and it must be the only one
         // giving that name (ADR-0044).
@@ -802,26 +827,6 @@ public sealed class SeikoClient
             }
         }
 
-        foreach (var origin in config.Origin.Where(origin => origin.Selectors.Count < origin.Paths.Count))
-        {
-            while (origin.Selectors.Count < origin.Paths.Count)
-            {
-                origin.Selectors.Add(new OriginSelector());
-            }
-        }
-
-        // A snapshot makes the granted generation survive a deleted or
-        // rebuilt original (ADR-0044). Added paths are captured now; re-adds
-        // of a known digest are a no-op inside Capture.
-        foreach (var origin in config.Origin)
-        {
-            foreach (var stored in origin.Paths)
-            {
-                var full = OriginPaths.Resolve(stored, root);
-                OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
-            }
-        }
-
         foreach (var name in removedNames)
         {
             if (addNames.Contains(name))
@@ -835,6 +840,30 @@ public sealed class SeikoClient
             }
 
             config.Origin.RemoveAll(origin => string.Equals(origin.Name, name, StringComparison.Ordinal));
+        }
+
+        foreach (var origin in config.Origin.Where(origin => origin.Selectors.Count < origin.Paths.Count))
+        {
+            while (origin.Selectors.Count < origin.Paths.Count)
+            {
+                origin.Selectors.Add(new OriginSelector());
+            }
+        }
+
+        // A snapshot makes the granted generation survive a deleted or rebuilt
+        // original (ADR-0044). Capture only runs for a real change and only
+        // over declarations that are still present after the removals, so a
+        // vanished file of an unrelated entry cannot fail the command.
+        if (!dryRun)
+        {
+            foreach (var origin in config.Origin)
+            {
+                foreach (var stored in origin.Paths)
+                {
+                    var full = OriginPaths.Resolve(stored, root);
+                    OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
+                }
+            }
         }
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
@@ -893,7 +922,8 @@ public sealed class SeikoClient
                     adopt,
                     force,
                     offline,
-                    preloaded);
+                    preloaded,
+                    config.Origin);
             }
 
             return WriteSpecsAndSync(
@@ -916,7 +946,9 @@ public sealed class SeikoClient
                     transaction,
                     adopt: adopt,
                     force: force,
-                    preloaded: preloaded));
+                    offline: offline,
+                    preloaded: preloaded,
+                    originsOverrideAllowed: true));
         }
         finally
         {
@@ -952,7 +984,8 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
-        SourceScope? preloaded = null)
+        SourceScope? preloaded = null,
+        IReadOnlyList<OriginSpec>? origins = null)
         => SyncLocked(
             root,
             storePath,
@@ -969,6 +1002,8 @@ public sealed class SeikoClient
             transaction: null,
             dryRun: true,
             specs,
+            origins,
+            originsOverrideAllowed: true,
             adopt,
             force,
             offline,
@@ -1035,8 +1070,12 @@ public sealed class SeikoClient
         var locked = existingLock.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
         foreach (var sei in resolved)
         {
+            // Switching a name from an indexed package to a local file of the
+            // same version is the point of the feature, so only a previous
+            // origin lock can conflict.
             if (sei.Source is not OriginSource
                 || !locked.TryGetValue(sei.Name, out var previous)
+                || previous.Source != OriginPaths.SourceId
                 || !string.Equals(previous.Version, sei.Version, StringComparison.Ordinal)
                 || string.Equals(
                     previous.Artifact.Sha256,
@@ -1105,7 +1144,7 @@ public sealed class SeikoClient
                 throw new SeikoException($"origin file not found: {full}", "usage");
             }
 
-            return new AddSpecification(null, null, full);
+            return new AddSpecification(null, null, full, specification);
         }
 
         var at = specification.LastIndexOf('@');
@@ -1116,7 +1155,34 @@ public sealed class SeikoClient
             throw new SeikoException("add requires a sei name and optional @range", "usage");
         }
 
-        return new AddSpecification(name, version, null);
+        return new AddSpecification(name, version, null, specification);
+    }
+
+    // A bare token only reaches the path branch because a file of that exact
+    // name exists; if a source also answers the stripped name, the user meant
+    // one of them and has to say which (ADR-0044).
+    private static void EnsureUnambiguousPaths(
+        IReadOnlyList<AddSpecification> additions,
+        IReadOnlyList<ISeiSource> sources,
+        string root)
+    {
+        foreach (var addition in additions)
+        {
+            if (addition.Path is null || addition.Raw.Contains('/', StringComparison.Ordinal)
+                || addition.Raw.Contains('\\', StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var name = OriginSource.ReadName(OriginPaths.Resolve(addition.Path, root));
+            if (sources.Any(source => source.GetSei(name) is not null))
+            {
+                throw new SeikoException(
+                    $"'{addition.Raw}' is both a local file and a sei in a source; "
+                    + $"write './{addition.Raw}' for the file or '{name}' for the source",
+                    "usage");
+            }
+        }
     }
 
     private static OriginSpec AddOrigin(SeikoConfig config, string name)
@@ -1126,7 +1192,7 @@ public sealed class SeikoClient
         return origin;
     }
 
-    private sealed record AddSpecification(string? Name, string? Version, string? Path);
+    private sealed record AddSpecification(string? Name, string? Version, string? Path, string Raw);
 
     public SyncResult Remove(
         string root,
@@ -1222,7 +1288,8 @@ public sealed class SeikoClient
                     adopt,
                     force,
                     offline,
-                    preloaded);
+                    preloaded,
+                    config.Origin);
             }
 
             return WriteSpecsAndSync(
@@ -1951,6 +2018,36 @@ public sealed class SeikoClient
                 catch (UnauthorizedAccessException ex)
                 {
                     throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+                }
+            }
+
+            // Origin snapshots are referenced by the locked digest like any
+            // artifact; the file name carries name and digest (ADR-0044).
+            var snapshotDirectory = OriginSnapshot.Folder(storePath);
+            if (Directory.Exists(snapshotDirectory))
+            {
+                foreach (var snapshot in Directory.EnumerateFiles(snapshotDirectory, "*.sei"))
+                {
+                    var file = Path.GetFileName(snapshot);
+                    var dash = file.LastIndexOf('-');
+                    var digest = dash < 0
+                        ? ""
+                        : Path.GetFileNameWithoutExtension(file[(dash + 1)..]);
+                    if (referenced.Contains(digest))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        bytes += new FileInfo(snapshot).Length;
+                        File.Delete(snapshot);
+                        removed++;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        throw new SeikoException($"could not remove {snapshot}: {ex.Message}", "io", ex);
+                    }
                 }
             }
 
@@ -2770,7 +2867,9 @@ public sealed class SeikoClient
                 sei.Upstream is null || !Uri.TryCreate(sei.Upstream.Url, UriKind.Absolute, out var upstream)
                     ? null
                     : upstream.Host,
-                sei.Upstream is not null);
+                sei.Upstream is not null,
+                IndexVerified: !string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal),
+                OriginPaths: sei.OriginPaths);
         }
 
         throw new SeikoException($"sei '{name}' not found in any source", "source")
@@ -3346,8 +3445,7 @@ public sealed class SeikoClient
         if (config.Origin.Count > 0)
         {
             var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-            sources.AddRange(config.Origin.Select(
-                origin => new OriginSource(origin, root, rid, storePath)));
+            sources.Add(new OriginSource(config.Origin, root, rid, storePath));
         }
 
         sources.AddRange(config.Sources.Select(

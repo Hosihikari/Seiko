@@ -79,7 +79,9 @@ public sealed record InfoData(
     List<InfoVersion> Versions,
     ProjectMetadata? Project,
     string? UpstreamHost,
-    bool MaintainedHere);
+    bool MaintainedHere,
+    bool IndexVerified,
+    List<string>? OriginPaths);
 
 public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
 

@@ -56,6 +56,50 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void Add_ReportsABareFileNameThatIsAlsoASourcePackage()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+        // A bare token is only a path because a file of that name exists in
+        // the working directory (ADR-0044), so the test puts one there.
+        var local = Path.Combine(Directory.GetCurrentDirectory(), "hello.sei");
+        File.Copy(Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi")), local, overwrite: true);
+        try
+        {
+            var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+                fixture.Root,
+                "hello.sei",
+                storeRoot: fixture.StoreDirectory));
+
+            Assert.Equal("usage", error.Code);
+            Assert.Contains("./hello.sei", error.Message);
+        }
+        finally
+        {
+            File.Delete(local);
+        }
+    }
+
+    [Fact]
+    public void Add_RejectsAnAbsoluteConfigPath()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var absolute = Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi"));
+        var path = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            path,
+            File.ReadAllText(path)
+            + $"origin = [ {{ name = \"hello\", paths = [\"{absolute.Replace('\\', '/')}\"], selectors = [ {{ rid = \"*\" }} ] }} ]\n");
+
+        var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
+
+        Assert.Equal("config", error.Code);
+        Assert.Contains("relative", error.Message);
+    }
+
+    [Fact]
     public void Add_RejectsARangeOnAPath()
     {
         using var fixture = new Fixture();
@@ -282,6 +326,45 @@ public sealed class OriginTests
         var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
 
         Assert.Equal("config", error.Code);
+    }
+
+    [Fact]
+    public void CacheClean_KeepsReferencedSnapshotsAndDropsOrphans()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        client.Add(
+            fixture.Root,
+            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            storeRoot: fixture.StoreDirectory);
+        var folder = Path.Combine(fixture.StoreDirectory, "origin");
+        var referenced = Assert.Single(Directory.GetFiles(folder));
+        var orphan = Path.Combine(folder, "hello-" + new string('c', 64) + ".sei");
+        File.WriteAllText(orphan, "x");
+
+        client.CacheClean(fixture.Root, fixture.StoreDirectory);
+
+        Assert.True(File.Exists(referenced));
+        Assert.False(File.Exists(orphan));
+    }
+
+    [Fact]
+    public void Capture_RepairsACorruptedSnapshot()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        var snapshot = Assert.Single(
+            Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")));
+        var expected = Hashing.Sha256File(snapshot);
+        File.WriteAllText(snapshot, "tampered");
+
+        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+
+        Assert.Equal(expected, Hashing.Sha256File(snapshot));
     }
 
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('.', '/');

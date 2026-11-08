@@ -165,21 +165,22 @@ public static class ConfigLoader
                 throw new SeikoException($"{path}: origin '{name}' needs at least one path", "config");
             }
 
+            // The stored form is always relative to the install root, so a
+            // committed lock survives a move; absolute paths and file: URLs
+            // are not accepted (ADR-0044).
+            foreach (var stored in paths)
+            {
+                if (Path.IsPathRooted(stored) || stored.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new SeikoException(
+                        $"{path}: origin '{name}' path '{stored}' must be relative to the install root",
+                        "config");
+                }
+            }
+
             var selectors = child.GetSection("selectors").GetChildren()
                 .Select(ReadSelector)
                 .ToList();
-            if (selectors.Count == 0)
-            {
-                selectors.Add(new OriginSelector());
-            }
-
-            // Older writers could leave the arrays ragged; a missing selector
-            // means "any condition", which is what the first one defaults to.
-            while (selectors.Count < paths.Count)
-            {
-                selectors.Add(new OriginSelector());
-            }
-
             if (selectors.Count != paths.Count)
             {
                 throw new SeikoException(

@@ -32,13 +32,22 @@ internal static class OfflineMetadata
             }
         }
 
-        foreach (var (source, indexUri) in httpSources)
+        // A name served by an origin never consults a source, so a source
+        // index is only required when some reached name has to come from one.
+        var originNames = config.Origin
+            .Select(origin => origin.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        var needsIndex = pending.Any(name => !originNames.Contains(name));
+
+        if (needsIndex)
         {
-            var path = MetadataCache.PathFor(storePath, indexUri.AbsoluteUri);
-            if (!File.Exists(path))
+            foreach (var (source, indexUri) in httpSources)
             {
-                missing.Add($"index metadata of source '{source.Id}'");
-                continue;
+                var path = MetadataCache.PathFor(storePath, indexUri.AbsoluteUri);
+                if (!File.Exists(path))
+                {
+                    missing.Add($"index metadata of source '{source.Id}'");
+                }
             }
         }
 
@@ -47,6 +56,12 @@ internal static class OfflineMetadata
         {
             var name = pending.Dequeue();
             if (!SeiName.IsValid(name) || !seen.Add(name))
+            {
+                continue;
+            }
+
+            // The origin answers this name from disk, so no source is consulted.
+            if (originNames.Contains(name))
             {
                 continue;
             }

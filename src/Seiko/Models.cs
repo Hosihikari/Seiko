@@ -98,6 +98,12 @@ public sealed class SeiIndex
     public bool? SourceUnlisted { get; set; }
     public string? SourceDeprecated { get; set; }
 
+    // Origin mirrors (ADR-0044). Optional and derived: the declaration is the
+    // authority, these only let `info` and `--dry-run` show the location
+    // without reading the manifest.
+    public List<string>? OriginPaths { get; set; }
+    public List<OriginSelector>? OriginSelectors { get; set; }
+
     public List<SeiVersionEntry> Versions { get; set; } = [];
 }
 
@@ -154,6 +160,9 @@ public sealed class ArtifactEntry
     // Mirrored by the index for `info` and `--dry-run` so neither has to open
     // the artifact. The manifest stays the authority; CI compares the two.
     public ExternalSummary? External { get; set; }
+
+    // Origin artifact: the stored path, relative to the install root.
+    public string? OriginPath { get; set; }
 
     public ArtifactLocation Source { get; set; } = new();
 }
@@ -406,4 +415,7 @@ public sealed record SeiInfo(
     IReadOnlyList<SeiVersionInfo> Versions,
     ProjectMetadata? Project = null,
     string? UpstreamHost = null,
-    bool MaintainedHere = false);
+    bool MaintainedHere = false,
+    // Origin entries carry no index cross-check (ADR-0044).
+    bool IndexVerified = true,
+    IReadOnlyList<string>? OriginPaths = null);

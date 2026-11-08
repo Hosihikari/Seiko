@@ -1574,7 +1574,9 @@ static int Info(
                 .ToList(),
             info.Project,
             info.UpstreamHost,
-            info.MaintainedHere);
+            info.MaintainedHere,
+            info.IndexVerified,
+            info.OriginPaths?.ToList());
         WriteJson(CliJsonContext.Default.InfoEnvelope, new InfoEnvelope(1, "info", data));
         return 0;
     }
@@ -1586,6 +1588,10 @@ static int Info(
     }
 
     Console.WriteLine(Loc.Get("info.installation", info.Name, info.Source, packageFlags));
+    if (info.OriginPaths is { Count: > 0 } originPaths)
+    {
+        Console.WriteLine(Loc.Get("info.origin", string.Join(", ", originPaths)));
+    }
     if (info.Project is { } project)
     {
         if (!string.IsNullOrWhiteSpace(project.Description))

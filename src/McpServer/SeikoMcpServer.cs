@@ -543,6 +543,10 @@ public sealed class SeikoMcpServer
                 },
             ["upstreamHost"] = info.UpstreamHost,
             ["maintainedHere"] = info.MaintainedHere,
+            ["indexVerified"] = info.IndexVerified,
+            ["originPaths"] = info.OriginPaths is null
+                ? null
+                : new JsonArray(info.OriginPaths.Select(path => JsonValue.Create(path)).ToArray()),
             ["versions"] = versions,
         }.ToJsonString();
     }

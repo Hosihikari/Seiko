@@ -29,8 +29,9 @@ internal static class OriginPaths
     }
 
     // Stored form is always relative to the install root, so a committed lock
-    // survives a move to another machine or clone directory. Absolute input is
-    // resolved against the process working directory first, then relativized.
+    // survives a move to another machine or clone directory. Relative input is
+    // resolved against the working directory first, then relativized; config
+    // and lock only ever hold the result.
     public static string Normalize(string specification, string root, string workingDirectory)
     {
         var full = IsAbsolute(specification)
@@ -70,6 +71,12 @@ internal static class OriginPaths
             || stem.StartsWith(name + "_", StringComparison.Ordinal)
             || stem.StartsWith(name + ".", StringComparison.Ordinal);
     }
+
+    // Only a relative path is a stored form; absolute input and file: URLs
+    // have to be converted, which Normalize does and the config loader checks.
+    public static bool IsStoredForm(string value)
+        => !Path.IsPathRooted(value)
+            && !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsAbsolute(string value)
         => !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase)

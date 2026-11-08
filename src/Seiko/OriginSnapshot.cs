@@ -24,7 +24,8 @@ internal static class OriginSnapshot
         var directory = Folder(storeRoot);
         Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, FileName(name, expected));
-        if (File.Exists(destination))
+        if (File.Exists(destination)
+            && string.Equals(Hashing.Sha256File(destination), expected, StringComparison.Ordinal))
         {
             return destination;
         }

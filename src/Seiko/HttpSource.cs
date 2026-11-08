@@ -768,12 +768,12 @@ public sealed class HttpSource : ISeiSource, IDisposable
             index = cachePath is null
                 ? null
                 : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.IndexRoot);
-            if (index is null)
-            {
-                throw new SeikoException(
-                    $"offline: index metadata is not cached (source '{Id}')",
-                    "source");
-            }
+
+            // A cached root is only needed to list names. When the graph is
+            // already known (a replay, or a name served by an origin) the
+            // per-name reads below answer on their own, so a missing root is
+            // not fatal; `OfflineMetadata.Verify` reports it when it is.
+            index ??= new IndexRoot();
         }
         else
         {
