@@ -346,6 +346,18 @@ public sealed class Resolver
         }
     }
 
+    // The known ranges on an untrusted name, created on first use.
+    private List<VersionRange> Constraints(string name)
+        => _unknownConstraints.TryGetValue(name, out var list)
+            ? list
+            : _unknownConstraints[name] = [];
+
+    // A name whose assignment cannot be trusted: an invented placeholder, or
+    // an answer from a later source while an earlier one could not be read.
+    private bool Uncertain(string name)
+        => _assigned.TryGetValue(name, out var sei) && sei.Entry.ProbeUnknown
+            || _shadowed.Contains(name);
+
     // Whether the known ranges leave any version once the exclusions from
     // conflicts are cut away. Only a proven-empty remainder counts; a partial
     // overlap stays a guess. Several exclusions may cover between them what
@@ -371,66 +383,91 @@ public sealed class Resolver
         return Covered(common, excluded);
     }
 
-    // Whether the exclusions between them cover the allowed interval. Each
-    // round takes the exclusion reaching furthest from the current point, so
-    // no gap can survive; a null bound is unbounded on that side.
-    private static bool Covered(VersionRange allowed, List<VersionRange> excluded)
+    // Whether the exclusions between them leave no version of the allowed
+    // interval. The interval list is cut by each exclusion in turn, so a
+    // union of several narrow exclusions covers exactly like one wide one.
+    private static bool Covered(VersionRange allowed, IReadOnlyList<VersionRange> excluded)
     {
-        if (allowed.MinVersion is null || allowed.MaxVersion is null)
+        var left = new List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)>
         {
-            return excluded.Any(range => range.MinVersion is null && range.MaxVersion is null);
-        }
+            (allowed.MinVersion, allowed.IsMinInclusive, allowed.MaxVersion, allowed.IsMaxInclusive),
+        };
 
-        var cursor = allowed.MinVersion;
-        var cursorInclusive = allowed.IsMinInclusive;
-        for (var guard = 0; guard <= excluded.Count; guard++)
+        foreach (var range in excluded)
         {
-            var path = excluded
-                .Where(range => range.MinVersion is not null && range.MaxVersion is not null)
-                .Where(range => StartsBy(range, cursor, cursorInclusive))
-                .ToList();
-            if (path.Count == 0)
+            var next = new List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)>();
+            foreach (var (lo, loInc, hi, hiInc) in left)
             {
-                return false;
+                Cut(lo, loInc, hi, hiInc, range, next);
             }
 
-            var reach = path.Max(range => range.MaxVersion)!;
-            if (reach > allowed.MaxVersion)
+            left = next;
+            if (left.Count == 0)
             {
                 return true;
             }
+        }
 
-            if (reach.Equals(allowed.MaxVersion))
-            {
-                return path.Any(range =>
-                    range.MaxVersion!.Equals(allowed.MaxVersion) && range.IsMaxInclusive)
-                    || !allowed.IsMaxInclusive;
-            }
+        return left.Count == 0;
+    }
 
-            var inclusive = path.Any(range =>
-                range.MaxVersion!.Equals(reach) && range.IsMaxInclusive);
-            var open = path.Any(range =>
-                range.MaxVersion!.Equals(reach) && !range.IsMaxInclusive);
-            if (reach.Equals(cursor) && !inclusive && cursorInclusive)
-            {
-                // Only open ends here: the boundary point itself is uncovered.
-                return false;
-            }
+    // Subtract one exclusion from one interval, appending what is left.
+    private static void Cut(
+        NuGetVersion? lo,
+        bool loInc,
+        NuGetVersion? hi,
+        bool hiInc,
+        VersionRange cut,
+        List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)> output)
+    {
+        var cLo = cut.MinVersion;
+        var cHi = cut.MaxVersion;
 
-            cursor = reach;
-            cursorInclusive = inclusive;
-            if (!inclusive && !open)
+        // The piece below the exclusion, kept only when the exclusion starts
+        // inside the interval.
+        if (cLo is not null
+            && (hi is null || cLo < hi || (cLo.Equals(hi) && hiInc)))
+        {
+            var pieceHi = hi is null || cLo < hi
+                ? cLo
+                : hi;
+            var pieceHiInc = hi is not null && hi.Equals(cLo) && hiInc && !cut.IsMinInclusive
+                ? true
+                : !cut.IsMinInclusive;
+            Add(lo, loInc, pieceHi, pieceHiInc, output);
+        }
+
+        // The piece above it, symmetric.
+        if (cHi is not null
+            && (lo is null || cHi > lo || (cHi.Equals(lo) && loInc)))
+        {
+            var pieceLo = lo is null || cHi > lo
+                ? cHi
+                : lo;
+            var pieceLoInc = lo is not null && lo.Equals(cHi) && loInc && !cut.IsMaxInclusive
+                ? true
+                : !cut.IsMaxInclusive;
+            Add(pieceLo, pieceLoInc, hi, hiInc, output);
+        }
+    }
+
+    private static void Add(
+        NuGetVersion? lo,
+        bool loInc,
+        NuGetVersion? hi,
+        bool hiInc,
+        List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)> output)
+    {
+        if (lo is not null && hi is not null)
+        {
+            if (lo > hi || (lo.Equals(hi) && !(loInc && hiInc)))
             {
-                return false;
+                return;
             }
         }
 
-        return false;
+        output.Add((lo, loInc, hi, hiInc));
     }
-
-    private static bool StartsBy(VersionRange range, NuGetVersion cursor, bool cursorInclusive)
-        => range.MinVersion! < cursor
-            || (range.MinVersion!.Equals(cursor) && (range.IsMinInclusive || !cursorInclusive));
 
     // An empty intersection is the degenerate `(0.0.0, 0.0.0)` — a singleton
     // with both ends open. An unbounded answer has no bounds at all, and a
@@ -442,25 +479,41 @@ public sealed class Resolver
             && !range.IsMinInclusive
             && !range.IsMaxInclusive;
 
-    // Would this artifact certainly lose against the placeholders already in
-    // the graph? The real run drops it in CanStillMatch as soon as any X is in
-    // hand, so its dependencies never join the search.
+    // Would this artifact certainly lose against the untrusted names already
+    // in the graph? The real run drops it in CanStillMatch as soon as any X is
+    // in hand, so its dependencies never join the search. Prerequisite, peer
+    // and conflict ranges all narrow the same names, so the whole set is
+    // applied at once instead of one range at a time.
     private bool CannotMatch(ArtifactEntry artifact)
     {
-        foreach (var conflict in artifact.Conflicts ?? [])
+        var requirements = new List<(string Name, VersionRange Range, bool Keep)>();
+        foreach (var relation in (artifact.Prerequisites ?? [])
+            .Concat(artifact.OptionalPeers ?? []))
         {
-            if (!_assigned.TryGetValue(conflict.Name, out var target) || !target.Entry.ProbeUnknown)
+            requirements.Add((relation.Name, ParseRange(relation.Version, relation.Name), true));
+        }
+
+        foreach (var relation in artifact.Conflicts ?? [])
+        {
+            requirements.Add((relation.Name, ParseRange(relation.Version, relation.Name), false));
+        }
+
+        foreach (var name in requirements
+            .Select(item => item.Name)
+            .Where(Uncertain)
+            .Distinct(StringComparer.Ordinal))
+        {
+            var kept = Constraints(name).ToList();
+            var excluded = _unknownExcluded.TryGetValue(name, out var trimmed)
+                ? trimmed.ToList()
+                : [];
+            foreach (var item in requirements.Where(item => item.Name == name))
             {
-                continue;
+                (item.Keep ? kept : excluded).Add(item.Range);
             }
 
-            var excluded = _unknownExcluded.TryGetValue(conflict.Name, out var list)
-                ? list
-                : _unknownExcluded[conflict.Name] = [];
-            excluded.Add(ParseRange(conflict.Version, conflict.Name));
-            var dead = Contradicts(conflict.Name);
-            excluded.RemoveAt(excluded.Count - 1);
-            if (dead)
+            var allowed = VersionRange.CommonSubSet(kept);
+            if (Empty(allowed) || (excluded.Count > 0 && Covered(allowed, excluded)))
             {
                 return true;
             }
@@ -519,14 +572,14 @@ public sealed class Resolver
 
         if (_assigned.TryGetValue(requirement.Name, out var existing))
         {
-            if (existing.Entry.ProbeUnknown)
+            if (Uncertain(requirement.Name))
             {
                 // The version is invented, so the range is not judged against
                 // it — but two known ranges can still contradict each other,
                 // and then no answer for this name could satisfy both. That is
                 // the one thing already-cached metadata proves, so it has to
                 // fail the branch and send the search to another one.
-                var ranges = _unknownConstraints[requirement.Name];
+                var ranges = Constraints(requirement.Name);
                 ranges.Add(requirement.Range);
                 if (Contradicts(requirement.Name))
                 {
@@ -592,11 +645,15 @@ public sealed class Resolver
                 PackageDeprecated = indexData.Deprecated,
             };
             _assigned[requirement.Name] = resolved;
-            var constraintsBefore = Snapshot();
             if (indexData.ProbeShadowed)
             {
                 _shadowed.Add(requirement.Name);
             }
+
+            // Saved after the version's own uncertainty is recorded, so a
+            // failed artifact restores to "this version, still uncertain",
+            // not to before the name was assigned at all.
+            var constraintsBefore = Snapshot();
             if (entry.ProbeUnknown)
             {
                 // Everything already pending for the name is a known range
@@ -741,7 +798,7 @@ public sealed class Resolver
         foreach (var prerequisite in artifact.Prerequisites ?? [])
         {
             if (_assigned.TryGetValue(prerequisite.Name, out var target)
-                && !target.Entry.ProbeUnknown
+                && !Uncertain(prerequisite.Name)
                 && !ParseRange(prerequisite.Version, prerequisite.Name)
                     .Satisfies(target.ParsedVersion))
             {
@@ -752,7 +809,7 @@ public sealed class Resolver
         foreach (var peer in artifact.OptionalPeers ?? [])
         {
             if (_assigned.TryGetValue(peer.Name, out var target)
-                && !target.Entry.ProbeUnknown
+                && !Uncertain(peer.Name)
                 && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
             {
                 return false;
@@ -762,7 +819,7 @@ public sealed class Resolver
         foreach (var conflict in artifact.Conflicts ?? [])
         {
             if (_assigned.TryGetValue(conflict.Name, out var target)
-                && !target.Entry.ProbeUnknown
+                && !Uncertain(conflict.Name)
                 && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
             {
                 return false;
@@ -830,8 +887,11 @@ public sealed class Resolver
 
             // A placeholder stands in for metadata the offline probe could not
             // read; its version is invented, so no admission check applies to
-            // it (see OfflineMetadata.ProbeSource).
-            if (entry.ProbeUnknown)
+            // it. The same holds for the answer of a later source while an
+            // earlier one is unread: that earlier source's version is the one
+            // the real run would take, and it may sit elsewhere in the range
+            // (see OfflineMetadata.ProbeSource).
+            if (entry.ProbeUnknown || index.ProbeShadowed)
             {
                 candidates.Add((entry, version));
                 continue;
@@ -1122,10 +1182,11 @@ public sealed class Resolver
             probe.ResolveOnce(_specs);
             return true;
         }
-        catch (SeikoException) when (!_budget.Exhausted)
+        catch (SeikoException) when (!_budget.Exhausted && !_budget.DepthSpent)
         {
-            // An exhausted budget only proves the answer is unknown, so that
-            // case propagates instead of being reported as "unsolvable".
+            // A spent budget or depth limit only proves the answer is unknown,
+            // so that case propagates instead of being reported as
+            // "unsolvable".
             return false;
         }
     }
@@ -1173,14 +1234,15 @@ public sealed class Resolver
             // against it — but it is still a known requirement on that name,
             // and it may contradict one recorded elsewhere.
             var range = ParseRange(relation.Version, relation.Name);
-            if (target.Entry.ProbeUnknown)
+            if (Uncertain(relation.Name))
             {
-                _unknownConstraints[relation.Name].Add(range);
+                var ranges = Constraints(relation.Name);
+                ranges.Add(range);
                 if (Contradicts(relation.Name))
                 {
                     _lastConflict = Fail(
                         $"version ranges for {relation.Name} contradict each other "
-                        + $"({string.Join(", ", _unknownConstraints[relation.Name].Distinct())})");
+                        + $"({string.Join(", ", ranges.Distinct())})");
                     return false;
                 }
 
@@ -1212,7 +1274,7 @@ public sealed class Resolver
                 continue;
             }
 
-            if (target.Entry.ProbeUnknown)
+            if (Uncertain(conflict.Name))
             {
                 // The placeholder may well collide with this; record what is
                 // ruled out so a branch whose own ranges cover the whole

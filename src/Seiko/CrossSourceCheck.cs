@@ -7,10 +7,13 @@ namespace Seiko;
 // mirror may not serve different bytes for the same public artifact.
 internal static class CrossSourceCheck
 {
+    // `onRead`, when given, is called for every source a name is read from —
+    // the pre-check uses it to learn which caches the check actually needs.
     public static void Verify(
         IReadOnlyList<ISeiSource> sources,
         IEnumerable<ResolvedSei> resolved,
-        string code)
+        string code,
+        Action<ISeiSource, string>? onRead = null)
     {
         // Each name is a separate SeiIndex within the same source, so the
         // cache key covers source id and name.
@@ -33,6 +36,7 @@ internal static class CrossSourceCheck
                 }
 
                 var index = source.GetSei(sei.Name);
+                onRead?.Invoke(source, sei.Name);
                 if (index is null)
                 {
                     continue;

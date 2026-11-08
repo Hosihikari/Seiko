@@ -83,14 +83,14 @@ public sealed class HttpSource : ISeiSource, IDisposable
         // Set before anything can fail: the instance is gone on a constructor
         // exception, so only Dispose can release what was handed in.
         _ownsSession = ownsSession;
-        if (!Uri.TryCreate(config.Index, UriKind.Absolute, out var indexUri)
-            || (indexUri.Scheme != Uri.UriSchemeHttp && indexUri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new SeikoException($"source '{Id}': invalid http index '{config.Index}'", "config");
-        }
-
         try
         {
+            if (!Uri.TryCreate(config.Index, UriKind.Absolute, out var indexUri)
+                || (indexUri.Scheme != Uri.UriSchemeHttp && indexUri.Scheme != Uri.UriSchemeHttps))
+            {
+                throw new SeikoException($"source '{Id}': invalid http index '{config.Index}'", "config");
+            }
+
             _client = handler is null
                 ? CreateClient(proxy)
                 : new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };

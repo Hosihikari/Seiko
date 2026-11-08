@@ -156,12 +156,10 @@ public sealed class SeikoClient
 
         var config = ConfigLoader.Load(root);
         using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var session = preloaded?.Session
-            ?? new DownloadSession(jobs, downloadCts.Token)
-            {
-                Progress = progress,
-                Log = log,
-            };
+        var ownSession = preloaded?.Session is null
+            ? new DownloadSession(jobs, downloadCts.Token)
+            : null;
+        var session = preloaded?.Session ?? ownSession!;
         session.Progress = progress;
         session.Log = log;
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
@@ -195,11 +193,28 @@ public sealed class SeikoClient
                 existing: existingLock,
                 rid: rid,
                 updateNames: updateNames,
-                latestInstallable: latestInstallable).ThrowIfAny(incomplete: false);
+                latestInstallable: latestInstallable).ThrowIfAny();
         }
 
-        var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
-        using var sourceScope = preloaded is null ? new SourceScope(sources) : null;
+        IReadOnlyList<ISeiSource>? sources = null;
+        if (preloaded is null)
+        {
+            try
+            {
+                sources = LoadSources(config, root, proxy, session, storePath, offline);
+            }
+            catch
+            {
+                // Nothing owns the session yet.
+                ownSession?.Dispose();
+                throw;
+            }
+        }
+
+        sources ??= preloaded!.Sources;
+        // The scope releases the sources and, when this call made it, the
+        // session too.
+        using var sourceScope = preloaded is null ? new SourceScope(sources, ownSession) : null;
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
@@ -921,7 +936,7 @@ public sealed class SeikoClient
                             DeclaredOriginName(config, root, OriginPaths.Resolve(addition.Path!, root)))));
             }
 
-            precheck.ThrowIfAny(incomplete: false);
+            precheck.ThrowIfAny();
         }
 
         // The ambiguity check reads source indexes, so it belongs here, after
@@ -1397,11 +1412,11 @@ public sealed class SeikoClient
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
         SourceScope? preloaded = null;
+        var preSession = new DownloadSession(jobs, cancellationToken);
         try
         {
             if (existingLock is not null)
             {
-                var preSession = new DownloadSession(jobs, cancellationToken);
                 preloaded = new SourceScope(
                     LoadSources(config, root, proxy, preSession, storePath, offline),
                     preSession);
@@ -1480,7 +1495,16 @@ public sealed class SeikoClient
         }
         finally
         {
-            preloaded?.Dispose();
+            // The scope owns the session once it exists; before that only the
+            // session itself does.
+            if (preloaded is null)
+            {
+                preSession.Dispose();
+            }
+            else
+            {
+                preloaded.Dispose();
+            }
         }
     }
 
@@ -1543,6 +1567,7 @@ public sealed class SeikoClient
 
         var writeConfig = latest && targets.Count > 0;
         SourceScope? preloaded = null;
+        var preSession = new DownloadSession(jobs, cancellationToken);
         try
         {
             if (writeConfig || (dryRun && targets.Count > 0))
@@ -1550,7 +1575,6 @@ public sealed class SeikoClient
                 // The pre-resolve and the sync/preview below share one source
                 // cache; the second resolution still happens, but no metadata
                 // is fetched twice.
-                var preSession = new DownloadSession(jobs, cancellationToken);
                 preloaded = new SourceScope(
                     LoadSources(config, root, proxy, preSession, storePath, offline),
                     preSession);
@@ -1620,7 +1644,16 @@ public sealed class SeikoClient
         }
         finally
         {
-            preloaded?.Dispose();
+            // The scope owns the session once it exists; before that only the
+            // session itself does.
+            if (preloaded is null)
+            {
+                preSession.Dispose();
+            }
+            else
+            {
+                preloaded.Dispose();
+            }
         }
     }
 

@@ -11,10 +11,11 @@ internal static class OfflineMetadata
     // both set when both happened). The caller throws once the whole
     // operation has been checked, so two pre-checks cannot hide each other's
     // gaps behind the first exception.
-    public sealed record VerifyResult(SortedSet<string> Missing, SeikoException? Failure)
+    public sealed record VerifyResult(SortedSet<string> Missing, SeikoException? Failure, bool Incomplete)
     {
-        public void ThrowIfAny(bool incomplete)
+        public void ThrowIfAny()
         {
+            var incomplete = Incomplete;
             if (Failure is not null && Missing.Count > 0)
             {
                 throw Combined(Failure, Missing, incomplete);
@@ -88,17 +89,18 @@ internal static class OfflineMetadata
             {
                 // The source itself is unusable; that is the run's failure
                 // code, not a lock verdict.
-                return new VerifyResult(missing, new SeikoException(string.Join("; ", dead), "source"));
+                return new VerifyResult(missing, new SeikoException(string.Join("; ", dead), "source"), false);
             }
 
             if (absent.Count > 0)
             {
                 return new VerifyResult(
                     missing,
-                    new SeikoException($"offline: the lock cannot be replayed: {string.Join("; ", absent)}", "lock"));
+                    new SeikoException($"offline: the lock cannot be replayed: {string.Join("; ", absent)}", "lock"),
+                    false);
             }
 
-            return new VerifyResult(missing, null);
+            return new VerifyResult(missing, null, false);
         }
 
         // The probe runs the real resolver with the planned declarations and
@@ -138,7 +140,9 @@ internal static class OfflineMetadata
             missing.Add($"sei/{name}.json from source '{source}'");
         }
 
-        return new VerifyResult(missing, failure);
+
+
+        return new VerifyResult(missing, probe.CheckFailure ?? failure, resolver.Incomplete);
     }
 
     // A failure met after gaps were read carries them along: the gaps are
@@ -255,24 +259,47 @@ internal static class OfflineMetadata
         // then fail. Only a trusted framework-level handler wants this.
         public void OnSolution(IReadOnlyList<ResolvedSei> resolved)
         {
-            foreach (var sei in resolved)
+            try
             {
-                if (!_owner.TryGetValue(sei.Name, out var owner)
-                    || _real[owner] is OriginSource)
+                // The real check runs here too, so it stops at a digest
+                // mismatch just like the run: sources after that one are not
+                // read and stay out of the gap list. Whatever it throws is
+                // already the answer — the resolver wraps the call anyway.
+                // Only names an index source actually owns reach the check;
+                // an origin entry is exempt (ADR-0044).
+                var owned = resolved
+                    .Where(sei => _owner.TryGetValue(sei.Name, out var index) && _real[index] is not OriginSource)
+                    .ToList();
+                if (owned.Count == 0)
                 {
-                    // Origin entries are exempt from the check (ADR-0044).
-                    continue;
+                    return;
                 }
 
-                for (var i = 0; i < _real.Count; i++)
+                CrossSourceCheck.Verify(_real, owned, "checksum", (source, name) =>
                 {
-                    if (i != owner)
+                    var index = _real.IndexOf(source);
+                    if (index >= 0 && index != _owner.GetValueOrDefault(name, -1))
                     {
-                        Read(i, sei.Name);
+                        Read(index, name);
                     }
-                }
+                });
+            }
+            catch (SeikoException ex) when (ex.Code == "checksum")
+            {
+                _checkFailure = ex;
+            }
+            catch (SeikoException)
+            {
+                // Anything else (a source's own failure) is the resolver's to
+                // report; the gaps already collected still stand.
             }
         }
+
+        // A cross-source failure already proven by cached data. It is the
+        // run's stopping point, so it takes precedence over gaps found later.
+        public SeikoException? CheckFailure => _checkFailure;
+
+        private SeikoException? _checkFailure;
 
         private SeiIndex? Read(int index, string name)
         {
@@ -350,18 +377,18 @@ internal static class OfflineMetadata
             return;
         }
 
+        // The source has to open the way the real constructor would before
+        // its answer about the name means anything.
+        if (OpenProblem(source, root, storePath) is { } problem)
+        {
+            dead.Add(problem);
+            return;
+        }
+
         if (!IsHttp(source))
         {
-            // A source that does not open at all cannot be said to lack the
-            // name; the real run fails on the index before it gets that far.
             var index = LocalSource.ResolvePath(source.Index, root);
-            if (!File.Exists(index))
-            {
-                // The real run fails opening the source before it can say
-                // whether the name is there, so keep the source's own code.
-                dead.Add($"source '{sourceId}': index not found: {index}");
-            }
-            else if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"))
+            if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"))
                 && !crossCheck)
             {
                 // An open local source answers from its directory: a missing
@@ -397,6 +424,36 @@ internal static class OfflineMetadata
         {
             missing.Add($"sei/{name}.json from source '{sourceId}' (unreadable)");
         }
+    }
+
+    // Why the real constructor of this source would fail, if it would. A
+    // local index has to exist and parse with the current schema; a cached
+    // root has to parse if it is there at all. Null means the source opens.
+    private static string? OpenProblem(SourceConfig source, string root, string storePath)
+    {
+        if (IsHttp(source))
+        {
+            var indexPath = MetadataCache.PathFor(
+                storePath,
+                new Uri(new Uri(source.Index), "index.json").AbsoluteUri);
+            return File.Exists(indexPath)
+                && MetadataCache.TryRead(indexPath, SeikoJsonContext.Default.IndexRoot) is null
+                    ? $"source '{source.Id}': invalid index"
+                    : null;
+        }
+
+        var path = LocalSource.ResolvePath(source.Index, root);
+        if (!File.Exists(path))
+        {
+            return $"source '{source.Id}': index not found: {path}";
+        }
+
+        var index = MetadataCache.TryRead(path, SeikoJsonContext.Default.IndexRoot);
+        return index is null
+            ? $"source '{source.Id}': invalid index"
+            : index.SchemaVersion != IndexRoot.CurrentSchemaVersion
+                ? $"source '{source.Id}': unsupported index schemaVersion {index.SchemaVersion}"
+                : null;
     }
 
     // The bare-token disambiguation asks each index source for one name in
@@ -444,7 +501,10 @@ internal static class OfflineMetadata
 
                 if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
                 {
+                    // A corrupt file answers nothing, so keep looking: an
+                    // earlier source may still answer once it is refilled.
                     missing.Add($"sei/{name}.json from source '{source.Id}' (unreadable)");
+                    continue;
                 }
 
                 break;
