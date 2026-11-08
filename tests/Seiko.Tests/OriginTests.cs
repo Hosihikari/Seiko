@@ -3021,6 +3021,8 @@ public sealed class OriginTests
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
         // The third artifact is reached: cold is read, which is the point.
+        // Equally specific artifacts also make the run itself ambiguous.
+        Assert.Equal("resolve", error.Code);
         Assert.Equal(
             new[]
             {
@@ -3391,6 +3393,7 @@ public sealed class OriginTests
 
         // Everything below is a gap too; cold is the one that only gets read
         // because the deeper version's range survived.
+        Assert.Equal("resolve", error.Code);
         Assert.Equal(
             new[]
             {
@@ -3527,6 +3530,12 @@ public sealed class OriginTests
         "sei/a.json from source 'mirror (west)'")]
     [InlineData("offline: missing cached metadata: sei/a.json from source 'mirror (west)'; sei/b.json from source 'http'. The probe hit a search limit, so the list may be incomplete. Run the command once online, then retry offline",
         "sei/a.json from source 'mirror (west)'; sei/b.json from source 'http'")]
+    [InlineData("offline: missing cached metadata: sei/a.json from source 'mirror. The probe hit west'. Run the command once online, then retry offline",
+        "sei/a.json from source 'mirror. The probe hit west'")]
+    [InlineData("some failure (offline: missing cached metadata: sei/a.json from source 'mirror (west)')",
+        "sei/a.json from source 'mirror (west)'")]
+    [InlineData("some failure (offline: missing cached metadata: sei/a.json from source 'http'; the probe hit a search limit, so the list may be incomplete)",
+        "sei/a.json from source 'http'")]
     public void Gaps_ParsesEveryMessageShape(string message, string expected)
     {
         Assert.Equal(expected.Split("; "), Gaps(message));
@@ -3654,43 +3663,40 @@ public sealed class OriginTests
     // The gap entries of an offline summary, in order, without the prose. A
     // failure-carrying message wraps the list in parentheses, and the search
     // limit note may follow it.
-    // The gap entries of an offline summary. Two shapes exist and are told
-    // apart by their wrapper, not by punctuation inside the entries: the
-    // plain sentence ends at its fixed closing sentences, the Combined one at
-    // the wrapper's own final parenthesis. Source ids may contain ". " or
-    // parentheses without either being mistaken for the end.
+    // The gap entries of an offline summary. Only the outer shape decides
+    // where the list ends — never punctuation inside an entry: the Combined
+    // wrapper closes with its own final parenthesis, the plain sentence with
+    // fixed trailing sentences, each stripped only at the very end.
     private static string[] Gaps(string message)
     {
         const string Marker = "missing cached metadata: ";
         var start = message.IndexOf(Marker, StringComparison.Ordinal);
         var rest = message[(start + Marker.Length)..];
 
-        string list;
         if (rest.EndsWith(")", StringComparison.Ordinal))
         {
-            // Combined: everything up to the wrapper's closing parenthesis,
-            // minus a possible search-limit note.
             var close = rest.LastIndexOf(')');
-            list = rest[..close];
-            var note = list.LastIndexOf("; the probe hit", StringComparison.Ordinal);
-            if (note >= 0)
+            rest = rest[..close];
+            const string Note = "; the probe hit a search limit, so the list may be incomplete";
+            if (rest.EndsWith(Note, StringComparison.Ordinal))
             {
-                list = list[..note];
+                rest = rest[..^Note.Length];
             }
         }
         else
         {
-            // Plain: the fixed tail, with or without the limit sentence.
-            var tail = rest.LastIndexOf(". Run the command once online", StringComparison.Ordinal);
-            list = rest[..tail];
-            var note = list.LastIndexOf(". The probe hit", StringComparison.Ordinal);
-            if (note >= 0)
+            const string Tail = "Run the command once online, then retry offline";
+            const string Limit = "The probe hit a search limit, so the list may be incomplete. ";
+            var body = rest[..^Tail.Length];
+            if (body.EndsWith(Limit, StringComparison.Ordinal))
             {
-                list = list[..note];
+                body = body[..^Limit.Length];
             }
+
+            rest = body[..^2];
         }
 
-        return list.Split("; ", StringSplitOptions.None);
+        return rest.Split("; ", StringSplitOptions.None);
     }
 
     // Two http sources in order; each fixture serves its own directory.
