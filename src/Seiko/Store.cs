@@ -155,6 +155,11 @@ public sealed class Store
                 {
                     extracted = Extract(artifactPath, temp);
                     var manifest = ReadManifest(temp, Path.Combine(temp, "sei.json"));
+                    // The warm path validates in LoadStored/LoadExtracted; the
+                    // cold path must do it before the steps below dereference
+                    // the artifact, or a manifest without one fails differently
+                    // on the first install than on the second (ADR-0024).
+                    Validate(sei, manifest);
                     ExternalFiles.Validate(manifest.Artifact!, sei.Name);
                     EnsureNoTargetCollision(extracted, manifest, sei.Name);
                     ExternalMaterializer.Run(

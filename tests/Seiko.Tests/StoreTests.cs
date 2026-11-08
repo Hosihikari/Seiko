@@ -99,6 +99,58 @@ public sealed class StoreTests
     }
 
     [Fact]
+    public void Sync_ReportsAManifestWithoutAnArtifactObject()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+        var zipPath = Assert.Single(Directory.GetFiles(
+            Path.Combine(fixture.SourceDirectory, "artifacts"),
+            "*.zip"));
+        using (var archive = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("sei.json")!;
+            string text;
+            using (var stream = entry.Open())
+            using (var reader = new StreamReader(stream))
+            {
+                text = reader.ReadToEnd();
+            }
+
+            entry.Delete();
+            var replacement = archive.CreateEntry("sei.json");
+            using var output = replacement.Open();
+            using var writer = new StreamWriter(output);
+            var node = System.Text.Json.Nodes.JsonNode.Parse(text)!;
+            node.AsObject().Remove("artifact");
+            writer.Write(node.ToJsonString());
+        }
+
+        var indexPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var sei = System.Text.Json.JsonSerializer.Deserialize(
+            File.ReadAllBytes(indexPath),
+            SeikoJsonContext.Default.SeiIndex)!;
+        sei.Versions[0].Artifacts[0].Source.Sha256 = Hashing.Sha256File(zipPath);
+        sei.Versions[0].Artifacts[0].Source.Size = new FileInfo(zipPath).Length;
+        File.WriteAllBytes(
+            indexPath,
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+
+        // The cold path used to dereference the missing object and surface a
+        // NullReferenceException, while the warm path reported the domain
+        // error. Both now fail the same way.
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("io", error.Code);
+        Assert.Contains("no artifact object", error.Message);
+    }
+
+    [Fact]
     public async Task Store_WaitsForTheArtifactLockBeforeReading()
     {
         using var fixture = new Fixture();
