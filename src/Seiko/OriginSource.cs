@@ -486,31 +486,23 @@ internal sealed class OriginSource : ISeiSource
         name = ReadManifestHeader(matches[0])!.Name;
 
         // Two different names can both fit the stem (`hello` and `hello-tools`
-        // for hello-tools-win); the most specific one wins. Snapshots of the
-        // same name are not ambiguous, so they collapse to the newest.
+        // for hello-tools-win). Picking the longer one is still a guess, so an
+        // unknown path with more than one candidate is refused; snapshots of
+        // the same name are not ambiguous and collapse to the newest.
         var names = matches
             .ToDictionary(
                 candidate => candidate,
                 candidate => ReadManifestHeader(candidate)!.Name,
                 StringComparer.Ordinal);
-        var distinct = names.Values.Distinct(StringComparer.Ordinal).ToList();
+        var distinct = names.Values.Distinct(StringComparer.Ordinal).OrderBy(
+            value => value,
+            StringComparer.Ordinal).ToList();
         if (distinct.Count > 1)
         {
-            // Keep the names no other name is a prefix of: `hello-tools`
-            // survives `hello`, since the file stem starts with the longer one.
-            var wider = distinct
-                .Where(value => distinct.All(other => other == value
-                    || !other.StartsWith(value + "-", StringComparison.Ordinal)))
-                .ToList();
-            if (wider.Count != 1)
-            {
-                throw new SeikoException(
-                    $"{Path.GetFileName(path)} matches several origin names ({string.Join(", ", wider)}); "
-                    + "rename it so only one applies",
-                    "usage");
-            }
-
-            distinct = wider;
+            throw new SeikoException(
+                $"{Path.GetFileName(path)} matches several origin names ({string.Join(", ", distinct)}); "
+                + "name the file after the sei, or add it while its declaration exists",
+                "usage");
         }
 
         var chosenName = distinct[0];

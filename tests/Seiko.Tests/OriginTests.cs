@@ -475,7 +475,7 @@ public sealed class OriginTests
             offline: true));
 
         Assert.Equal("source", error.Code);
-        Assert.Contains("a", error.Message);
+        Assert.Contains("sei/a.json", error.Message);
     }
 
     [Fact]
@@ -600,8 +600,10 @@ public sealed class OriginTests
 
         // Either wording is correct: the pre-check may or may not get far
         // enough to list, but the missing names are what matters.
+        // Both names must be collected in the same pass, and named as such.
         Assert.Equal("source", error.Code);
-        Assert.Contains("a", error.Message);
+        Assert.Contains("sei/a.json", error.Message);
+        Assert.Contains("sei/b.json", error.Message);
     }
 
     [Fact]
@@ -630,7 +632,7 @@ public sealed class OriginTests
             offline: true));
 
         Assert.Equal("source", error.Code);
-        Assert.Contains("a", error.Message);
+        Assert.Contains("sei/a.json", error.Message);
     }
 
     [Fact]
@@ -728,14 +730,15 @@ public sealed class OriginTests
     }
 
     [Fact]
-    public void Add_PrefersTheMoreSpecificOriginNameWhenStemsOverlap()
+    public void Add_UsesTheDeclaredNameWhenTheStemAlsoFitsAnother()
     {
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools", fileName: "hello-tools-win.sei");
         client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
-        // `hello` is a prefix of `hello-tools`; its snapshot is newer.
+        // `hello` is also a prefix of this stem; the declaration decides, not
+        // the length of the name nor the age of the snapshot.
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base", fileName: "hello.sei");
         client.Add(fixture.Root, Rel(fixture, "dist/hello.sei"), storeRoot: fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, tools));
@@ -897,6 +900,34 @@ public sealed class OriginTests
             offline: true);
 
         Assert.Single(new SeikoClient().ReadLock(fixture.Root)!.Sei, item => item.Name == "hello");
+    }
+
+    [Fact]
+    public void Add_RejectsAnUnknownPathThatFitsSeveralNames()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        client.Add(
+            fixture.Root,
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base")),
+            storeRoot: fixture.StoreDirectory);
+        var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools");
+        client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
+
+        // Remove both declarations, so the stem alone has to identify the file.
+        client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
+        client.Remove(fixture.Root, "hello-tools", storeRoot: fixture.StoreDirectory);
+        File.Delete(Path.Combine(fixture.Root, tools));
+        File.Delete(Path.Combine(fixture.Root, "dist/hello.sei"));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            "dist/hello-tools.sei",
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("usage", error.Code);
+        Assert.Contains("several origin names", error.Message);
     }
 
     [Fact]

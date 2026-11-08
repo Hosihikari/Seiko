@@ -184,10 +184,16 @@ internal static class OfflineMetadata
                 while (pending.Count > 0)
                 {
                     var next = pending.Dequeue();
-                    if (!SeiName.IsValid(next) || !seen.Add(next) || !handled.Add(next))
+                    // Only `handled` decides: a name pulled from an origin is
+                    // already in `seen` (that is how it was deduplicated on
+                    // the way in), so requiring `seen.Add` here would silently
+                    // drop every one of them.
+                    if (!SeiName.IsValid(next) || !handled.Add(next))
                     {
                         continue;
                     }
+
+                    seen.Add(next);
 
                     if (originNames.Contains(next))
                     {
