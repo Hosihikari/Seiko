@@ -1968,7 +1968,14 @@ public sealed class OriginTests
             + $"{{ id = \"other\", index = \"{other.Replace('\\', '/')}/index.json\" }} ]\n"
             + "rid = \"win-x64\"\nsei = [ { name = \"a\", version = \"[1.0.0]\" } ]\n");
         var client = new SeikoClient();
-        client.Sync(fixture.Root, fixture.StoreDirectory);
+        // The priming sync already trips over the broken source.
+        try
+        {
+            client.Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
 
         var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen, offline: true);
 
@@ -2878,18 +2885,18 @@ public sealed class OriginTests
         var second = new Fixture();
         using var secondServer = new TestHttpServer(second.SourceDirectory);
         // x is unknown in the first source and only present in the second.
-        // x 1.0 has two artifacts: the first needs a 404 package, the second
-        // needs y, which finally pins x at 2 or above — contradicting the
-        // root's [1,2). After the first artifact fails, the root range has to
-        // still be known, or z is read for nothing.
-        fixture.AddSei("absent", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        // x 1.0 has two artifacts: the first needs absent, which is a recorded
+        // 404; the second needs y, whose metadata pins x at 2 or above and is
+        // cached. That contradicts the root's [1,2), so the root range has to
+        // survive the first artifact's failure for the second one to be
+        // pruned before z is read.
         fixture.AddSei("y", new VersionFixture
         {
             Version = "1.0.0",
             Dependencies = [new DepFixture("x", "[2.0.0,3.0.0)"), new DepFixture("z", null)],
             Artifacts = [new ArtifactFixture()],
         });
+        fixture.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         second.AddSei("x", new VersionFixture
         {
             Version = "1.0.0",
@@ -2902,10 +2909,9 @@ public sealed class OriginTests
         WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
         var origin = fixture.WriteOrigin(
             "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,2.0.0)")]);
-        // Online the root range already rules every x out; the caches still
-        // get written.
         try
         {
+            // Online the graph fails on the root range; the metadata does not.
             new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
         }
         catch (SeikoException)
@@ -2920,7 +2926,8 @@ public sealed class OriginTests
             MetadataCache.PathFor(fixture.StoreDirectory, firstIndex.AbsoluteUri),
             MetadataCache.PathFor(fixture.StoreDirectory, secondIndex.AbsoluteUri),
             MetadataCache.PathFor(fixture.StoreDirectory, new Uri(secondIndex, "sei/x.json").AbsoluteUri),
-        }.ToDictionary(path => path, File.ReadAllBytes);
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/y.json").AbsoluteUri),
+        }.Where(File.Exists).ToDictionary(path => path, File.ReadAllBytes);
         Directory.Delete(cache, recursive: true);
         Directory.CreateDirectory(cache);
         foreach (var (path, bytes) in keep)
@@ -2931,18 +2938,10 @@ public sealed class OriginTests
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
-        // z is not read at all: even after the first artifact failed, the
-        // root range is still there to contradict y's x [2,3).
-        Assert.Equal(
-            new[]
-            {
-                "sei/absent.json from source 'first'",
-                "sei/absent.json from source 'second'",
-                "sei/x.json from source 'first'",
-                "sei/y.json from source 'first'",
-                "sei/y.json from source 'second'",
-            },
-            Gaps(error.Message));
+        // y came from a cache, so its x [2,3) met the root [1,2) and the
+        // second artifact is dead; only y's own metadata and x were missing.
+        // (The parent passes this one too; the deeper variant below is the
+        // discriminating case.)
         Assert.DoesNotContain("sei/z.json", error.Message);
     }
 
@@ -3103,18 +3102,205 @@ public sealed class OriginTests
         client.Add(fixture.Root, Rel(fixture, one), storeRoot: fixture.StoreDirectory);
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "two", fileName: "hello-b.sei");
         WriteOriginConfig(fixture, "hello", "dist/hello-b.sei", "selectors = [ { rid = \"*\" } ]");
+        // Only the lock's own snapshot survives: the original file is gone
+        // and the newer file was never snapshotted under the lock's digest.
+        File.Delete(Path.Combine(fixture.Root, one));
         File.Delete(Path.Combine(fixture.Root, "dist/hello.sei"));
-        foreach (var file in Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")))
-        {
-            if (!Path.GetFileName(file).Contains("hello-a", StringComparison.Ordinal))
-            {
-                File.Delete(file);
-            }
-        }
+        var snapshot = Assert.Single(Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")));
+        Assert.StartsWith("hello", Path.GetFileName(snapshot), StringComparison.Ordinal);
 
         var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen, offline: true);
 
         Assert.Equal(1, result.SeiInstalled);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_KeepsSourceFailureAfterAGapInASeiFile()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        var third = Path.Combine(fixture.Root, "half-broken");
+        Directory.CreateDirectory(Path.Combine(third, "sei"));
+        // The third root opens, but its sei file for x carries an unsupported
+        // schema; only the cross-source read of it fails.
+        File.WriteAllText(Path.Combine(third, "index.json"), "{\"schemaVersion\":2,\"sei\":[]}");
+        File.WriteAllText(
+            Path.Combine(third, "sei", "x.json"),
+            "{\"schemaVersion\":99,\"name\":\"x\",\"versions\":[]}");
+        fixture.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        second.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")).Replace(
+                "\n]\n",
+                $"\n  {{ id = \"third\", index = \"{third.Replace('\\', '/')}/index.json\" }}\n]\n",
+                StringComparison.Ordinal));
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("x", null)]);
+        try
+        {
+            new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var firstIndex = new Uri(first.BaseUrl.TrimEnd('/') + "/index.json");
+        var secondIndex = new Uri(secondServer.BaseUrl.TrimEnd('/') + "/index.json");
+        var keep = new[]
+        {
+            MetadataCache.PathFor(fixture.StoreDirectory, firstIndex.AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/x.json").AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, secondIndex.AbsoluteUri),
+        }.Where(File.Exists).ToDictionary(path => path, File.ReadAllBytes);
+        Directory.Delete(cache, recursive: true);
+        Directory.CreateDirectory(cache);
+        foreach (var (path, bytes) in keep)
+        {
+            File.WriteAllBytes(path, bytes);
+        }
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        // The gap read first and the later real failure both survive.
+        Assert.Contains("sei/x.json from source 'second'", error.Message);
+        Assert.Contains("schemaVersion 99", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_SourceFailureOutranksAResolveVerdict()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var broken = Path.Combine(fixture.Root, "broken");
+        Directory.CreateDirectory(broken);
+        // The only source cannot be built; the graph itself would just say
+        // "not found". The run fails on construction first.
+        File.WriteAllText(Path.Combine(broken, "index.json"), "{\"schemaVersion\":99,\"sei\":[]}");
+        fixture.WriteHttpConfig(first.BaseUrl, "win-x64");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"broken\", index = \"{broken.Replace('\\', '/')}/index.json\" }} ]\n"
+            + "rid = \"win-x64\"\nsei = []\n");
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("schemaVersion 99", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_FrozenReportsAConstructionFailureItSucceededPast()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        var broken = Path.Combine(fixture.Root, "broken");
+        Directory.CreateDirectory(broken);
+        fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("a", "[1.0.0]"));
+        File.WriteAllText(Path.Combine(broken, "index.json"), "{\"schemaVersion\":99,\"sei\":[]}");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}, "
+            + $"{{ id = \"broken\", index = \"{broken.Replace('\\', '/')}/index.json\" }} ]\n"
+            + "rid = \"win-x64\"\nsei = [ { name = \"a\", version = \"[1.0.0]\" } ]\n");
+        var client = new SeikoClient();
+        // The priming sync already trips over the broken source.
+        try
+        {
+            client.Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        var error = Assert.Throws<SeikoException>(() => client.Sync(
+            fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen, offline: true));
+
+        // The replay itself would succeed; construction of the second source
+        // fails first in the real run.
+        Assert.Equal("source", error.Code);
+        Assert.Contains("schemaVersion 99", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_KeepsTheInitialRangeWhenADeeperVersionRetries()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        // Same shape one level deeper: the polluted range of y 2.0's failed
+        // artifact must not survive into y 1.0, or its cold package is never
+        // read.
+        fixture.AddSei("absent", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei(
+            "y",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture { Dependencies = [new DepFixture("absent", null)] },
+                    new ArtifactFixture { Dependencies = [new DepFixture("x", "[2.0.0,3.0.0)"), new DepFixture("absent", null)] },
+                ],
+            },
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Dependencies = [new DepFixture("x", "[3.0.0,4.0.0)"), new DepFixture("cold", null)] }],
+            });
+        fixture.AddSei("cold", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        second.AddSei("x", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Dependencies = [new DepFixture("absent", null)] },
+                new ArtifactFixture { Dependencies = [new DepFixture("y", null)] },
+            ],
+        });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,4.0.0)")]);
+        try
+        {
+            new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var firstIndex = new Uri(first.BaseUrl.TrimEnd('/') + "/index.json");
+        var secondIndex = new Uri(secondServer.BaseUrl.TrimEnd('/') + "/index.json");
+        var keep = new[]
+        {
+            MetadataCache.PathFor(fixture.StoreDirectory, firstIndex.AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, secondIndex.AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(secondIndex, "sei/x.json").AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/absent.json").AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/y.json").AbsoluteUri),
+        }.Where(File.Exists).ToDictionary(path => path, File.ReadAllBytes);
+        Directory.Delete(cache, recursive: true);
+        Directory.CreateDirectory(cache);
+        foreach (var (path, bytes) in keep)
+        {
+            File.WriteAllBytes(path, bytes);
+        }
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Contains("sei/cold.json", error.Message);
     }
 
     [Fact]
@@ -3253,7 +3439,9 @@ public sealed class OriginTests
         }
 
         list = list.TrimEnd(')', ' ');
-        var end = list.IndexOf(". ", StringComparison.Ordinal);
+        // The final sentence period is the last ". " in the list; a source id
+        // may itself contain ". ".
+        var end = list.LastIndexOf(". ", StringComparison.Ordinal);
         if (end >= 0)
         {
             list = list[..end];

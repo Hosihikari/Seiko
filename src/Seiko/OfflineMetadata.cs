@@ -75,7 +75,9 @@ internal static class OfflineMetadata
                 return new VerifyResult(replay.Gaps(), fatal, false);
             }
 
-            return new VerifyResult(replay.Gaps(), null, false);
+            // A source that failed to open would fail the real run before the
+            // replay ever starts.
+            return new VerifyResult(replay.Gaps(), replay.SourceFailures.FirstOrDefault(), false);
         }
 
         // The probe runs the real resolver with the planned declarations and
@@ -115,11 +117,10 @@ internal static class OfflineMetadata
             missing.Add($"sei/{name}.json from source '{source}'");
         }
 
-
-
-        // A broken source outranks a resolve verdict: the run never gets
-        // that far. Gaps still ride along, as everywhere else.
-        failure ??= probe.SourceFailures.FirstOrDefault();
+        // A source that cannot be built outranks anything the probe could
+        // still say: the real run fails on construction, before it resolves.
+        // Gaps still ride along, as everywhere else.
+        failure = probe.SourceFailures.FirstOrDefault() ?? failure;
         return new VerifyResult(missing, failure, resolver.Incomplete);
     }
 
@@ -185,12 +186,13 @@ internal static class OfflineMetadata
                             _real.Add(new LocalSource(source, root));
                         }
                     }
-                    catch (SeikoException ex)
+                    catch (Exception ex) when (ex is SeikoException or System.Text.Json.JsonException)
                     {
                         // A source that will not open fails the real run, but
                         // the rest of the graph can still be walked; the
                         // failure is kept and reported with the gaps.
-                        SourceFailures.Add(ex);
+                        SourceFailures.Add(ex as SeikoException
+                            ?? new SeikoException($"source '{source.Id}': invalid index ({ex.Message})", "source", ex));
                     }
                 }
             }
@@ -313,51 +315,41 @@ internal static class OfflineMetadata
         // then fail. Only a trusted framework-level handler wants this.
         public void OnSolution(IReadOnlyList<ResolvedSei> resolved)
         {
-            try
-            {
-                // The real check runs here too, so it stops at a digest
-                // mismatch just like the run: sources after that one are not
-                // read and stay out of the gap list. Whatever it throws is
-                // already the answer — the resolver wraps the call anyway.
-                // Only names an index source actually owns reach the check;
-                // an origin entry is exempt (ADR-0044).
-                // The check matches the owner by identity, and the entries
-                // name the probe as their source; restamp them with the real
-                // source that answered.
-                var owned = resolved
-                    .Where(sei => _owner.TryGetValue(sei.Name, out var index)
-                        && !string.Equals(_real[index].Id, OriginPaths.SourceId, StringComparison.Ordinal))
-                    .Select(sei => new ResolvedSei
-                    {
-                        Name = sei.Name,
-                        ParsedVersion = sei.ParsedVersion,
-                        Entry = sei.Entry,
-                        Source = _real[_owner[sei.Name]],
-                        Direct = sei.Direct,
-                        Artifact = sei.Artifact,
-                        PackageDeprecated = sei.PackageDeprecated,
-                    })
-                    .ToList();
-                if (owned.Count == 0)
+            // The real check runs here too, so it stops at a digest mismatch
+            // just like the run: sources after that one are not read and stay
+            // out of the gap list. Whatever it throws is already the answer —
+            // a mismatch or a source's own failure — and it goes on to the
+            // current search unchanged. Only names an index source actually
+            // owns reach the check; an origin entry is exempt (ADR-0044).
+            // The check matches the owner by identity, and the entries name
+            // the probe as their source; restamp them with the real one.
+            var owned = resolved
+                .Where(sei => _owner.TryGetValue(sei.Name, out var index)
+                    && !string.Equals(_real[index].Id, OriginPaths.SourceId, StringComparison.Ordinal))
+                .Select(sei => new ResolvedSei
                 {
-                    return;
-                }
+                    Name = sei.Name,
+                    ParsedVersion = sei.ParsedVersion,
+                    Entry = sei.Entry,
+                    Source = _real[_owner[sei.Name]],
+                    Direct = sei.Direct,
+                    Artifact = sei.Artifact,
+                    PackageDeprecated = sei.PackageDeprecated,
+                })
+                .ToList();
+            if (owned.Count == 0)
+            {
+                return;
+            }
 
-                CrossSourceCheck.Verify(_real, owned, "checksum", (source, name) =>
-                {
-                    var index = _real.IndexOf(source);
-                    if (index >= 0 && index != _owner.GetValueOrDefault(name, -1))
-                    {
-                        Read(index, name);
-                    }
-                });
-            }
-            catch (SeikoException ex) when (ex.Code != "checksum")
+            CrossSourceCheck.Verify(_real, owned, "checksum", (source, name) =>
             {
-                // A source's own failure is the resolver's to report; the
-                // gaps already collected still stand. A mismatch goes on: it
-                // fails this graph here, exactly as it fails the real run.
-            }
+                var index = _real.IndexOf(source);
+                if (index >= 0 && index != _owner.GetValueOrDefault(name, -1))
+                {
+                    Read(index, name);
+                }
+            });
         }
 
         private SeiIndex? Read(int index, string name)

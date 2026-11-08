@@ -345,10 +345,13 @@ public sealed class Resolver
         Dictionary<string, List<VersionRange>> target,
         Dictionary<string, List<VersionRange>> source)
     {
+        // The lists are copied, not shared: a later Add on the working state
+        // would otherwise write through into the snapshot and survive the
+        // next restore.
         target.Clear();
         foreach (var (name, ranges) in source)
         {
-            target[name] = ranges;
+            target[name] = new List<VersionRange>(ranges);
         }
     }
 
