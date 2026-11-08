@@ -143,11 +143,14 @@ internal static class OfflineMetadata
         if (lockedGraph is null)
         {
             var rangesOf = RangesOf(config);
-            var expanded = new SortedSet<string>(StringComparer.Ordinal);
+            var handled = new HashSet<string>(seen, StringComparer.Ordinal);
             while (true)
             {
+                // Rescanned every round: a name a later iteration discovers may
+                // make an earlier origin's selector apply, so expansion cannot
+                // be a one-shot set (ADR-0027: order must not matter).
                 var before = seen.Count;
-                foreach (var name in pendingOrigin.Where(expanded.Add))
+                foreach (var name in pendingOrigin)
                 {
                     if (!originIndexes.TryGetValue(name, out var originSpec))
                     {
@@ -174,11 +177,14 @@ internal static class OfflineMetadata
                 }
 
                 // Dependencies found here may be source names that reveal more
-                // names, so drain the queue through the same walk.
+                // names, so drain the queue through the same walk. `handled`
+                // is what bounds it: a cycle re-queues the same names forever,
+                // and `seen` cannot do the job because origin-pulled deps are
+                // already in it before they are walked.
                 while (pending.Count > 0)
                 {
                     var next = pending.Dequeue();
-                    if (!SeiName.IsValid(next))
+                    if (!SeiName.IsValid(next) || !seen.Add(next) || !handled.Add(next))
                     {
                         continue;
                     }
@@ -408,13 +414,16 @@ internal static class OfflineMetadata
 
     // A stored snapshot beats nothing: the file name carries the digest, so a
     // rebuilt original cannot shadow it. The newest one is the best guess for
-    // listing dependencies; the resolver still checks the real digest later.
     // The declared range of a directly declared name, if it has one.
     private static Func<string, string?> RangesOf(SeikoConfig config)
         => name => config.Sei
             .FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))?
             .Version;
 
+    // A stored snapshot beats nothing. The name is matched exactly, never by
+    // glob: `hello-*.sei` would also catch `hello-tools-<sha>.sei`. Newest
+    // wins because this only lists dependencies; the resolver checks the real
+    // digest later.
     private static string? OriginSnapshotPath(string storeRoot, string name)
     {
         var folder = OriginSnapshot.Folder(storeRoot);
@@ -423,7 +432,8 @@ internal static class OfflineMetadata
             return null;
         }
 
-        return Directory.EnumerateFiles(folder, name + "-*.sei")
+        return Directory.EnumerateFiles(folder, "*.sei")
+            .Where(file => string.Equals(OriginSnapshot.NameOf(file), name, StringComparison.Ordinal))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }
