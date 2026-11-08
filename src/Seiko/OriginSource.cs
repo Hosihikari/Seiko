@@ -43,12 +43,21 @@ internal sealed class OriginSource : ISeiSource
     // Used by `add` before the declaration exists; reads the name only. The
     // path may name a snapshot when the original is gone.
     public static string ReadName(
-        string path,
+        string storedPath,
+        string root,
         string? storePath = null,
         string? declaredName = null,
         string? lockedDigest = null)
     {
-        string? name = declaredName;
+        var path = OriginPaths.Resolve(storedPath, root);
+        // A declaration is the identity; a file name can fit more than one sei
+        // (`hello-tools-win.sei` fits `hello`), so it is never re-derived.
+        if (declaredName is not null)
+        {
+            return declaredName;
+        }
+
+        string? name = null;
         if (!File.Exists(path) && storePath is not null)
         {
             // A declaration or lock already names the sei; only an unknown path
@@ -65,6 +74,13 @@ internal sealed class OriginSource : ISeiSource
             if (!File.Exists(path))
             {
                 path = SnapshotByStem(storePath, path, declaredName, out name) ?? path;
+            }
+
+            // A declaration already names the sei, and the name is all this
+            // call returns; without any bytes there is nothing more to read.
+            if (!File.Exists(path) && declaredName is not null)
+            {
+                return declaredName;
             }
         }
 

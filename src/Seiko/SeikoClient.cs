@@ -753,12 +753,26 @@ public sealed class SeikoClient
         var defaultRangeTargets = new List<SeiSpec>();
         var originTargets = new List<OriginSpec>();
 
-        if (additions.Any(addition => addition.Path is not null))
+        // Only bare tokens can be ambiguous, and only against a configured
+        // source: the entry's own origin declaration is not a second meaning.
+        // Identity comes first, so a known package is never re-guessed from
+        // the file name (ADR-0044).
+        var bare = additions.Where(addition => addition.Path is not null
+            && !addition.Raw.Contains('/', StringComparison.Ordinal)
+            && !addition.Raw.Contains('\\', StringComparison.Ordinal)).ToList();
+        if (bare.Count > 0 && config.Sources.Count > 0)
         {
             using var probeSession = new DownloadSession(jobs, cancellationToken);
             using var probe = new SourceScope(
                 LoadSources(config, root, proxy, probeSession, storePath, offline));
-            EnsureUnambiguousPaths(additions, probe.Sources, root, storePath);
+            // The entry's own origin declaration is not a second meaning; only
+            // a configured index source can make the token ambiguous.
+            EnsureUnambiguousPaths(
+                bare,
+                config,
+                probe.Sources.Where(source => source is not OriginSource).ToList(),
+                root,
+                storePath);
         }
 
         // Paths are read before anything is written: the manifest supplies the
@@ -766,16 +780,12 @@ public sealed class SeikoClient
         // giving that name (ADR-0044).
         foreach (var addition in additions.Where(addition => addition.Path is not null))
         {
-            var declaredOrigin = config.Origin.FirstOrDefault(origin =>
-                origin.Paths.Any(candidate => string.Equals(
-                    OriginPaths.Resolve(candidate, root),
-                    OriginPaths.Resolve(addition.Path!, root),
-                    StringComparison.Ordinal)));
-            var manifest = OriginSource.ReadName(
-                OriginPaths.Resolve(addition.Path!, root),
-                storePath,
-                declaredOrigin?.Name,
-                LockedDigest(root, declaredOrigin?.Name));
+            var full = OriginPaths.Resolve(addition.Path!, root);
+            var declaredName = DeclaredOriginName(config, full);
+            var declaredOrigin = declaredName is null
+                ? null
+                : config.Origin.First(origin => string.Equals(origin.Name, declaredName, StringComparison.Ordinal));
+            var manifest = OriginSource.ReadName(full, root, storePath, declaredName, LockedDigest(root, declaredName));
             var existingOrigin = config.Origin.FirstOrDefault(
                 origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
             var declared = config.Sei.FirstOrDefault(
@@ -1227,19 +1237,18 @@ public sealed class SeikoClient
     // one of them and has to say which (ADR-0044).
     private static void EnsureUnambiguousPaths(
         IReadOnlyList<AddSpecification> additions,
+        SeikoConfig config,
         IReadOnlyList<ISeiSource> sources,
         string root,
         string storePath)
     {
         foreach (var addition in additions)
         {
-            if (addition.Path is null || addition.Raw.Contains('/', StringComparison.Ordinal)
-                || addition.Raw.Contains('\\', StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var name = OriginSource.ReadName(OriginPaths.Resolve(addition.Path, root), storePath);
+            // A bare token was normalized against the working directory, so it
+            // may be the copy in cwd rather than the declared location; the
+            // declaration is matched on the file name instead (ADR-0044).
+            var declared = DeclaredOriginName(config, addition.Raw);
+            var name = OriginSource.ReadName(addition.Path!, root, storePath, declared, LockedDigest(root, declared));
             if (sources.Any(source => source.GetSei(name) is not null))
             {
                 throw new SeikoException(
@@ -1261,6 +1270,15 @@ public sealed class SeikoClient
     // Snapshots are named after the sei, not the file, so identity is the
     // declared name (from an existing declaration or the lock) or, for an
     // unknown path, the name its own manifest declares.
+    // The origin entry that already declares this exact path, if any. Its name
+    // is the identity, so nothing has to be inferred from the file name.
+    private static string? DeclaredOriginName(SeikoConfig config, string token)
+        => config.Origin.FirstOrDefault(origin => origin.Paths.Any(candidate =>
+                string.Equals(
+                    Path.GetFileName(candidate),
+                    Path.GetFileName(token),
+                    StringComparison.Ordinal)))?.Name;
+
     // The digest a lock pinned for this sei, if any: the exact bytes to prefer.
     private static string? LockedDigest(string root, string? name)
     {

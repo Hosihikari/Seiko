@@ -1,3 +1,4 @@
+using Seiko;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -928,6 +929,40 @@ public sealed class OriginTests
 
         Assert.Equal("usage", error.Code);
         Assert.Contains("several origin names", error.Message);
+    }
+
+    [Fact]
+    public void Add_UsesTheDeclarationForABareNameWhenTheStemFitsAnother()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        // The declaration files `dist/hello-tools-win.sei` under `hello`; the
+        // copy in the working directory, however, is hello-tools' own artifact
+        // under the same name. A name taken from the bytes would say
+        // hello-tools; only the declaration says hello.
+        fixture.AddSei("hello", new VersionFixture { Version = "9.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("hello-tools", new VersionFixture { Version = "9.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+        var shared = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base", fileName: "hello-tools-win.sei");
+        var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools");
+        client.Add(fixture.Root, Rel(fixture, shared), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
+
+        var local = Path.Combine(Directory.GetCurrentDirectory(), "hello-tools-win.sei");
+        File.Copy(Path.Combine(fixture.Root, tools), local, overwrite: true);
+        try
+        {
+            // Both names are source packages, so the message must name `hello`
+            // (the declared identity) and not `hello-tools` (the bytes').
+            var error = Assert.Throws<SeikoException>(
+                () => client.Add(fixture.Root, "hello-tools-win.sei", storeRoot: fixture.StoreDirectory));
+            Assert.Contains("'hello' for the source", error.Message);
+        }
+        finally
+        {
+            File.Delete(local);
+        }
     }
 
     [Fact]

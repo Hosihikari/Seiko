@@ -134,7 +134,7 @@ internal static class OfflineMetadata
                 return;
             }
 
-            Enqueue(found, pending);
+            Enqueue(found, pending, rid);
         }
 
         // Origin entries last, repeated until the graph stops growing: only then
@@ -165,7 +165,7 @@ internal static class OfflineMetadata
                         }
 
                         var added = new Queue<string>();
-                        Enqueue(manifest, added);
+                        Enqueue(manifest, added, rid);
                         foreach (var dependency in added)
                         {
                             if (seen.Add(dependency))
@@ -486,30 +486,30 @@ internal static class OfflineMetadata
         }
     }
 
-    private static void Enqueue(SeiIndex index, Queue<string> pending)
+    private static void Enqueue(SeiIndex index, Queue<string> pending, string rid)
     {
         foreach (var entry in index.Versions ?? [])
         {
-            EnqueueEntry(entry, pending);
+            EnqueueEntry(entry, pending, rid);
         }
     }
 
-    // Only dependencies put a package into the graph. Prerequisites do not
-    // (ADR-0027), but they still have to resolve once their owner is selected,
-    // so their metadata is a real cache requirement — as are the artifact-level
-    // versions of both. Optional peers and conflicts are only read when the
-    // target is already there, so they are skipped.
-    private static void EnqueueEntry(SeiVersionEntry entry, Queue<string> pending)
+    // The resolver only ever puts a dependency into the graph; prerequisites,
+    // optional peers and conflicts are merely checked against what is already
+    // assigned, so their indexes are never read (Resolver, ADR-0027). Only
+    // artifacts that fit this platform are considered, matching selection.
+    private static void EnqueueEntry(SeiVersionEntry entry, Queue<string> pending, string rid)
     {
-        foreach (var relation in entry.Dependencies.Concat(entry.Prerequisites))
+        foreach (var relation in entry.Dependencies)
         {
             pending.Enqueue(relation.Name);
         }
 
-        foreach (var artifact in entry.Artifacts ?? [])
+        foreach (var artifact in (entry.Artifacts ?? []).Where(artifact => artifact is not null
+            && (string.IsNullOrWhiteSpace(artifact.Rid)
+                || artifact.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase))))
         {
-            foreach (var relation in (artifact?.Dependencies ?? [])
-                .Concat(artifact!.Prerequisites ?? []))
+            foreach (var relation in artifact!.Dependencies)
             {
                 pending.Enqueue(relation.Name);
             }
