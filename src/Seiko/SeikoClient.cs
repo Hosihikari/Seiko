@@ -187,7 +187,11 @@ public sealed class SeikoClient
                 specs.Select(spec => spec.Name),
                 lockedGraph: mode == SyncMode.Normal ? null : existingLock,
                 allowPrerelease: allowPrerelease,
-                allowCritical: allowCritical);
+                allowCritical: allowCritical,
+                // The probe must resolve what this run will: same lock (for
+                // yanked versions it may keep) and same platform.
+                existing: existingLock,
+                rid: rid);
         }
 
         var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
@@ -811,10 +815,7 @@ public sealed class SeikoClient
             }
 
             originTargets.Add(existingOrigin ?? AddOrigin(config, manifest));
-            if (!originTargets[^1].Paths.Any(existing => string.Equals(
-                    OriginPaths.Resolve(existing, root),
-                    full,
-                    StringComparison.Ordinal)))
+            if (!originTargets[^1].Paths.Any(existing => OriginPaths.SameFile(existing, full, root)))
             {
                 // Re-adding a path refreshes its condition slot but must not
                 // duplicate the declaration.
@@ -1279,11 +1280,8 @@ public sealed class SeikoClient
     // is the identity, so nothing has to be inferred from the file name.
     private static string? DeclaredOriginName(SeikoConfig config, string root, string storedPath)
     {
-        var full = OriginPaths.Resolve(storedPath, root);
-        return config.Origin.FirstOrDefault(origin => origin.Paths.Any(candidate => string.Equals(
-                OriginPaths.Resolve(candidate, root),
-                full,
-                StringComparison.Ordinal)))?.Name;
+        return config.Origin.FirstOrDefault(
+            origin => origin.Paths.Any(candidate => OriginPaths.SameFile(candidate, storedPath, root)))?.Name;
     }
 
     // The digest a lock pinned for this sei, if any: the exact bytes to prefer.

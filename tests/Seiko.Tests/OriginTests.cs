@@ -1107,6 +1107,91 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void OfflinePrecheck_KeepsPerBranchRangesInsteadOfIntersectingThem()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // B 2.0.0 needs X 1.0.0, B 1.0.0 needs X 2.0.0; Y and Z hang off the X
+        // versions. Intersecting both B ranges for X yields no candidate at all.
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("x", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture()],
+            },
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("x", "[2.0.0]")],
+                Artifacts = [new ArtifactFixture()],
+            });
+        fixture.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("b", null)]);
+
+        // Prime everything, then keep only hello's and b's index caches: those
+        // two stay resolvable, so the probe must get past them to notice X.
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        var metadata = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var index = new Uri(server.BaseUrl.TrimEnd('/') + "/index.json");
+        var keepB = MetadataCache.PathFor(fixture.StoreDirectory, new Uri(index, "sei/b.json").AbsoluteUri);
+        var keepIndex = MetadataCache.PathFor(fixture.StoreDirectory, index.AbsoluteUri);
+        var savedB = File.ReadAllBytes(keepB);
+        var savedIndex = File.Exists(keepIndex) ? File.ReadAllBytes(keepIndex) : null;
+        Directory.Delete(metadata, recursive: true);
+        Directory.CreateDirectory(metadata);
+        File.WriteAllBytes(keepB, savedB);
+        if (savedIndex is not null)
+        {
+            File.WriteAllBytes(keepIndex, savedIndex);
+        }
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Rel(fixture, origin),
+            storeRoot: fixture.StoreDirectory,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Equal("source", error.Code);
+        Assert.Contains("sei/x.json", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_AppliesALaterRangeToAnAlreadyWalkedName()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // B 2.0.0 alone needs D. O is an origin that pins B to 1.0.0, and it is
+        // only discovered after the direct declaration B; the range must still
+        // take effect, so D must not be required.
+        fixture.AddSei(
+            "b",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("d", null)],
+                Artifacts = [new ArtifactFixture()],
+            });
+        fixture.AddSei("d", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("b"));
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("b", "[1.0.0]")]);
+
+        // Prime b 1.0.0 and hello, but not d.
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true);
+
+        Assert.Equal("1.0.0", Assert.Single(
+            new SeikoClient().ReadLock(fixture.Root)!.Sei,
+            item => item.Name == "b").Version);
+    }
+
+    [Fact]
     public void Add_RejectsAFileUrlInput()
     {
         using var fixture = new Fixture();

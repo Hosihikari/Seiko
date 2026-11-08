@@ -7,6 +7,10 @@ namespace Seiko;
 // first failure, and nothing is downloaded implicitly.
 internal static class OfflineMetadata
 {
+    // How many names one run may stub before giving up. Each round stubs at
+    // least one new name, so this bounds the loop by the graph size.
+    private const int MaxProbeRounds = 512;
+
     public static void Verify(
         SeikoConfig config,
         string storePath,
@@ -14,253 +18,277 @@ internal static class OfflineMetadata
         IEnumerable<string> initial,
         SeikoLock? lockedGraph = null,
         bool allowPrerelease = false,
-        bool allowCritical = false)
+        bool allowCritical = false,
+        SeikoLock? existing = null,
+        string rid = "")
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
         var httpSources = config.Sources
             .Where(IsHttp)
             .Select(source => (Source: source, IndexUri: new Uri(source.Index)))
             .ToList();
-        var pending = new Queue<string>(initial);
-        // Every range any enqueued edge imposes on a name, mirroring what the
-        // resolver's pending list would hold. It grows as edges are added, so
-        // a transitive range prunes as reliably as a declared one.
-        var ranges = new Dictionary<string, List<NuGet.Versioning.VersionRange>>(StringComparer.Ordinal);
-        void Impose(string name, string? text)
-        {
-            if (string.IsNullOrWhiteSpace(text)
-                || text.Trim() == "*"
-                || !NuGet.Versioning.VersionRange.TryParse(text, out var parsed))
-            {
-                return;
-            }
 
-            if (!ranges.TryGetValue(name, out var list))
-            {
-                ranges[name] = list = [];
-            }
-
-            list.Add(parsed);
-        }
-
+        // A replay is fully described by the lock: check each locked name and
+        // stop. Its relations are not re-walked, so no resolver run is needed.
         if (lockedGraph is not null)
         {
-            // A replay is fully described by the lock: every name it needs is
-            // a locked entry. Relations of unselected versions, unselected
-            // artifacts and non-retaining kinds would only be extra cache
-            // requirements, so the walk does not follow them here, and origin
-            // files are not expanded for the same reason.
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var locked in lockedGraph.Sei)
             {
-                pending.Enqueue(locked.Name);
+                if (seen.Add(locked.Name)
+                    && !string.Equals(locked.Source, OriginPaths.SourceId, StringComparison.Ordinal))
+                {
+                    if (!HasIndex(config, storePath, locked.Source, locked.Name))
+                    {
+                        missing.Add($"sei/{locked.Name}.json from source '{locked.Source}'");
+                    }
+                }
             }
-        }
 
-        // A name served by an origin never consults a source, so a source
-        // index is only required when some reached name has to come from one.
-        var rid = string.IsNullOrWhiteSpace(config.Rid) ? SeikoClient.DefaultRid() : config.Rid;
-        var originIndexes = config.Origin.ToDictionary(origin => origin.Name, StringComparer.Ordinal);
-        var originNames = originIndexes.Keys.ToHashSet(StringComparer.Ordinal);
-        var needsIndex = pending.Any(name => !originNames.Contains(name));
-
-        if (needsIndex)
-        {
+            // The root index is only needed to list names, but a replay that
+            // cannot even see the sources cannot be judged either.
             foreach (var (source, indexUri) in httpSources)
             {
-                var path = MetadataCache.PathFor(storePath, indexUri.AbsoluteUri);
-                if (!File.Exists(path))
+                if (!File.Exists(MetadataCache.PathFor(storePath, indexUri.AbsoluteUri)))
                 {
                     missing.Add($"index metadata of source '{source.Id}'");
                 }
             }
+
+            if (missing.Count > 0)
+            {
+                throw Missing(missing);
+            }
+
+            return;
         }
 
+        // The probe runs the real resolver, so candidate admission, ranges,
+        // pre-release hints, yank and critical all come from one place. A name
+        // whose metadata is absent is reported and stubbed for the next round
+        // instead of aborting the walk.
+        var specs = initial.Select(name => new SeiSpec { Name = name }).ToList();
         foreach (var spec in config.Sei)
         {
-            Impose(spec.Name, spec.Version);
-        }
-        // A yanked version stays a candidate when the lock already holds it.
-        var lockedVersions = (lockedGraph?.Sei ?? [])
-            .Where(sei => NuGet.Versioning.NuGetVersion.TryParse(sei.Version, out _))
-            .ToDictionary(
-                sei => sei.Name,
-                sei => NuGet.Versioning.NuGetVersion.Parse(sei.Version),
-                StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var pendingOrigin = new SortedSet<string>(StringComparer.Ordinal);
-        while (pending.Count > 0)
-        {
-            var name = pending.Dequeue();
-            if (!SeiName.IsValid(name) || !seen.Add(name))
+            var target = specs.FirstOrDefault(
+                item => string.Equals(item.Name, spec.Name, StringComparison.Ordinal));
+            if (target is not null && target.Version is null)
             {
-                continue;
+                target.Version = spec.Version;
             }
-
-            // The origin answers this name from disk, so no source is consulted
-            // — but its dependencies still are, so they are enqueued here
-            // instead of being read from an index. A replay only follows the
-            // locked graph, which already names every target.
-            if (originNames.Contains(name))
-            {
-                // Expanded after the walk instead: a selector may need a name a
-                // later source only reveals, so one pass here would depend on
-                // declaration order.
-                pendingOrigin.Add(name);
-                continue;
-            }
-
-            CollectName(name);
         }
 
-        // Looks one name up in the configured sources and queues what it
-        // depends on. Shared by the first pass and the origin fixpoint below.
-        void CollectName(string lookup)
+        var stubbed = new HashSet<string>(StringComparer.Ordinal);
+        for (var round = 0; ; round++)
         {
-            SeiIndex? found = null;
-            foreach (var source in config.Sources)
+            if (round > MaxProbeRounds)
             {
-                if (IsHttp(source))
+                break;
+            }
+
+            foreach (var (source, indexUri) in httpSources)
+            {
+                if (!File.Exists(MetadataCache.PathFor(storePath, indexUri.AbsoluteUri)))
                 {
-                    var uri = new Uri(new Uri(source.Index), $"sei/{lookup}.json");
-                    var path = MetadataCache.PathFor(storePath, uri.AbsoluteUri);
-                    // A recorded 404 is an answer, not a missing entry.
-                    if (MetadataCache.IsMissing(path))
-                    {
-                        continue;
-                    }
-
-                    if (!File.Exists(path))
-                    {
-                        missing.Add($"sei/{lookup}.json from source '{source.Id}'");
-                        continue;
-                    }
-
-                    found = MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex);
-                    if (found is null)
-                    {
-                        missing.Add($"sei/{lookup}.json from source '{source.Id}' (unreadable)");
-                    }
-
-                    break;
+                    missing.Add($"index metadata of source '{source.Id}'");
                 }
-
-                // A local miss must keep looking: the resolver and the search
-                // walk fall through to later sources too.
-                found = LocalIndex(source, lookup, root);
-                if (found is not null)
-                {
-                    break;
-                }
-
-                continue;
             }
 
-            if (found is null)
-            {
-                return;
-            }
-
-            // A replay only needs the index of each locked name, not the
-            // relations of its selected version: the lock already names every
-            // target that will be installed.
-            if (lockedGraph is not null)
-            {
-                return;
-            }
-
-            Enqueue(
-                found,
-                pending,
-                rid,
-                ranges.TryGetValue(lookup, out var imposed) ? imposed : [],
+            // A missing root index is reported but does not stop the round: the
+            // per-name reads below tell us which names are missing, which is the
+            // more useful answer.
+            var sources = ProbeSources(config, root, storePath, stubbed, specs);
+            var resolver = new Resolver(
+                sources,
+                // The real run's lock, so a yanked version it already holds
+                // stays a candidate here too (never the replay branch above).
+                existing,
+                string.IsNullOrWhiteSpace(rid) ? SeikoClient.DefaultRid() : rid,
                 allowPrerelease,
-                allowCritical,
-                lockedVersions.TryGetValue(lookup, out var locked) ? locked : null,
-                lookup,
-                Impose);
-        }
-
-        // Origin entries last, repeated until the graph stops growing: only then
-        // is every selector judged against the full set of names, so swapping
-        // two declarations cannot change the answer (ADR-0027).
-        if (lockedGraph is null)
-        {
-            var rangesOf = RangesOf(config);
-            var handled = new HashSet<string>(seen, StringComparer.Ordinal);
-            while (true)
+                updateNames: null,
+                latestInstallable: false,
+                allowCritical);
+            try
             {
-                // Rescanned every round: a name a later iteration discovers may
-                // make an earlier origin's selector apply, so expansion cannot
-                // be a one-shot set (ADR-0027: order must not matter).
-                var before = seen.Count;
-                foreach (var name in pendingOrigin)
+                resolver.Resolve(specs);
+                break;
+            }
+            catch (SeikoException ex) when (ex.Code is "source" or "resolve")
+            {
+                // The resolver names the sei it could not find; a failure for
+                // any other reason means the cache is whole and the real run
+                // will report the same thing.
+                var next = NamedIn(ex.Message) ?? FirstUnanswered(specs, sources);
+                // Already stubbed means this round added nothing: the failure
+                // is not about missing metadata.
+                if (next is null || stubbed.Contains(next))
                 {
-                    if (!originIndexes.TryGetValue(name, out var originSpec))
-                    {
-                        continue;
-                    }
-
-                    foreach (var full in OriginFiles(originSpec, root, rid, storePath, seen, rangesOf))
-                    {
-                        if (OriginManifest.Dependencies(full) is not { } manifest)
-                        {
-                            continue;
-                        }
-
-                        var added = new Queue<string>();
-                        Enqueue(manifest, added, rid, [], allowPrerelease, allowCritical, null, name, Impose);
-                        foreach (var dependency in added)
-                        {
-                            if (seen.Add(dependency))
-                            {
-                                pending.Enqueue(dependency);
-                            }
-                        }
-                    }
+                    throw;
                 }
 
-                // Dependencies found here may be source names that reveal more
-                // names, so drain the queue through the same walk. `handled`
-                // is what bounds it: a cycle re-queues the same names forever,
-                // and `seen` cannot do the job because origin-pulled deps are
-                // already in it before they are walked.
-                while (pending.Count > 0)
-                {
-                    var next = pending.Dequeue();
-                    // Only `handled` decides: a name pulled from an origin is
-                    // already in `seen` (that is how it was deduplicated on
-                    // the way in), so requiring `seen.Add` here would silently
-                    // drop every one of them.
-                    if (!SeiName.IsValid(next) || !handled.Add(next))
-                    {
-                        continue;
-                    }
-
-                    seen.Add(next);
-
-                    if (originNames.Contains(next))
-                    {
-                        pendingOrigin.Add(next);
-                        continue;
-                    }
-
-                    CollectName(next);
-                }
-
-                if (seen.Count == before)
-                {
-                    break;
-                }
+                missing.Add($"sei/{next}.json from source '{SourceOf(config, sources, next)}'");
+                stubbed.Add(next);
             }
         }
 
         if (missing.Count > 0)
         {
-            throw new SeikoException(
-                $"offline: missing cached metadata: {string.Join("; ", missing)}. "
-                + "Run the command once online, then retry offline",
-                "source");
+            throw Missing(missing);
         }
+    }
+
+    private static SeikoException Missing(IEnumerable<string> missing)
+        => new(
+            $"offline: missing cached metadata: {string.Join("; ", missing)}. "
+            + "Run the command once online, then retry offline",
+            "source");
+
+    // The sources the probe resolves against: a stub answering every reported
+    // name with nothing, then the real ones in declaration order.
+    private static List<ISeiSource> ProbeSources(
+        SeikoConfig config,
+        string root,
+        string storePath,
+        IReadOnlySet<string> stubbed,
+        IReadOnlyList<SeiSpec> specs)
+    {
+        var sources = new List<ISeiSource>();
+        if (config.Origin.Count > 0)
+        {
+            sources.Add(new OriginSource(
+                config.Origin,
+                root,
+                SeikoClient.DefaultRid(),
+                storePath));
+        }
+
+        foreach (var source in config.Sources)
+        {
+            sources.Add(IsHttp(source)
+                ? new HttpSource(source, storePath)
+                : new LocalSource(source, root));
+        }
+
+        // Last: the real sources decide first, the stub only answers the names
+        // already reported, so the search can move on.
+        if (stubbed.Count > 0)
+        {
+            sources.Add(new StubSource(stubbed, specs));
+        }
+
+        return sources;
+    }
+
+    // `sei 'name' not found in any source` — the only resolve failure that is
+    // about missing metadata.
+    private static string? NamedIn(string message)
+    {
+        const string Prefix = "sei '";
+        var start = message.IndexOf(Prefix, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        start += Prefix.Length;
+        var end = message.IndexOf('\'', start);
+        return end > start ? message[start..end] : null;
+    }
+
+    // Which source the resolver would have asked: the first one that declares
+    // the name in its index, else the first configured one.
+    private static string SourceOf(SeikoConfig config, IReadOnlyList<ISeiSource> sources, string name)
+        => config.Sources.FirstOrDefault(source =>
+                sources.FirstOrDefault(candidate => string.Equals(candidate.Id, source.Id, StringComparison.Ordinal))
+                    is { } built && built.Index.Sei?.Contains(name, StringComparer.Ordinal) == true)?.Id
+            ?? config.Sources.FirstOrDefault()?.Id
+            ?? "unknown";
+
+    private static string? FirstUnanswered(IReadOnlyList<SeiSpec> specs, IReadOnlyList<ISeiSource> sources)
+        => specs
+            .Select(spec => spec.Name)
+            .FirstOrDefault(name => !sources.Any(source => source.GetSei(name) is not null));
+
+    private static bool HasIndex(SeikoConfig config, string storePath, string sourceId, string name)
+    {
+        var source = config.Sources.FirstOrDefault(
+            item => string.Equals(item.Id, sourceId, StringComparison.Ordinal));
+        if (source is null)
+        {
+            return false;
+        }
+
+        if (IsHttp(source))
+        {
+            var uri = new Uri(new Uri(source.Index), $"sei/{name}.json");
+            return File.Exists(MetadataCache.PathFor(storePath, uri.AbsoluteUri));
+        }
+
+        var index = LocalSource.ResolvePath(source.Index, storePath);
+        return File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? storePath, "sei", name + ".json"));
+    }
+
+    // Answers only the names an earlier round reported, with an empty index, so
+    // the search walks past them instead of failing on the same name again.
+    private sealed class StubSource : ISeiSource
+    {
+        private readonly IReadOnlySet<string> _names;
+
+        private readonly IReadOnlyList<SeiSpec> _specs;
+
+        public StubSource(IReadOnlySet<string> names, IReadOnlyList<SeiSpec> specs)
+        {
+            _names = names;
+            _specs = specs;
+        }
+
+        public string Id => "offline-stub";
+
+        public IndexRoot Index => new();
+
+        public SeiCatalog? Catalog => null;
+
+        // One synthesized version so the search can move past the name; it is
+        // only there to satisfy candidate admission, never to be installed.
+        public SeiIndex? GetSei(string name)
+            => _names.Contains(name)
+                ? new SeiIndex
+                {
+                    Name = name,
+                    Versions =
+                    [
+                        new SeiVersionEntry
+                        {
+                            Version = VersionFor(name),
+                            Artifacts = [new ArtifactEntry
+                            {
+                                Source = new ArtifactLocation { Url = "", Sha256 = new string('0', 64), Size = 1 },
+                            }],
+                        },
+                    ],
+                }
+                : null;
+
+        // A version inside the declared range when there is one, so the stub
+        // passes the same admission the real entry would; the value is never
+        // installed.
+        private string VersionFor(string name)
+            => _specs.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))
+                ?.Version is { } text
+                && NuGet.Versioning.VersionRange.TryParse(text, out var range)
+                && range.MinVersion is { } min
+                    ? min.ToNormalizedString()
+                    : "1.0.0";
+
+        public string ResolveArtifact(ArtifactLocation source) => source.Url;
+
+        public Task DownloadAsync(
+            string name,
+            ArtifactLocation source,
+            string directory,
+            DownloadSession session,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     // Search walks each source's own root list, so offline readiness must keep
@@ -379,141 +407,6 @@ internal static class OfflineMetadata
         }
     }
 
-    // Every declared file whose condition fits this platform, whether the
-    // original or a stored snapshot answers it. Making the requirement on an
-    // origin name at least as broad as the resolver's is the point; a missing
-    // file is still reported by the source itself later.
-    private static IEnumerable<string> OriginFiles(
-        OriginSpec spec,
-        string root,
-        string rid,
-        string? storeRoot,
-        ISet<string> known,
-        Func<string, string?> rangesOf)
-    {
-        for (var i = 0; i < spec.Paths.Count; i++)
-        {
-            var selector = i < spec.Selectors.Count ? spec.Selectors[i] : null;
-            if (selector is not null
-                && !string.IsNullOrWhiteSpace(selector.Rid)
-                && !string.Equals(selector.Rid, "*", StringComparison.Ordinal)
-                && !string.Equals(selector.Rid, rid, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            // A condition on a package that is not in the graph and could not
-            // be supplied by a dependency of the candidate file itself cannot
-            // hold; a false here must not skip a file that would pull its own
-            // prerequisite in, so `Holds` is asked with the file's own names.
-            var full = LocalSource.ResolvePath(spec.Paths[i], root);
-            var candidate = File.Exists(full)
-                ? full
-                : storeRoot is null ? full : OriginSnapshotPath(storeRoot, spec.Name) ?? full;
-            if (selector is not null && !Holds(selector, known, rangesOf, spec.Paths[i], root, candidate))
-            {
-                continue;
-            }
-
-            // The original is preferred; a deleted one is answered by a
-            // snapshot, if one is still there.
-            if (candidate == full)
-            {
-                yield return full;
-                continue;
-            }
-
-            if (storeRoot is not null && OriginSnapshotPath(storeRoot, spec.Name) is { } snapshot)
-            {
-                yield return snapshot;
-            }
-        }
-    }
-
-    // A selector can only apply if every package it names is in the graph and
-    // the ranges intersect. Both sides are ranges, so the selector range is
-    // parsed as one rather than as a concrete version; an empty intersection
-    // means the resolver could never pick that file.
-    private static bool Holds(
-        OriginSelector selector,
-        ISet<string> graph,
-        Func<string, string?> rangeOf,
-        string stored,
-        string root,
-        string candidate)
-    {
-        // Names the candidate itself declares still count as reachable, even
-        // though they are not in the queue yet — at the package and at the
-        // artifact level, since both feed the graph (ADR-0027, ADR-0044).
-        var own = OriginManifest.Dependencies(candidate)
-            ?.Versions.SelectMany(version => version.Dependencies
-                .Concat(version.Artifacts.SelectMany(artifact => artifact?.Dependencies ?? []))
-                .Select(relation => relation.Name))
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var item in selector.Prerequisites)
-        {
-            if (!graph.Contains(item.Name) && own?.Contains(item.Name) != true)
-            {
-                return false;
-            }
-
-            if (item.Version is not { } selectorRange
-                || rangeOf(item.Name) is not { } declaredRange
-                || !NuGet.Versioning.VersionRange.TryParse(selectorRange, out var wanted)
-                || !NuGet.Versioning.VersionRange.TryParse(declaredRange, out var declared))
-            {
-                continue;
-            }
-
-            // An empty intersection is the only way the pair cannot hold; the
-            // resolver still does the real search later.
-            if (NuGet.Versioning.VersionRange.CommonSubSet([declared, wanted]) is null)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    // A stored snapshot beats nothing: the file name carries the digest, so a
-    // rebuilt original cannot shadow it. The newest one is the best guess for
-    // The declared range of a directly declared name, if it has one.
-    private static Func<string, string?> RangesOf(SeikoConfig config)
-        => name => config.Sei
-            .FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))?
-            .Version;
-
-    // A stored snapshot beats nothing. The name is matched exactly, never by
-    // glob: `hello-*.sei` would also catch `hello-tools-<sha>.sei`. Newest
-    // wins because this only lists dependencies; the resolver checks the real
-    // digest later.
-    private static string? OriginSnapshotPath(string storeRoot, string name)
-    {
-        var folder = OriginSnapshot.Folder(storeRoot);
-        if (!Directory.Exists(folder))
-        {
-            return null;
-        }
-
-        return Directory.EnumerateFiles(folder, "*.sei")
-            .Where(file => string.Equals(OriginSnapshot.NameOf(file), name, StringComparison.Ordinal))
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
-    }
-
-    private static SeiIndex? LocalIndex(SourceConfig source, string name, string root)
-    {
-        // Same path rule as LocalSource; relative indexes belong to the
-        // install root, not the process working directory.
-        var indexPath = LocalSource.ResolvePath(source.Index, root);
-        var baseDirectory = Path.GetDirectoryName(indexPath) ?? root;
-        var path = Path.Combine(baseDirectory, "sei", name + ".json");
-        return File.Exists(path)
-            ? MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex)
-            : null;
-    }
     public static void EnsureArtifacts(Store store, IReadOnlyList<ResolvedSei> resolved)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
@@ -632,68 +525,4 @@ internal static class OfflineMetadata
             || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsHttpUri(ISeiSource source) => source is HttpSource;
-}
-
-// Reads only the relations of an origin artifact, so an offline run can list
-// what the local dependency graph needs before it starts (ADR-0044). A file
-// that cannot be read is left to the source, which reports the real problem.
-internal static class OriginManifest
-{
-    // Relations of the package and of the artifact both count; the artifact
-    // set is what a selector adds on top of the declaration.
-    public static SeiIndex? Dependencies(string path)
-    {
-        try
-        {
-            using var archive = System.IO.Compression.ZipFile.OpenRead(path);
-            var entry = archive.Entries.FirstOrDefault(
-                item => ArchiveLimits.NormalizeName(item.FullName) == "sei.json");
-            if (entry is null)
-            {
-                return null;
-            }
-
-            using var stream = entry.Open();
-            var manifest = System.Text.Json.JsonSerializer.Deserialize(
-                stream,
-                SeikoJsonContext.Default.SeiManifest);
-            if (manifest is null)
-            {
-                return null;
-            }
-
-            // Artifact relations live on the artifact, so they are carried as
-            // the only artifact rather than flattened into the version.
-            return new SeiIndex
-            {
-                Name = manifest.Name,
-                Versions =
-                [
-                    new SeiVersionEntry
-                    {
-                        Version = manifest.Version,
-                        Dependencies = manifest.Dependencies,
-                        Prerequisites = manifest.Prerequisites,
-                        OptionalPeers = manifest.OptionalPeers,
-                        Conflicts = manifest.Conflicts,
-                        Artifacts =
-                        [
-                            new ArtifactEntry
-                            {
-                                Rid = manifest.Artifact?.Rid,
-                                Dependencies = manifest.Artifact?.Dependencies ?? [],
-                                Prerequisites = manifest.Artifact?.Prerequisites ?? [],
-                                OptionalPeers = manifest.Artifact?.OptionalPeers ?? [],
-                                Conflicts = manifest.Artifact?.Conflicts ?? [],
-                            },
-                        ],
-                    },
-                ],
-            };
-        }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException)
-        {
-            return null;
-        }
-    }
 }

@@ -85,6 +85,17 @@ internal static class OriginPaths
         => !Path.IsPathRooted(value)
             && !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 
+    // Whether two stored paths name the same file. Both are compared after
+    // resolution, and case is folded because the platform may not distinguish
+    // it (ADR-0044).
+    public static bool SameFile(string left, string right, string root)
+        => string.Equals(
+            Path.GetFullPath(Resolve(left, root)),
+            Path.GetFullPath(Resolve(right, root)),
+            OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
+
     // The form a declaration and a lock must hold.
     public static void EnsureStored(string path, string what)
     {

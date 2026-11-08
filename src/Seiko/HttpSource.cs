@@ -20,6 +20,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private readonly Dictionary<string, SeiIndex?> _cache = new(StringComparer.Ordinal);
     private readonly string? _metadataRoot;
     private readonly bool _offline;
+
+    // In an offline probe a missing name is an answer rather than a failure:
+    // the caller collects it and decides. See OfflineMetadata.Verify.
+    internal bool OfflineProbe { get; private set; }
     private SeiCatalog? _catalog;
 
     public string Id { get; }
@@ -35,6 +39,14 @@ public sealed class HttpSource : ISeiSource, IDisposable
         bool offline = false)
         : this(config, proxy, session, metadataRoot, offline, handler: null)
     {
+    }
+
+    // A probe source: offline, and a missing name is an answer instead of a
+    // failure. The root index is not required, since only names are read.
+    internal HttpSource(SourceConfig config, string? metadataRoot)
+        : this(config, null, new DownloadSession(1, CancellationToken.None), metadataRoot, offline: true, handler: null)
+    {
+        OfflineProbe = true;
     }
 
     // The handler seam lets tests observe which requests carry credentials
@@ -116,6 +128,12 @@ public sealed class HttpSource : ISeiSource, IDisposable
                 : MetadataCache.TryRead(cachePath, SeikoJsonContext.Default.SeiIndex);
             if (stored is null)
             {
+                if (OfflineProbe)
+                {
+                    _cache[name] = null;
+                    return null;
+                }
+
                 throw new SeikoException(
                     $"offline: metadata for {name} is not cached (source '{Id}')",
                     "source");
