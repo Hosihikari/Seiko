@@ -60,11 +60,19 @@ internal static class OfflineMetadata
             using var replay = new ProbeSource(config, root, storePath, target);
             try
             {
+                // The replay binds locked origins before it resolves; the
+                // probe has to do the same or it would re-choose from the
+                // current declaration.
+                LockReplay.Bind(replay.Real, frozenGraph);
                 LockReplay.Resolve(replay.Real, frozenGraph, specs);
             }
-            catch (SeikoException ex) when (ex.Code is "source" or "lock")
+            catch (SeikoException ex) when (ex.Code is "source" or "lock" or "checksum")
             {
-                return new VerifyResult(replay.Gaps(), ex, false);
+                // A source that failed to open reports the same thing the run
+                // would, and it outranks the replay's "not in source" wording
+                // that only exists because the source is missing.
+                var fatal = replay.SourceFailures.FirstOrDefault() ?? ex;
+                return new VerifyResult(replay.Gaps(), fatal, false);
             }
 
             return new VerifyResult(replay.Gaps(), null, false);
@@ -109,6 +117,9 @@ internal static class OfflineMetadata
 
 
 
+        // A broken source outranks a resolve verdict: the run never gets
+        // that far. Gaps still ride along, as everywhere else.
+        failure ??= probe.SourceFailures.FirstOrDefault();
         return new VerifyResult(missing, failure, resolver.Incomplete);
     }
 
@@ -161,17 +172,25 @@ internal static class OfflineMetadata
 
                 foreach (var source in config.Sources)
                 {
-                    if (IsHttp(source))
+                    try
                     {
-                        var probe = new HttpSource(source, storePath);
-                        _probes.Add(probe);
-                        _real.Add(probe);
+                        if (IsHttp(source))
+                        {
+                            var probe = new HttpSource(source, storePath);
+                            _probes.Add(probe);
+                            _real.Add(probe);
+                        }
+                        else
+                        {
+                            _real.Add(new LocalSource(source, root));
+                        }
                     }
-                    else
+                    catch (SeikoException ex)
                     {
-                        // A configured local index that is gone fails here; the
-                        // probes built so far still have a session each.
-                        _real.Add(new LocalSource(source, root));
+                        // A source that will not open fails the real run, but
+                        // the rest of the graph can still be walked; the
+                        // failure is kept and reported with the gaps.
+                        SourceFailures.Add(ex);
                     }
                 }
             }
@@ -183,6 +202,9 @@ internal static class OfflineMetadata
         }
 
         public SortedSet<(string Source, string Name)> Missing { get; } = [];
+
+        // Sources the run would fail to construct.
+        public List<SeikoException> SourceFailures { get; } = [];
 
         public string Id => "offline-probe";
 
@@ -241,7 +263,7 @@ internal static class OfflineMetadata
         private List<ISeiSource>? _forward;
 
         // One source, routed through the probe so its reads are recorded.
-        private sealed class Forwarder : ISeiSource
+        private sealed class Forwarder : ISeiSource, ISourceWrapper
         {
             private readonly ProbeSource _owner;
             private readonly ISeiSource _source;
@@ -255,6 +277,8 @@ internal static class OfflineMetadata
             }
 
             public string Id => _source.Id;
+
+            public ISeiSource InnerSource => _source;
 
             public IndexRoot Index => _source.Index;
 
@@ -386,109 +410,6 @@ internal static class OfflineMetadata
                     },
                 ],
             };
-    }
-
-    // One read the replay will make, with the answer kept in the same shapes
-    // the real source uses: a recorded 404 is "known absent" and a missing or
-    // unreadable cache file is "unknown". Only a read the run actually makes
-    // counts as a gap. A local source reads its directory, so a missing file
-    // there is simply "this source does not have the name" — not a gap.
-    private static void CheckLockedRead(
-        SeikoConfig config,
-        string root,
-        string storePath,
-        string sourceId,
-        string name,
-        SortedSet<string> missing,
-        SortedSet<string> absent,
-        SortedSet<string> dead,
-        bool crossCheck)
-    {
-        var source = config.Sources.FirstOrDefault(
-            item => string.Equals(item.Id, sourceId, StringComparison.Ordinal));
-        if (source is null)
-        {
-            absent.Add($"source '{sourceId}' for {name} is not configured");
-            return;
-        }
-
-        // The source has to open the way the real constructor would before
-        // its answer about the name means anything.
-        if (OpenProblem(source, root, storePath) is { } problem)
-        {
-            dead.Add(problem);
-            return;
-        }
-
-        if (!IsHttp(source))
-        {
-            var index = LocalSource.ResolvePath(source.Index, root);
-            if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"))
-                && !crossCheck)
-            {
-                // An open local source answers from its directory: a missing
-                // file is "this source does not have the name".
-                absent.Add($"sei/{name}.json from source '{sourceId}'");
-            }
-
-            return;
-        }
-
-        var path = MetadataCache.PathFor(
-            storePath,
-            new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
-        if (MetadataCache.IsMissing(path))
-        {
-            // Known absent upstream: the cross-source pass just skips it, but
-            // a locked source that answered 404 makes the replay fail.
-            if (!crossCheck)
-            {
-                absent.Add($"sei/{name}.json from source '{sourceId}' (recorded as absent)");
-            }
-
-            return;
-        }
-
-        if (!File.Exists(path))
-        {
-            missing.Add($"sei/{name}.json from source '{sourceId}'");
-            return;
-        }
-
-        if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
-        {
-            missing.Add($"sei/{name}.json from source '{sourceId}' (unreadable)");
-        }
-    }
-
-    // Why the real constructor of this source would fail, if it would. A
-    // local index has to exist and parse with the current schema; a cached
-    // root has to parse if it is there at all. Null means the source opens.
-    private static string? OpenProblem(SourceConfig source, string root, string storePath)
-    {
-        if (IsHttp(source))
-        {
-            var indexPath = MetadataCache.PathFor(
-                storePath,
-                new Uri(new Uri(source.Index), "index.json").AbsoluteUri);
-            return File.Exists(indexPath)
-                && MetadataCache.TryRead(indexPath, SeikoJsonContext.Default.IndexRoot) is null
-                    ? $"source '{source.Id}': invalid index"
-                    : null;
-        }
-
-        var path = LocalSource.ResolvePath(source.Index, root);
-        if (!File.Exists(path))
-        {
-            return $"source '{source.Id}': index not found: {path}";
-        }
-
-        var index = MetadataCache.TryRead(path, SeikoJsonContext.Default.IndexRoot);
-        return index is null
-            ? $"source '{source.Id}': invalid index"
-            : index.SchemaVersion != IndexRoot.CurrentSchemaVersion
-                ? $"source '{source.Id}': unsupported index schemaVersion {index.SchemaVersion}"
-                : null;
     }
 
     // The bare-token disambiguation asks each index source for one name in

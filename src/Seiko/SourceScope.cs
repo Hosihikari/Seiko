@@ -1,5 +1,13 @@
 namespace Seiko;
 
+// A source that stands in front of another one (the offline probe does) and
+// lets callers reach the wrapped instance when they need its exact type.
+internal interface ISourceWrapper
+{
+    ISeiSource InnerSource { get; }
+}
+
+
 // Owns one command's sources and, optionally, its download session. Add and
 // Remove pre-resolve, then sync again; handing the same scope to both keeps
 // the request caches warm instead of fetching the same metadata twice.

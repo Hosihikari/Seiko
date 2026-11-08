@@ -4,6 +4,28 @@ namespace Seiko;
 
 public static class LockReplay
 {
+    // A frozen run must follow the lock, not re-choose from the current
+    // declaration: every locked origin path, digest and condition is bound
+    // before the replay reads anything.
+    public static void Bind(IReadOnlyList<ISeiSource> sources, SeikoLock lockFile)
+    {
+        // The origin source may be wrapped (the offline probe does that); the
+        // binding has to reach the instance that actually builds indices.
+        var found = sources.FirstOrDefault(
+            source => string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal));
+        found = found is ISourceWrapper wrapper ? wrapper.InnerSource : found;
+        if (found is not OriginSource origin)
+        {
+            return;
+        }
+
+        foreach (var locked in lockFile.Sei.Where(
+            sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
+        {
+            origin.PreferLocked(locked.Name, locked);
+        }
+    }
+
     public static IReadOnlyList<ResolvedSei> Resolve(
         IReadOnlyList<ISeiSource> sources,
         SeikoLock lockFile,

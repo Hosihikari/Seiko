@@ -262,9 +262,14 @@ public sealed class SeikoClient
                 latestInstallable: latestInstallable).ThrowIfAny();
         }
 
+        // Only sources this call built are the scope's to release; a
+        // preloaded scope keeps its own and is disposed by whoever made it.
         var sources = preloaded?.Sources
             ?? LoadSources(config, root, proxy, session, storePath, offline);
-        scope.Sources = sources;
+        if (preloaded is null)
+        {
+            scope.Sources = sources;
+        }
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;
@@ -1209,21 +1214,8 @@ public sealed class SeikoClient
     // the path and digest come from the lock and a missing file falls back to
     // the snapshot with that digest. Frozen and rollback both go through here
     // (ADR-0044).
-    private static void BindLockedOrigins(IReadOnlyList<ISeiSource> sources, SeikoLock lockFile)
-    {
-        if (sources.FirstOrDefault(
-            source => string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal))
-            is not OriginSource origin)
-        {
-            return;
-        }
-
-        foreach (var locked in lockFile.Sei.Where(
-            sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
-        {
-            origin.PreferLocked(locked.Name, locked);
-        }
-    }
+    internal static void BindLockedOrigins(IReadOnlyList<ISeiSource> sources, SeikoLock lockFile)
+        => LockReplay.Bind(sources, lockFile);
 
     // Records the bytes a run actually resolved, so a later replay or rollback
     // still has them after the original is deleted or rebuilt. Only origin

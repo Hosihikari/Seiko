@@ -309,17 +309,12 @@ public sealed class Resolver
                 PackageDeprecated = sei.PackageDeprecated,
             })
             .ToList();
+        // The listener's verdict is part of the leaf's verdict: if it fails,
+        // the failure leaves this search. A child probe catches it at
+        // CanSolveWith and calls the artifact unsolvable; the main search
+        // lets it reach the caller. Only leaves that passed are collected.
+        _onSolution?.Invoke(answer);
         _collected?.Add(answer);
-        try
-        {
-            _onSolution?.Invoke(answer);
-        }
-        catch (SeikoException) when (!_checkAmbiguity)
-        {
-            // A child probe only asks whether its artifact is solvable, so a
-            // failure of the cross-source check just means "this one is not".
-            // The main search lets it through: it fails the whole run.
-        }
     }
 
     // Constraint bookkeeping is part of the branch, so it is saved here and
@@ -676,10 +671,6 @@ public sealed class Resolver
                 _shadowed.Add(requirement.Name);
             }
 
-            // Saved after the version's own uncertainty is recorded, so a
-            // failed artifact restores to "this version, still uncertain",
-            // not to before the name was assigned at all.
-            var constraintsBefore = Snapshot();
             if (entry.ProbeUnknown || indexData.ProbeShadowed)
             {
                 // Everything already pending for the name is a known range
@@ -695,6 +686,12 @@ public sealed class Resolver
                     .Distinct()
                     .ToList();
             }
+
+            // The version's own uncertainty has been recorded by now, so an
+            // artifact backtrack restores to "this version, still uncertain"
+            // with its whole known range set — not to before the name was
+            // assigned at all.
+            var constraintsBefore = Snapshot();
 
             var pendingBeforeVersion = _pending.Count;
             AddDependencies(entry.Dependencies, requirement.Name, requirement.Name);
