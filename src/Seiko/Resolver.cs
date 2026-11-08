@@ -96,6 +96,10 @@ public sealed class Resolver
         return warnings;
     }
 
+    // True when the work budget ran out: parts of the graph may never have
+    // been visited, so a caller collecting gaps cannot call its list complete.
+    public bool BudgetExhausted => _budget.Exhausted;
+
     private List<string> SkippedWarnings()
     {
         var warnings = new List<string>();
@@ -266,7 +270,10 @@ public sealed class Resolver
 
         if (_assigned.TryGetValue(requirement.Name, out var existing))
         {
-            if (requirement.Range.Satisfies(existing.ParsedVersion))
+            // A placeholder's version is invented, so only a placeholder
+            // answers for that name; the range is not checked against it.
+            if (existing.Entry.ProbeUnknown
+                || requirement.Range.Satisfies(existing.ParsedVersion))
             {
                 return Search(index + 1);
             }
@@ -306,6 +313,9 @@ public sealed class Resolver
                 throw Fail("dependency resolution exceeded the work budget");
             }
 
+            // A placeholder is a guess pending the cache; nothing about it may
+            // make the walk stop, or the remaining gaps would go unreported.
+            // See OfflineMetadata.ProbeSource.
             var resolved = new ResolvedSei
             {
                 Name = requirement.Name,
@@ -437,6 +447,7 @@ public sealed class Resolver
         foreach (var prerequisite in artifact.Prerequisites ?? [])
         {
             if (_assigned.TryGetValue(prerequisite.Name, out var target)
+                && !target.Entry.ProbeUnknown
                 && !ParseRange(prerequisite.Version, prerequisite.Name)
                     .Satisfies(target.ParsedVersion))
             {
@@ -447,6 +458,7 @@ public sealed class Resolver
         foreach (var peer in artifact.OptionalPeers ?? [])
         {
             if (_assigned.TryGetValue(peer.Name, out var target)
+                && !target.Entry.ProbeUnknown
                 && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
             {
                 return false;
@@ -456,6 +468,7 @@ public sealed class Resolver
         foreach (var conflict in artifact.Conflicts ?? [])
         {
             if (_assigned.TryGetValue(conflict.Name, out var target)
+                && !target.Entry.ProbeUnknown
                 && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
             {
                 return false;
@@ -519,6 +532,15 @@ public sealed class Resolver
             {
                 throw Fail(
                     $"source '{source.Id}': duplicate version '{entry.Version}' for {name}");
+            }
+
+            // A placeholder stands in for metadata the offline probe could not
+            // read; its version is invented, so no admission check applies to
+            // it (see OfflineMetadata.ProbeSource).
+            if (entry.ProbeUnknown)
+            {
+                candidates.Add((entry, version));
+                continue;
             }
 
             if (!constraints.All(constraint => constraint.Range.Satisfies(version)))
@@ -845,8 +867,9 @@ public sealed class Resolver
                 return false;
             }
 
+            // A placeholder's version is invented, so its range is not judged.
             var range = ParseRange(relation.Version, relation.Name);
-            if (!range.Satisfies(target.ParsedVersion))
+            if (!target.Entry.ProbeUnknown && !range.Satisfies(target.ParsedVersion))
             {
                 _lastConflict = Fail(
                     $"{label} '{relation.Name}' for {owner} {resolved.Version} is {target.Version}, which does not satisfy {relation.Version ?? "*"}");
@@ -865,7 +888,8 @@ public sealed class Resolver
     {
         foreach (var conflict in conflicts ?? [])
         {
-            if (!_assigned.TryGetValue(conflict.Name, out var target))
+            if (!_assigned.TryGetValue(conflict.Name, out var target)
+                || target.Entry.ProbeUnknown)
             {
                 continue;
             }

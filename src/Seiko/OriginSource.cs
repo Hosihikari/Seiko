@@ -46,10 +46,8 @@ internal sealed class OriginSource : ISeiSource
         string storedPath,
         string root,
         string? storePath = null,
-        string? declaredName = null,
-        string? lockedDigest = null)
+        string? declaredName = null)
     {
-        var path = OriginPaths.Resolve(storedPath, root);
         // A declaration pinned to this very path is the identity; a file name
         // can fit more than one sei, so it is never re-derived. A declaration
         // for a different path says nothing about these bytes.
@@ -58,31 +56,12 @@ internal sealed class OriginSource : ISeiSource
             return declaredName;
         }
 
-        string? name = null;
+        var path = OriginPaths.Resolve(storedPath, root);
         if (!File.Exists(path) && storePath is not null)
         {
-            // A declaration or lock already names the sei; only an unknown path
-            // has to be identified from the snapshots themselves.
-            if (declaredName is not null && lockedDigest is not null)
-            {
-                var exact = OriginSnapshot.SnapshotPath(storePath, declaredName, lockedDigest);
-                if (File.Exists(exact))
-                {
-                    path = exact;
-                }
-            }
-
-            if (!File.Exists(path))
-            {
-                path = SnapshotByStem(storePath, path, declaredName, out name) ?? path;
-            }
-
-            // A declaration already names the sei, and the name is all this
-            // call returns; without any bytes there is nothing more to read.
-            if (!File.Exists(path) && declaredName is not null)
-            {
-                return declaredName;
-            }
+            // Only an unknown path has to be identified from the snapshots
+            // themselves.
+            path = SnapshotByStem(storePath, path) ?? path;
         }
 
         var manifest = ReadManifestHeader(path);
@@ -456,16 +435,11 @@ internal sealed class OriginSource : ISeiSource
     // a name the stem can belong to. A prefix match alone is not enough, since
     // `hello` is a prefix of `hello-tools`; the manifest decides, and an
     // ambiguous stem is refused rather than resolved by timestamp.
-    private static string? SnapshotByStem(
-        string storePath,
-        string path,
-        string? declaredName,
-        out string? name)
+    private static string? SnapshotByStem(string storePath, string path)
     {
         var folder = OriginSnapshot.Folder(storePath);
         if (!Directory.Exists(folder))
         {
-            name = null;
             return null;
         }
 
@@ -487,8 +461,7 @@ internal sealed class OriginSource : ISeiSource
                 continue;
             }
 
-            if (string.Equals(manifest.Name, declaredName, StringComparison.Ordinal)
-                || (declaredName is null && OriginPaths.StemMatches(path, manifest.Name)))
+            if (OriginPaths.StemMatches(path, manifest.Name))
             {
                 matches.Add(candidate);
             }
@@ -496,11 +469,8 @@ internal sealed class OriginSource : ISeiSource
 
         if (matches.Count == 0)
         {
-            name = null;
             return null;
         }
-
-        name = ReadManifestHeader(matches[0])!.Name;
 
         // Two different names can both fit the stem (`hello` and `hello-tools`
         // for hello-tools-win). Picking the longer one is still a guess, so an
@@ -523,7 +493,6 @@ internal sealed class OriginSource : ISeiSource
         }
 
         var chosenName = distinct[0];
-        name = chosenName;
         return matches
             .Where(candidate => string.Equals(names[candidate], chosenName, StringComparison.Ordinal))
             .OrderByDescending(File.GetLastWriteTimeUtc)

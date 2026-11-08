@@ -180,18 +180,22 @@ public sealed class SeikoClient
             // the locked graph, not every historical relation target.
             // The proposed set, not the on-disk one: an `add` has not written
             // its declarations yet, so the file would still name the old set.
+            // Every other option is the run's too, so the accepted graph is
+            // the one the real resolution would accept.
             OfflineMetadata.Verify(
                 config,
                 storePath,
                 root,
-                specs.Select(spec => spec.Name),
+                specs,
                 lockedGraph: mode == SyncMode.Normal ? null : existingLock,
                 allowPrerelease: allowPrerelease,
                 allowCritical: allowCritical,
                 // The probe must resolve what this run will: same lock (for
-                // yanked versions it may keep) and same platform.
+                // yanked versions it may keep), same platform and options.
                 existing: existingLock,
-                rid: rid);
+                rid: rid,
+                updateNames: updateNames,
+                latestInstallable: latestInstallable);
         }
 
         var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
@@ -788,10 +792,7 @@ public sealed class SeikoClient
         {
             var full = OriginPaths.Resolve(addition.Path!, root);
             var declaredName = DeclaredOriginName(config, root, full);
-            var declaredOrigin = declaredName is null
-                ? null
-                : config.Origin.First(origin => string.Equals(origin.Name, declaredName, StringComparison.Ordinal));
-            var manifest = OriginSource.ReadName(full, root, storePath, declaredName, LockedDigest(root, declaredName));
+            var manifest = OriginSource.ReadName(full, root, storePath, declaredName);
             var existingOrigin = config.Origin.FirstOrDefault(
                 origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
             var declared = config.Sei.FirstOrDefault(
@@ -1219,7 +1220,7 @@ public sealed class SeikoClient
             }
 
             var full = OriginPaths.Normalize(specification, root, workingDirectory);
-            if (!File.Exists(OriginPaths.Resolve(full, root)) && !HasSnapshotFor(storePath, full, null))
+            if (!File.Exists(OriginPaths.Resolve(full, root)) && !HasSnapshotFor(storePath, full))
             {
                 throw new SeikoException($"origin file not found: {full}", "usage");
             }
@@ -1252,9 +1253,10 @@ public sealed class SeikoClient
         {
             // A bare token was normalized against the working directory, so it
             // may be the copy in cwd rather than the declared location; the
-            // declaration is matched on the file name instead (ADR-0044).
+            // declaration is matched on the resolved path, not the file name
+            // (ADR-0044).
             var declared = DeclaredOriginName(config, root, addition.Path!);
-            var name = OriginSource.ReadName(addition.Path!, root, storePath, declared, LockedDigest(root, declared));
+            var name = OriginSource.ReadName(addition.Path!, root, storePath, declared);
             if (sources.Any(source => source.GetSei(name) is not null))
             {
                 throw new SeikoException(
@@ -1272,55 +1274,23 @@ public sealed class SeikoClient
         return origin;
     }
 
-    // A deleted original is still a usable declaration when a snapshot exists.
-    // Snapshots are named after the sei, not the file, so identity is the
-    // declared name (from an existing declaration or the lock) or, for an
-    // unknown path, the name its own manifest declares.
     // The origin entry that already declares this exact path, if any. Its name
-    // is the identity, so nothing has to be inferred from the file name.
+    // is the identity, so nothing has to be inferred from the file name; a
+    // deleted original stays recognisable through its declaration.
     private static string? DeclaredOriginName(SeikoConfig config, string root, string storedPath)
     {
         return config.Origin.FirstOrDefault(
             origin => origin.Paths.Any(candidate => OriginPaths.SameFile(candidate, storedPath, root)))?.Name;
     }
 
-    // The digest a lock pinned for this sei, if any: the exact bytes to prefer.
-    private static string? LockedDigest(string root, string? name)
-    {
-        if (name is null)
-        {
-            return null;
-        }
-
-        var locked = LockFile.Read(Path.Combine(root, "seiko.lock.json"))?
-            .Sei.FirstOrDefault(sei => string.Equals(sei.Name, name, StringComparison.Ordinal));
-        return locked?.Artifact.Sha256;
-    }
-
-    private static bool HasSnapshotFor(string storePath, string storedPath, string? declaredName)
+    // The file itself is gone; a snapshot can only be a best guess from the
+    // file name, since no declaration names this path yet.
+    private static bool HasSnapshotFor(string storePath, string storedPath)
     {
         var folder = OriginSnapshot.Folder(storePath);
-        if (!Directory.Exists(folder))
-        {
-            return false;
-        }
-
-        if (declaredName is not null)
-        {
-            return Directory.EnumerateFiles(folder, declaredName + "-*.sei").Any();
-        }
-
-        return Directory.EnumerateFiles(folder, "*.sei").Any(
-            snapshot => OriginPaths.StemMatches(storedPath, SnapshotName(snapshot)));
-    }
-
-    // The name is the part before the digest; a name may itself contain '-',
-    // so the last '-' is the separator.
-    private static string SnapshotName(string snapshot)
-    {
-        var file = Path.GetFileNameWithoutExtension(snapshot);
-        var dash = file.LastIndexOf('-');
-        return dash < 0 ? file : file[..dash];
+        return Directory.Exists(folder)
+            && Directory.EnumerateFiles(folder, "*.sei").Any(
+                snapshot => OriginPaths.StemMatches(storedPath, OriginSnapshot.NameOf(snapshot)));
     }
 
     private sealed record AddSpecification(string? Name, string? Version, string? Path, string Raw);
@@ -2994,7 +2964,13 @@ public sealed class SeikoClient
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         if (offline)
         {
-            OfflineMetadata.Verify(config, storePath, root, [name]);
+            // The declaration's range, when there is one, is what the probe
+            // admits: `info` shows the same answer the resolver would take.
+            var spec = config.Sei.FirstOrDefault(
+                item => string.Equals(item.Name, name, StringComparison.Ordinal))
+                ?? new SeiSpec { Name = name };
+            OfflineMetadata.Verify(config, storePath, root, [spec],
+                rid: string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid);
         }
 
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);

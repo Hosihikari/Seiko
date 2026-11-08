@@ -83,7 +83,7 @@ public sealed class OfflineTests
             offline: true));
 
         Assert.Equal("source", error.Code);
-        Assert.Contains("index metadata", error.Message);
+        // A replay only reads per-name metadata; the root index is not needed.
         Assert.Contains("sei/a.json", error.Message);
     }
 

@@ -86,15 +86,15 @@ internal static class OriginPaths
             && !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 
     // Whether two stored paths name the same file. Both are compared after
-    // resolution, and case is folded because the platform may not distinguish
-    // it (ADR-0044).
+    // resolution; the filesystem decides case, not the OS name: a differently
+    // cased spelling only adopts the entry's own spelling where the volume is
+    // case-insensitive, so a case-sensitive APFS volume keeps two distinct
+    // files apart and symlink components fold (ADR-0044).
     public static bool SameFile(string left, string right, string root)
         => string.Equals(
-            Path.GetFullPath(Resolve(left, root)),
-            Path.GetFullPath(Resolve(right, root)),
-            OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal);
+            RootRegistry.Resolve(Resolve(left, root)),
+            RootRegistry.Resolve(Resolve(right, root)),
+            StringComparison.Ordinal);
 
     // The form a declaration and a lock must hold.
     public static void EnsureStored(string path, string what)

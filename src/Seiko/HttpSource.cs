@@ -18,8 +18,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private readonly HashSet<string> _tokenHosts;
     private readonly DownloadSession _session;
     private readonly Dictionary<string, SeiIndex?> _cache = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _unknown = new(StringComparer.Ordinal);
     private readonly string? _metadataRoot;
     private readonly bool _offline;
+    private readonly bool _ownsSession;
 
     // In an offline probe a missing name is an answer rather than a failure:
     // the caller collects it and decides. See OfflineMetadata.Verify.
@@ -29,7 +31,18 @@ public sealed class HttpSource : ISeiSource, IDisposable
     public string Id { get; }
     public IndexRoot Index { get; }
 
-    public void Dispose() => _client.Dispose();
+    public void Dispose()
+    {
+        _client.Dispose();
+        if (_ownsSession)
+        {
+            _session.Dispose();
+        }
+    }
+
+    // The name had no cached answer: it is unknown, not absent. A recorded 404
+    // stays `false`, because the cache does hold that answer.
+    internal bool IsCacheUnknown(string name) => _unknown.Contains(name);
 
     public HttpSource(
         SourceConfig config,
@@ -42,11 +55,13 @@ public sealed class HttpSource : ISeiSource, IDisposable
     }
 
     // A probe source: offline, and a missing name is an answer instead of a
-    // failure. The root index is not required, since only names are read.
+    // failure. The root index is not required, since only names are read. The
+    // probe creates its own session and disposes it with itself.
     internal HttpSource(SourceConfig config, string? metadataRoot)
         : this(config, null, new DownloadSession(1, CancellationToken.None), metadataRoot, offline: true, handler: null)
     {
         OfflineProbe = true;
+        _ownsSession = true;
     }
 
     // The handler seam lets tests observe which requests carry credentials
@@ -130,6 +145,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
             {
                 if (OfflineProbe)
                 {
+                    // The probe must keep this apart from "the source does not
+                    // have the name": the real offline run throws here instead
+                    // of moving on to a later source.
+                    _unknown.Add(name);
                     _cache[name] = null;
                     return null;
                 }

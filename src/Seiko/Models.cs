@@ -137,6 +137,12 @@ public sealed class SeiVersionEntry
     public AdvisoryInfo? Advisory { get; set; }
     public bool? SourceYanked { get; set; }
     public List<AdvisoryInfo>? SourceAdvisories { get; set; }
+
+    // Only ever set in memory by the offline probe: the version is invented
+    // for a name whose cached metadata is absent, so range, admission, peer
+    // and conflict checks must not judge it. See OfflineMetadata.ProbeSource.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ProbeUnknown { get; set; }
 }
 
 public sealed class AdvisoryInfo
