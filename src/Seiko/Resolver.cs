@@ -44,6 +44,7 @@ public sealed class Resolver
     private IReadOnlyList<SeiSpec> _specs = [];
     private HashSet<string> _directNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _unknownConstraints = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<VersionRange>> _unknownExcluded = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private bool _hintsGrew;
     private List<IReadOnlyList<ResolvedSei>>? _collected;
@@ -263,13 +264,12 @@ public sealed class Resolver
                 return Answer(directNames);
             }
 
-            // A collecting run never lets a leaf end the walk, so an ordinary
-            // "no solution" is not a stop signal here: every graph found has
-            // already been reported and the first one is answered.
-            if (_collectAll && _collected is { Count: > 0 })
+            // A guessed leaf never ends the walk, so "no solution" here is not
+            // a stop signal: every graph reached was already reported and the
+            // first one is the answer. A grown hint set still wins, because a
+            // restart may widen the candidates this pass never saw.
+            if (!_hintsGrew && _collectAll && _collected is { Count: > 0 })
             {
-                // The walk has backtracked past every leaf, so nothing is
-                // assigned any more; the first collected graph is the answer.
                 return _collected[0].ToList();
             }
 
@@ -287,6 +287,85 @@ public sealed class Resolver
                 throw failure;
             }
         }
+    }
+
+    // Record the current leaf: a snapshot, because the artifact loop mutates
+    // the assignment it came from, and the probe wants a stable graph.
+    private void Report()
+    {
+        var answer = _assigned.Values
+            .OrderBy(p => p.Name, StringComparer.Ordinal)
+            .Select(sei => new ResolvedSei
+            {
+                Name = sei.Name,
+                ParsedVersion = sei.ParsedVersion,
+                Entry = sei.Entry,
+                Source = sei.Source,
+                Direct = _directNames.Contains(sei.Name),
+                Artifact = sei.Artifact,
+                PackageDeprecated = sei.PackageDeprecated,
+            })
+            .ToList();
+        _collected?.Add(answer);
+        _onSolution?.Invoke(answer);
+    }
+
+    // Constraint bookkeeping is part of the branch, so it is saved here and
+    // restored when the branch below fails. A plain deep copy is enough; the
+    // searches are small and this only exists in collecting runs.
+    private (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded) Snapshot()
+        => (Copy(_unknownConstraints), Copy(_unknownExcluded));
+
+    private static Dictionary<string, List<VersionRange>> Copy(
+        Dictionary<string, List<VersionRange>> source)
+        => source.ToDictionary(
+            pair => pair.Key,
+            pair => new List<VersionRange>(pair.Value),
+            StringComparer.Ordinal);
+
+    private void Restore(
+        (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded) snapshot)
+    {
+        Replace(_unknownConstraints, snapshot.Keep);
+        Replace(_unknownExcluded, snapshot.Excluded);
+    }
+
+    private static void Replace(
+        Dictionary<string, List<VersionRange>> target,
+        Dictionary<string, List<VersionRange>> source)
+    {
+        target.Clear();
+        foreach (var (name, ranges) in source)
+        {
+            target[name] = ranges;
+        }
+    }
+
+    // Whether the known ranges leave any version at all once the exclusions
+    // from conflicts are taken away. Only a proven-empty remainder counts; a
+    // partial overlap stays a guess.
+    private bool Contradicts(string name)
+    {
+        if (!_unknownConstraints.TryGetValue(name, out var ranges) || ranges.Count == 0)
+        {
+            return false;
+        }
+
+        var common = VersionRange.CommonSubSet(ranges);
+        if (_unknownExcluded.TryGetValue(name, out var excluded)
+            && excluded.Any(range => common.IsSubSetOrEqualTo(range)))
+        {
+            return true;
+        }
+
+        // An empty intersection is the degenerate `(0.0.0, 0.0.0)` — a
+        // singleton with both ends open. An unbounded answer has no bounds at
+        // all, and a real singleton is inclusive.
+        return common.MinVersion is { } min
+            && common.MaxVersion is { } max
+            && min.Equals(max)
+            && !common.IsMinInclusive
+            && !common.IsMaxInclusive;
     }
 
     // The accepted graph, in lock order. A collecting run also reports it
@@ -314,25 +393,19 @@ public sealed class Resolver
         if (index >= _pending.Count)
         {
             var solved = ValidateFinalSolution();
-            if (solved && _collectAll)
+            if (!solved || !_collectAll)
             {
-                // Report the leaf and keep looking: the next sibling is more
-                // graph the real run may read. A placeholder answers for its
-                // name here even where the real version could not, so only
-                // visiting every branch keeps a required fallback (a lower
-                // version with its own dependencies) from being skipped.
-                foreach (var sei in _assigned.Values)
-                {
-                    sei.Direct = _directNames.Contains(sei.Name);
-                }
-
-                var answer = _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
-                _collected?.Add(answer);
-                _onSolution?.Invoke(answer);
-                return false;
+                return solved;
             }
 
-            return solved;
+            Report();
+            // The normal run would stop here, and it may: a leaf made only of
+            // cached answers is proven and nothing below can change the
+            // choice. A placeholder answers for its name even where the real
+            // version could not, so a leaf holding one is a guess and the
+            // walk continues until the guesses are gone or the alternatives
+            // are exhausted.
+            return !_assigned.Values.Any(sei => sei.Entry.ProbeUnknown);
         }
 
         var requirement = _pending[index];
@@ -352,7 +425,7 @@ public sealed class Resolver
                 // fail the branch and send the search to another one.
                 var ranges = _unknownConstraints[requirement.Name];
                 ranges.Add(requirement.Range);
-                if (!Overlap(ranges))
+                if (Contradicts(requirement.Name))
                 {
                     _lastConflict = new SeikoException(
                         $"version ranges for {requirement.Name} contradict each other ({string.Join(", ", ranges.Distinct())}); "
@@ -416,6 +489,7 @@ public sealed class Resolver
                 PackageDeprecated = indexData.Deprecated,
             };
             _assigned[requirement.Name] = resolved;
+            var constraintsBefore = Snapshot();
             if (entry.ProbeUnknown)
             {
                 // Everything already pending for the name is a known range
@@ -424,6 +498,9 @@ public sealed class Resolver
                 _unknownConstraints[requirement.Name] = _pending
                     .Where(item => string.Equals(item.Name, requirement.Name, StringComparison.Ordinal))
                     .Select(item => item.Range)
+                    .Concat(_unknownExcluded.TryGetValue(requirement.Name, out var excluded)
+                        ? excluded
+                        : [])
                     .Distinct()
                     .ToList();
             }
@@ -439,6 +516,7 @@ public sealed class Resolver
                 _lastConflict = Fail(NoArtifactMessage(resolved));
                 _pending.RemoveRange(pendingBeforeVersion, _pending.Count - pendingBeforeVersion);
                 _assigned.Remove(requirement.Name);
+                Restore(constraintsBefore);
                 if (_latestInstallable)
                 {
                     continue;
@@ -470,6 +548,7 @@ public sealed class Resolver
                 _lastConflict = Fail(NoArtifactMessage(resolved));
                 _pending.RemoveRange(pendingBeforeVersion, _pending.Count - pendingBeforeVersion);
                 _assigned.Remove(requirement.Name);
+                Restore(constraintsBefore);
                 continue;
             }
 
@@ -496,6 +575,7 @@ public sealed class Resolver
                 _pending.RemoveRange(
                     pendingBeforeArtifact,
                     _pending.Count - pendingBeforeArtifact);
+                Restore(constraintsBefore);
                 if (_hintsGrew)
                 {
                     break;
@@ -511,6 +591,7 @@ public sealed class Resolver
                 pendingBeforeVersion,
                 _pending.Count - pendingBeforeVersion);
             _assigned.Remove(requirement.Name);
+            Restore(constraintsBefore);
             if (_hintsGrew)
             {
                 // A deeper branch found a prerelease range this run did not
@@ -907,7 +988,10 @@ public sealed class Resolver
             [owner.Name] = new ForcedPick(owner.Version, artifact),
         };
         // The child explores alternative artifacts; its reads are real reads
-        // of the same sources, so a collecting run wants them too.
+        // of the same sources, so it reports gaps to the same listener and
+        // shares the budget. Its collected leaves stay its own, though: a
+        // graph the parent found does not prove that this artifact is
+        // solvable.
         var probe = new Resolver(
             _sources,
             _lock,
@@ -921,7 +1005,7 @@ public sealed class Resolver
             _budget,
             _onSolution,
             _collectAll,
-            _collected);
+            _collectAll ? [] : null);
         try
         {
             probe.ResolveOnce(_specs);
@@ -981,7 +1065,7 @@ public sealed class Resolver
             if (target.Entry.ProbeUnknown)
             {
                 _unknownConstraints[relation.Name].Add(range);
-                if (!Overlap(_unknownConstraints[relation.Name]))
+                if (Contradicts(relation.Name))
                 {
                     _lastConflict = Fail(
                         $"version ranges for {relation.Name} contradict each other "
@@ -1011,13 +1095,32 @@ public sealed class Resolver
     {
         foreach (var conflict in conflicts ?? [])
         {
-            if (!_assigned.TryGetValue(conflict.Name, out var target)
-                || target.Entry.ProbeUnknown)
+            var range = ParseRange(conflict.Version, conflict.Name);
+            if (!_assigned.TryGetValue(conflict.Name, out var target))
             {
                 continue;
             }
 
-            if (ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
+            if (target.Entry.ProbeUnknown)
+            {
+                // The placeholder may well collide with this; record what is
+                // ruled out so a branch whose own ranges cover the whole
+                // exclusion is dropped now instead of at its leaf.
+                var excluded = _unknownExcluded.TryGetValue(conflict.Name, out var list)
+                    ? list
+                    : _unknownExcluded[conflict.Name] = [];
+                excluded.Add(range);
+                if (Contradicts(conflict.Name))
+                {
+                    _lastConflict = Fail(
+                        $"{label}: {conflict.Name} cannot satisfy both its ranges and the conflict from {owner} {resolved.Version}");
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (range.Satisfies(target.ParsedVersion))
             {
                 _lastConflict = Fail(
                     $"{label}: {owner} {resolved.Version} cannot coexist with {conflict.Name} {target.Version}");
@@ -1026,25 +1129,6 @@ public sealed class Resolver
         }
 
         return true;
-    }
-
-    // Whether any version could satisfy all of them. NuGet answers an empty
-    // intersection with the degenerate `(0.0.0, 0.0.0)`; an unbounded answer
-    // has no bounds at all.
-    private static bool Overlap(IReadOnlyList<VersionRange> ranges)
-    {
-        var common = VersionRange.CommonSubSet(ranges);
-        if (common.MinVersion is null && common.MaxVersion is null)
-        {
-            return true;
-        }
-
-        return !(common.MinVersion is { } min
-            && common.MaxVersion is { } max
-            && min.Equals(max)
-            && min.Equals(NuGetVersion.Parse("0.0.0"))
-            && !common.IsMinInclusive
-            && !common.IsMaxInclusive);
     }
 
     private bool HintAllows(string name, NuGetVersion version)

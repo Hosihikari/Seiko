@@ -267,9 +267,9 @@ public sealed class OfflineTests
         using var server = new TestHttpServer(fixture.SourceDirectory);
 
         // The local source owns app and names dep; dep exists only in the HTTP
-        // source and is not cached. The pre-check must find app through the
-        // local index (resolved against the root, not the process cwd) and
-        // then report dep as missing.
+        // source and is not cached. `info` only reads the name, so the local
+        // index (resolved against the root, not the process cwd) answers and
+        // the uncached dependency does not matter.
         fixture.AddSei("app", new VersionFixture
         {
             Version = "1.0.0",
@@ -284,11 +284,10 @@ public sealed class OfflineTests
                 $"{{ id = \"local\", index = \"{relative}/index.json\" }}",
                 $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Info(fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory));
+        var info = new SeikoClient().Info(
+            fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory);
 
-        Assert.Contains("missing cached metadata", error.Message);
-        Assert.Contains("dep", error.Message);
+        Assert.Equal("app", info.Name);
     }
 
     [Fact]
@@ -298,7 +297,8 @@ public sealed class OfflineTests
         using var server = new TestHttpServer(fixture.SourceDirectory);
 
         // The first local source is empty; app lives in the second local one.
-        // A local miss must not stop the walk, or dep goes unreported.
+        // A local miss must not stop the walk — `info` has to reach the
+        // second one instead of reporting the first as a cache gap.
         var empty = Path.Combine(fixture.Root, "empty-index");
         Directory.CreateDirectory(Path.Combine(empty, "sei"));
         File.WriteAllBytes(
@@ -320,11 +320,10 @@ public sealed class OfflineTests
                 $"{{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }}",
                 $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Info(fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory));
+        var info = new SeikoClient().Info(
+            fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory);
 
-        Assert.Contains("missing cached metadata", error.Message);
-        Assert.Contains("dep", error.Message);
+        Assert.Equal("app", info.Name);
     }
 
     private static string Config(params string[] sources)

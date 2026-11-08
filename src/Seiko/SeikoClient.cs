@@ -901,24 +901,42 @@ public sealed class SeikoClient
                 existing: existingLock,
                 rid: string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid,
                 latestInstallable: latestInstallable);
+
+            // The ambiguity check below asks the sources for each bare name
+            // before the run does; those reads are summarised the same way.
+            if (bare.Count > 0 && config.Sources.Count > 0)
+            {
+                OfflineMetadata.VerifyNames(
+                    config,
+                    storePath,
+                    root,
+                    bare.Select(addition =>
+                        OriginSource.ReadName(
+                            addition.Path!,
+                            root,
+                            storePath,
+                            DeclaredOriginName(config, root, OriginPaths.Resolve(addition.Path!, root)))));
+            }
         }
 
         // The ambiguity check reads source indexes, so it belongs here, after
         // the pre-check has had the first word. `bare.Count > 0` makes the
         // scope worth keeping: the run below reuses it.
         SourceScope? preloaded = null;
-        if (defaultRangeTargets.Count > 0
-            || (existingLock is not null && removedNames.Count > 0)
-            || (bare.Count > 0 && config.Sources.Count > 0))
-        {
-            var preSession = new DownloadSession(jobs, cancellationToken);
-            preloaded = new SourceScope(
-                LoadSources(config, root, proxy, preSession, storePath, offline),
-                preSession);
-        }
-
+        var preSession = new DownloadSession(jobs, cancellationToken);
         try
         {
+            if (defaultRangeTargets.Count > 0
+                || (existingLock is not null && removedNames.Count > 0)
+                || (bare.Count > 0 && config.Sources.Count > 0))
+            {
+                // The scope owns the session from here, so a failing source
+                // constructor still disposes everything already built.
+                preloaded = new SourceScope(
+                    LoadSources(config, root, proxy, preSession, storePath, offline),
+                    preSession);
+            }
+
             if (bare.Count > 0 && config.Sources.Count > 0)
             {
                 // The entry's own origin declaration is not a second meaning;
@@ -1006,7 +1024,16 @@ public sealed class SeikoClient
         }
         finally
         {
-            preloaded?.Dispose();
+            // The scope owns the session once it exists; before that (a
+            // source constructor failing) only the session itself does.
+            if (preloaded is null)
+            {
+                preSession.Dispose();
+            }
+            else
+            {
+                preloaded.Dispose();
+            }
         }
     }
 
@@ -2987,13 +3014,10 @@ public sealed class SeikoClient
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         if (offline)
         {
-            // The declaration's range, when there is one, is what the probe
-            // admits: `info` shows the same answer the resolver would take.
-            var spec = config.Sei.FirstOrDefault(
-                item => string.Equals(item.Name, name, StringComparison.Ordinal))
-                ?? new SeiSpec { Name = name };
-            OfflineMetadata.Verify(config, storePath, root, [spec],
-                rid: string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid);
+            // `info` only reads the name, in source order, and stops at the
+            // first hit; resolving the graph first would demand more cache
+            // than the command uses.
+            OfflineMetadata.VerifyInfo(config, storePath, root, name);
         }
 
         using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);

@@ -31,6 +31,11 @@ internal static class OfflineMetadata
         // below with the lock passed in.
         if (frozenGraph is not null)
         {
+            // The locked source answering "not there" is a lock failure, not a
+            // cache gap: refetching may well answer 404 again. It is kept
+            // apart so the failure keeps its own code, and merged with real
+            // gaps at the end.
+            var absent = new SortedSet<string>(StringComparer.Ordinal);
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var locked in frozenGraph.Sei)
             {
@@ -41,16 +46,27 @@ internal static class OfflineMetadata
                     continue;
                 }
 
-                CheckLockedRead(config, root, storePath, locked.Source, locked.Name, missing,
+                CheckLockedRead(config, root, storePath, locked.Source, locked.Name, missing, absent,
                     crossCheck: false);
                 foreach (var source in config.Sources)
                 {
                     if (!string.Equals(source.Id, locked.Source, StringComparison.Ordinal))
                     {
-                        CheckLockedRead(config, root, storePath, source.Id, locked.Name, missing,
+                        CheckLockedRead(config, root, storePath, source.Id, locked.Name, missing, absent,
                             crossCheck: true);
                     }
                 }
+            }
+
+            if (absent.Count > 0)
+            {
+                var detail = string.Join("; ", absent);
+                throw new SeikoException(
+                    $"offline: the lock cannot be replayed: {detail}"
+                    + (missing.Count > 0
+                        ? $" (offline: missing cached metadata: {string.Join("; ", missing)})"
+                        : ""),
+                    "lock");
             }
 
             if (missing.Count > 0)
@@ -123,13 +139,18 @@ internal static class OfflineMetadata
             $"{failure.Message} (offline: missing cached metadata: {string.Join("; ", gaps)}"
             + (incomplete ? "; the probe hit a search limit, so the list may be incomplete" : "")
             + ")",
-            failure.Code ?? "source");
+            failure.Code ?? "source")
+        {
+            // The hint belongs to the failure and still applies.
+            Hint = failure.Hint,
+            HintKey = failure.HintKey,
+        };
 
     private static SeikoException Missing(IEnumerable<string> missing, bool incomplete = false)
         => new(
             $"offline: missing cached metadata: {string.Join("; ", missing)}. "
             + (incomplete
-                ? "The probe hit its work budget, so the list may be incomplete. "
+                ? "The probe hit a search limit, so the list may be incomplete. "
                 : "")
             + "Run the command once online, then retry offline",
             "source");
@@ -288,11 +309,11 @@ internal static class OfflineMetadata
             };
     }
 
-    // One read the replay will make. The rule matches the real cache read:
-    // a recorded 404 is an answer, a missing or unreadable file is not, and
-    // only a read source that is missing an answer is a gap. The cross-source
-    // pass reads a different source, so its gaps point at the file itself
-    // rather than hinting at the locked source.
+    // One read the replay will make, with the answer kept in the same shapes
+    // the real source uses: a recorded 404 is "known absent" and a missing or
+    // unreadable cache file is "unknown". Only a read the run actually makes
+    // counts as a gap. A local source reads its directory, so a missing file
+    // there is simply "this source does not have the name" — not a gap.
     private static void CheckLockedRead(
         SeikoConfig config,
         string root,
@@ -300,41 +321,41 @@ internal static class OfflineMetadata
         string sourceId,
         string name,
         SortedSet<string> missing,
+        SortedSet<string> absent,
         bool crossCheck)
     {
         var source = config.Sources.FirstOrDefault(
             item => string.Equals(item.Id, sourceId, StringComparison.Ordinal));
         if (source is null)
         {
-            missing.Add($"source '{sourceId}' for {name} is not configured");
+            absent.Add($"source '{sourceId}' for {name} is not configured");
             return;
         }
 
-        string path;
-        if (IsHttp(source))
+        if (!IsHttp(source))
         {
-            path = MetadataCache.PathFor(storePath, new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
-            if (MetadataCache.IsMissing(path))
-            {
-                // Known absent upstream. The replay will report "not in
-                // source"; refetching online may well answer 404 again.
-                if (!crossCheck)
-                {
-                    missing.Add($"sei/{name}.json from source '{sourceId}' (recorded as absent)");
-                }
-
-                return;
-            }
-        }
-        else
-        {
-            // Same resolution the real LocalSource does: relative to the
-            // install root, never to the store. A local file always answers.
+            // The local file answers or it does not; either way there is
+            // nothing cached and nothing to refill.
             var index = LocalSource.ResolvePath(source.Index, root);
-            var local = Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json");
-            if (!File.Exists(local))
+            if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"))
+                && !crossCheck)
             {
-                missing.Add($"sei/{name}.json from source '{sourceId}'");
+                absent.Add($"sei/{name}.json from source '{sourceId}'");
+            }
+
+            return;
+        }
+
+        var path = MetadataCache.PathFor(
+            storePath,
+            new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
+        if (MetadataCache.IsMissing(path))
+        {
+            // Known absent upstream: the cross-source pass just skips it, but
+            // a locked source that answered 404 makes the replay fail.
+            if (!crossCheck)
+            {
+                absent.Add($"sei/{name}.json from source '{sourceId}' (recorded as absent)");
             }
 
             return;
@@ -349,6 +370,104 @@ internal static class OfflineMetadata
         if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
         {
             missing.Add($"sei/{name}.json from source '{sourceId}' (unreadable)");
+        }
+    }
+
+    // The bare-token disambiguation asks each index source for one name in
+    // order and stops at the first hit, exactly like `info`. Its reads happen
+    // before the real run too, so they get the same treatment.
+    public static void VerifyNames(SeikoConfig config, string storePath, string root, IEnumerable<string> names)
+    {
+        var missing = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            foreach (var source in config.Sources)
+            {
+                if (!IsHttp(source))
+                {
+                    var index = LocalSource.ResolvePath(source.Index, root);
+                    if (File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json")))
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                var path = MetadataCache.PathFor(
+                    storePath,
+                    new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
+                if (MetadataCache.IsMissing(path))
+                {
+                    continue;
+                }
+
+                if (!File.Exists(path))
+                {
+                    missing.Add($"sei/{name}.json from source '{source.Id}'");
+                    break;
+                }
+
+                if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
+                {
+                    missing.Add($"sei/{name}.json from source '{source.Id}' (unreadable)");
+                }
+
+                break;
+            }
+        }
+
+        if (missing.Count > 0)
+        {
+            throw Missing(missing);
+        }
+    }
+
+    // `info` walks the sources in order and stops at the first one that has
+    // the name; it neither resolves dependencies nor cross-checks. So only
+    // that first answering source has to be readable — a later one may be
+    // cold without it mattering.
+    public static void VerifyInfo(SeikoConfig config, string storePath, string root, string name)
+    {
+        var missing = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var source in config.Sources)
+        {
+            if (!IsHttp(source))
+            {
+                var index = LocalSource.ResolvePath(source.Index, root);
+                if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json")))
+                {
+                    continue;
+                }
+
+                return;
+            }
+
+            var path = MetadataCache.PathFor(
+                storePath,
+                new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
+            if (MetadataCache.IsMissing(path))
+            {
+                continue;
+            }
+
+            if (!File.Exists(path))
+            {
+                missing.Add($"sei/{name}.json from source '{source.Id}'");
+                break;
+            }
+
+            if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
+            {
+                missing.Add($"sei/{name}.json from source '{source.Id}' (unreadable)");
+            }
+
+            return;
+        }
+
+        if (missing.Count > 0)
+        {
+            throw Missing(missing);
         }
     }
 

@@ -92,7 +92,17 @@ public sealed class HttpSource : ISeiSource, IDisposable
         _tokenHosts = new HashSet<string>(
             config.TokenHosts ?? [],
             StringComparer.OrdinalIgnoreCase);
-        Index = FetchIndex(indexUri);
+        try
+        {
+            Index = FetchIndex(indexUri);
+        }
+        catch
+        {
+            // The instance never reaches the caller, so nothing else can
+            // release what it already took.
+            Dispose();
+            throw;
+        }
     }
 
     private static HttpClient CreateClient(string? proxy)
