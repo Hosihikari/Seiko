@@ -17,6 +17,13 @@ internal static class CrossSourceCheck
         var validated = new HashSet<(string Source, string Name)>();
         foreach (var sei in resolved)
         {
+            // A local file's bytes are picked by the user, so a published
+            // artifact of the same version legitimately differs (ADR-0044).
+            if (sei.Source is OriginSource)
+            {
+                continue;
+            }
+
             foreach (var source in sources)
             {
                 if (ReferenceEquals(source, sei.Source)

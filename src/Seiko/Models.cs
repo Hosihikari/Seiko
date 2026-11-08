@@ -180,6 +180,24 @@ public sealed class SeikoConfig
     public List<SourceConfig> Sources { get; set; } = [];
     public string? Rid { get; set; }
     public List<SeiSpec> Sei { get; set; } = [];
+    public List<OriginSpec> Origin { get; set; } = [];
+}
+
+// A direct declaration served by a local .sei file instead of a source
+// (ADR-0044). Paths are relative to the install root and parallel to
+// Selectors; one entry answers one name, one version, one artifact.
+public sealed class OriginSpec
+{
+    public string Name { get; set; } = "";
+    public List<string> Paths { get; set; } = [];
+    public List<OriginSelector> Selectors { get; set; } = [];
+}
+
+// The condition a path is chosen under, matching an artifact selector.
+public sealed class OriginSelector
+{
+    public string? Rid { get; set; }
+    public List<SeiDependency> Prerequisites { get; set; } = [];
 }
 
 public sealed class SourceConfig
@@ -215,6 +233,10 @@ public sealed class LockedSei
     public string Name { get; set; } = "";
     public string Version { get; set; } = "";
     public string Source { get; set; } = "";
+
+    // Set only for `source = "origin"`: the stored path, relative to the
+    // install root, the bytes are read from (ADR-0044).
+    public string? OriginPath { get; set; }
     public bool Direct { get; set; }
     public LockedArtifact Artifact { get; set; } = new();
     public List<SeiDependency> Dependencies { get; set; } = [];

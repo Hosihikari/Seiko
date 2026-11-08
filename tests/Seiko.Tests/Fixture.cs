@@ -122,6 +122,33 @@ internal sealed class Fixture : IDisposable
         return buffer.ToArray();
     }
 
+    // Writes a standalone .sei artifact outside any index and returns its path
+    // relative to the install root, the form `add` stores (ADR-0044).
+    public string WriteOrigin(string name, string version, string file, string content)
+    {
+        var directory = Path.Combine(Root, "dist");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, name + ".sei");
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+        var manifest = new SeiManifest
+        {
+            SchemaVersion = SeiManifest.CurrentSchemaVersion,
+            Name = name,
+            Version = version,
+            Artifact = new ArtifactManifest { Layout = "root" },
+        };
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            AddEntry(zip, "sei.json", JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
+            AddEntry(zip, file, Encoding.UTF8.GetBytes(content));
+        }
+
+        return "dist/" + name + ".sei";
+    }
+
     public void AddSei(string name, params VersionFixture[] versions)
     {
         var index = _indexes.TryGetValue(name, out var existing)

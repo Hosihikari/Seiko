@@ -10,13 +10,14 @@ internal static class ArtifactConditions
 {
     public static bool Equivalent(ArtifactEntry left, ArtifactEntry right)
         => string.Equals(
-                NormalizeRid(left.Rid),
-                NormalizeRid(right.Rid),
-                StringComparison.OrdinalIgnoreCase)
-            && string.Equals(
-                NormalizePrerequisites(left.Prerequisites),
-                NormalizePrerequisites(right.Prerequisites),
-                StringComparison.Ordinal);
+            Key(left.Rid, left.Prerequisites),
+            Key(right.Rid, right.Prerequisites),
+            StringComparison.Ordinal);
+
+    // Origin selectors carry the same shape as artifact conditions, so the
+    // ambiguity test there uses this too (ADR-0044).
+    public static string Key(string? rid, List<SeiDependency>? prerequisites)
+        => NormalizeRid(rid) + "\n" + NormalizePrerequisites(prerequisites);
 
     private static string NormalizeRid(string? rid)
         => string.IsNullOrWhiteSpace(rid) ? "*" : rid.Trim();

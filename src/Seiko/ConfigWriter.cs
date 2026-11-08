@@ -6,6 +6,15 @@ namespace Seiko;
 public static class ConfigWriter
 {
     public static void WriteSpecs(string root, string section, IReadOnlyList<SeiSpec> specs)
+        => WriteDeclarations(root, section, specs, []);
+
+    // `origin` is written with `sei` because the two form one direct
+    // declaration set and must change in the same atomic edit (ADR-0044).
+    public static void WriteDeclarations(
+        string root,
+        string section,
+        IReadOnlyList<SeiSpec> specs,
+        IReadOnlyList<OriginSpec> origins)
     {
         if (section is not "sei")
         {
@@ -14,9 +23,14 @@ public static class ConfigWriter
 
         var lines = ReadLines(root);
         var original = string.Join("\n", lines);
-        var block = BuildSpecsBlock(section, specs);
-        ReplaceSection(lines, section, block);
-        EnsureSafeEdit(original, lines, section, string.Join("\n", block));
+        var specsBlock = BuildSpecsBlock(section, specs);
+        var originBlock = BuildOriginBlock(origins);
+        ReplaceSection(lines, section, specsBlock);
+        ReplaceSection(lines, "origin", originBlock);
+        // `origin` is new to old files, so the untouched-field comparison has
+        // to leave both edited sections out.
+        EnsureSafeEdit(original, lines, section, string.Join("\n", specsBlock), "origin");
+        EnsureSafeEdit(original, lines, "origin", string.Join("\n", originBlock), section);
         WriteLines(root, lines);
     }
 
@@ -85,7 +99,8 @@ public static class ConfigWriter
         string original,
         List<string> edited,
         string key,
-        string? expectedBlock)
+        string? expectedBlock,
+        params string[] alsoSkipped)
     {
         HoconRoot before;
         HoconRoot after;
@@ -129,8 +144,8 @@ public static class ConfigWriter
             throw UnsafeLayout(key);
         }
 
-        var beforeFields = TopLevel(before, key);
-        var afterFields = TopLevel(after, key);
+        var beforeFields = TopLevel(before, key, alsoSkipped);
+        var afterFields = TopLevel(after, key, alsoSkipped);
         if (beforeFields.Count != afterFields.Count)
         {
             throw UnsafeLayout(key);
@@ -149,9 +164,10 @@ public static class ConfigWriter
     private static HoconRoot Parse(string text)
         => HoconParser.Parse(text, null);
 
-    private static Dictionary<string, string> TopLevel(HoconRoot root, string skip)
+    private static Dictionary<string, string> TopLevel(HoconRoot root, string skip, string[] alsoSkip)
         => root.AsEnumerable()
-            .Where(pair => !string.Equals(pair.Key, skip, StringComparison.Ordinal))
+            .Where(pair => !string.Equals(pair.Key, skip, StringComparison.Ordinal)
+                && !alsoSkip.Contains(pair.Key, StringComparer.Ordinal))
             .ToDictionary(pair => pair.Key, pair => pair.Value.Value.Raw, StringComparer.Ordinal);
 
     private static SeikoException UnsafeLayout(string key)
@@ -185,13 +201,51 @@ public static class ConfigWriter
 
         var insertAt = FindSection(lines, "sei")?.Start
             ?? FindSection(lines, "sources")?.Start
-            ?? lines.Count;
-        if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)
+            ?? lines.Count;        if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)
         {
             lines.Add("");
         }
 
         lines.InsertRange(insertAt, block);
+    }
+
+    private static List<string> BuildOriginBlock(IReadOnlyList<OriginSpec> origins)
+    {
+        if (origins.Count == 0)
+        {
+            return ["origin = []"];
+        }
+
+        var lines = new List<string> { "origin = [" };
+        foreach (var origin in origins)
+        {
+            var paths = origin.Paths.Select(path => $"\"{Escape(path)}\"");
+            lines.Add($"  {{ name = \"{Escape(origin.Name)}\", paths = [{string.Join(", ", paths)}], "
+                + $"selectors = [{string.Join(", ", origin.Selectors.Select(SelectorText))}] }},");
+        }
+
+        lines.Add("]");
+        return lines;
+    }
+
+    private static string SelectorText(OriginSelector selector)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(selector.Rid))
+        {
+            parts.Add($"rid = \"{Escape(selector.Rid)}\"");
+        }
+
+        if (selector.Prerequisites.Count > 0)
+        {
+            var items = selector.Prerequisites.Select(
+                prerequisite => prerequisite.Version is null
+                    ? $"{{ name = \"{Escape(prerequisite.Name)}\" }}"
+                    : $"{{ name = \"{Escape(prerequisite.Name)}\", version = \"{Escape(prerequisite.Version)}\" }}");
+            parts.Add($"prerequisites = [{string.Join(", ", items)}]");
+        }
+
+        return parts.Count == 0 ? "{ }" : $"{{ {string.Join(", ", parts)} }}";
     }
 
     private static List<string> BuildSpecsBlock(string section, IReadOnlyList<SeiSpec> specs)

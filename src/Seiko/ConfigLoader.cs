@@ -100,7 +100,116 @@ public static class ConfigLoader
         }
 
         ReadSpecs(configuration.GetSection("sei"), config.Sei, path, "sei");
+        ReadOrigins(configuration.GetSection("origin"), config, path);
+        EnsureUniqueDirect(config, path);
         return config;
+    }
+
+    // `origin` is a reserved source id: a configured source of that name would
+    // make the lock's `source = "origin"` ambiguous (ADR-0044).
+    private static void EnsureUniqueDirect(SeikoConfig config, string path)
+    {
+        if (config.Sources.Any(source => string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal)))
+        {
+            throw new SeikoException(
+                $"{path}: source id '{OriginPaths.SourceId}' is reserved for local files",
+                "config");
+        }
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var spec in config.Sei)
+        {
+            if (!names.Add(spec.Name))
+            {
+                throw new SeikoException($"{path}: duplicate direct declaration '{spec.Name}'", "config");
+            }
+        }
+
+        // An origin entry pairs with the sei entry of the same name: `sei`
+        // declares the direct set, `origin` only pins where the bytes come
+        // from, so the name appears in both on purpose (ADR-0044).
+        var origins = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var origin in config.Origin)
+        {
+            if (!origins.Add(origin.Name))
+            {
+                throw new SeikoException($"{path}: duplicate origin entry '{origin.Name}'", "config");
+            }
+
+            if (!names.Contains(origin.Name))
+            {
+                throw new SeikoException(
+                    $"{path}: origin '{origin.Name}' has no matching sei declaration",
+                    "config");
+            }
+        }
+    }
+
+    private static void ReadOrigins(IConfigurationSection section, SeikoConfig config, string path)
+    {
+        foreach (var child in section.GetChildren())
+        {
+            var name = child["name"];
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new SeikoException($"{path}: each origin entry needs a name", "config");
+            }
+
+            var paths = child.GetSection("paths").GetChildren()
+                .Select(item => item.Value)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim())
+                .ToList();
+            if (paths.Count == 0)
+            {
+                throw new SeikoException($"{path}: origin '{name}' needs at least one path", "config");
+            }
+
+            var selectors = child.GetSection("selectors").GetChildren()
+                .Select(ReadSelector)
+                .ToList();
+            if (selectors.Count == 0)
+            {
+                selectors.Add(new OriginSelector());
+            }
+
+            // Older writers could leave the arrays ragged; a missing selector
+            // means "any condition", which is what the first one defaults to.
+            while (selectors.Count < paths.Count)
+            {
+                selectors.Add(new OriginSelector());
+            }
+
+            if (selectors.Count != paths.Count)
+            {
+                throw new SeikoException(
+                    $"{path}: origin '{name}' has {paths.Count} path(s) but {selectors.Count} selector(s)",
+                    "config");
+            }
+
+            config.Origin.Add(new OriginSpec
+            {
+                Name = name,
+                Paths = paths,
+                Selectors = selectors,
+            });
+        }
+    }
+
+    private static OriginSelector ReadSelector(IConfigurationSection section)
+    {
+        var prerequisites = section.GetSection("prerequisites").GetChildren()
+            .Select(item => new SeiDependency
+            {
+                Name = item["name"] ?? "",
+                Version = item["version"],
+            })
+            .ToList();
+        return new OriginSelector
+        {
+            Rid = section["rid"],
+            Prerequisites = prerequisites,
+        };
     }
 
     private static void ReadSpecs(

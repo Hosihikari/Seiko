@@ -196,6 +196,18 @@ public sealed class SeikoClient
                     "lock");
             }
 
+            // A replay must read the locked bytes, not whatever the file
+            // holds now, so a missing or rebuilt file falls back to the
+            // matching snapshot instead of taking the current one.
+            if (sources.FirstOrDefault(sei => string.Equals(sei.Id, OriginPaths.SourceId, StringComparison.Ordinal))
+                is OriginSource origin)
+            {
+                foreach (var locked in existingLock.Sei.Where(sei => sei.OriginPath is not null))
+                {
+                    origin.PreferDigest(locked.Artifact.Sha256);
+                }
+            }
+
             resolved = LockReplay.Resolve(sources, existingLock, specs);
             lockFile = existingLock;
             warnings = Retirement.Warnings(resolved);
@@ -212,6 +224,7 @@ public sealed class SeikoClient
                 allowCritical);
             resolved = resolver.Resolve(specs);
             warnings = resolver.Warnings();
+            EnsureOriginDigestsUnchanged(existingLock, resolved);
             lockFile = LockFile.FromResolution(rid, sources, resolved);
 
             if (mode == SyncMode.Locked)
@@ -690,8 +703,9 @@ public sealed class SeikoClient
         bool offline = false)
     {
         root = Path.GetFullPath(root);
+        var workingDirectory = Directory.GetCurrentDirectory();
         var additions = specifications
-            .Select(ParseAddSpecification)
+            .Select(specification => ParseAddSpecification(specification, root, workingDirectory))
             .ToList();
         var removals = (remove ?? [])
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -703,7 +717,9 @@ public sealed class SeikoClient
             throw new SeikoException("add requires at least one sei or --remove", "usage");
         }
 
-        RequireOnline(offline, dryRun, "add");
+        // A local file needs no network; only the dependency graph might, and
+        // that path reports its own missing cache entries (ADR-0044).
+        RequireOnline(offline, dryRun, "add", additions);
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -714,16 +730,59 @@ public sealed class SeikoClient
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
-        var addNames = additions.Select(addition => addition.Name).ToHashSet(StringComparer.Ordinal);
         var removedNames = removals.ToHashSet(StringComparer.Ordinal);
-
         var defaultRangeTargets = new List<SeiSpec>();
-        foreach (var addition in additions)
+        var originTargets = new List<OriginSpec>();
+
+        // Paths are read before anything is written: the manifest supplies the
+        // name the declaration is filed under, and it must be the only one
+        // giving that name (ADR-0044).
+        foreach (var addition in additions.Where(addition => addition.Path is not null))
         {
-            var existing = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, addition.Name, StringComparison.Ordinal));
+            var manifest = OriginSource.ReadName(OriginPaths.Resolve(addition.Path!, root));
+            var existingOrigin = config.Origin.FirstOrDefault(
+                origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
+            var declared = config.Sei.FirstOrDefault(
+                spec => string.Equals(spec.Name, manifest, StringComparison.Ordinal));
+            if (existingOrigin is not null && originTargets.Contains(existingOrigin))
+            {
+                throw new SeikoException(
+                    $"{manifest} is already given by origin entries twice in one add",
+                    "usage");
+            }
+
+            if (declared is null)
+            {
+                config.Sei.Add(new SeiSpec { Name = manifest });
+            }
+            else
+            {
+                // Declared by name so far: the path takes over, clearing the
+                // range the declaration used to carry.
+                declared.Version = null;
+            }
+
+            originTargets.Add(existingOrigin ?? AddOrigin(config, manifest));
+            if (!originTargets[^1].Paths.Contains(addition.Path!, StringComparer.Ordinal))
+            {
+                // Re-adding a path refreshes its condition slot but must not
+                // duplicate the declaration.
+                originTargets[^1].Paths.Add(addition.Path!);
+            }
+        }
+
+        var addNames = new HashSet<string>(
+            additions.Select(addition => addition.Name).OfType<string>(),
+            StringComparer.Ordinal);
+        addNames.UnionWith(originTargets.Select(origin => origin.Name));
+
+        foreach (var addition in additions.Where(addition => addition.Name is not null))
+        {
+            var existing = config.Sei.FirstOrDefault(
+                spec => string.Equals(spec.Name, addition.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                var spec = new SeiSpec { Name = addition.Name, Version = addition.Version };
+                var spec = new SeiSpec { Name = addition.Name!, Version = addition.Version };
                 config.Sei.Add(spec);
                 if (addition.Version is null)
                 {
@@ -733,6 +792,33 @@ public sealed class SeikoClient
             else if (addition.Version is not null)
             {
                 existing.Version = addition.Version;
+            }
+
+            // `add <name>` without a range means "get it from a source again".
+            if (addition.Version is null)
+            {
+                config.Origin.RemoveAll(
+                    origin => string.Equals(origin.Name, addition.Name, StringComparison.Ordinal));
+            }
+        }
+
+        foreach (var origin in config.Origin.Where(origin => origin.Selectors.Count < origin.Paths.Count))
+        {
+            while (origin.Selectors.Count < origin.Paths.Count)
+            {
+                origin.Selectors.Add(new OriginSelector());
+            }
+        }
+
+        // A snapshot makes the granted generation survive a deleted or
+        // rebuilt original (ADR-0044). Added paths are captured now; re-adds
+        // of a known digest are a no-op inside Capture.
+        foreach (var origin in config.Origin)
+        {
+            foreach (var stored in origin.Paths)
+            {
+                var full = OriginPaths.Resolve(stored, root);
+                OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
             }
         }
 
@@ -747,6 +833,8 @@ public sealed class SeikoClient
             {
                 throw new SeikoException($"{name} is not a direct dependency", "resolve");
             }
+
+            config.Origin.RemoveAll(origin => string.Equals(origin.Name, name, StringComparison.Ordinal));
         }
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
@@ -811,6 +899,7 @@ public sealed class SeikoClient
             return WriteSpecsAndSync(
                 root,
                 config.Sei,
+                config.Origin,
                 transaction => SyncLocked(
                     root,
                     storePath,
@@ -888,6 +977,7 @@ public sealed class SeikoClient
     private static SyncResult WriteSpecsAndSync(
         string root,
         IReadOnlyList<SeiSpec> specs,
+        IReadOnlyList<OriginSpec> origins,
         Func<DeploymentTransaction, SyncResult> sync,
         Action<DeploymentTransaction>? afterConfigWrite = null)
     {
@@ -898,7 +988,7 @@ public sealed class SeikoClient
             transaction = DeploymentTransaction.Begin(root, stateDirectory);
             transaction.WillChange("seiko.conf");
             transaction.WriteJournal();
-            ConfigWriter.WriteSpecs(root, "sei", specs);
+            ConfigWriter.WriteDeclarations(root, "sei", specs, origins);
             afterConfigWrite?.Invoke(transaction);
             return sync(transaction);
         }
@@ -929,9 +1019,62 @@ public sealed class SeikoClient
             : $"[{lower},{version.Major + 1}.0.0)";
     }
 
-    private static void RequireOnline(bool offline, bool dryRun, string command)
+    // A rebuilt file with the same version is a different artifact under one
+    // identity; silently rewriting the lock would make two roots disagree
+    // about what 1.0.0 is. A new version is a normal update and passes
+    // (ADR-0044).
+    private static void EnsureOriginDigestsUnchanged(
+        SeikoLock? existingLock,
+        IReadOnlyList<ResolvedSei> resolved)
     {
-        if (offline && !dryRun)
+        if (existingLock is null)
+        {
+            return;
+        }
+
+        var locked = existingLock.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
+        foreach (var sei in resolved)
+        {
+            if (sei.Source is not OriginSource
+                || !locked.TryGetValue(sei.Name, out var previous)
+                || !string.Equals(previous.Version, sei.Version, StringComparison.Ordinal)
+                || string.Equals(
+                    previous.Artifact.Sha256,
+                    sei.Artifact.Source.Sha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            throw new SeikoException(
+                $"{sei.Name} {sei.Version}: the origin file still declares the locked version but its bytes changed "
+                + $"({previous.Artifact.Sha256} locked, {sei.Artifact.Source.Sha256} read)",
+                "checksum")
+            {
+                Hint = "rebuild under a new version, or run `sk remove` and add the file again",
+                HintKey = "hint.origin-changed",
+            };
+        }
+    }
+
+    private static void RequireOnline(bool offline, bool dryRun, string command)
+        => RequireOnline(offline, dryRun, command, null);
+
+    private static void RequireOnline(
+        bool offline,
+        bool dryRun,
+        string command,
+        IReadOnlyList<AddSpecification>? additions)
+    {
+        if (!offline || dryRun)
+        {
+            return;
+        }
+
+        // `add <path>` is a local input; `add <name>` re-resolves from
+        // metadata, which offline cannot fetch (ADR-0044).
+        var needsNetwork = additions is null || additions.Any(addition => addition.Name is not null);
+        if (needsNetwork)
         {
             throw new SeikoException(
                 $"offline: {command} needs network metadata; use --dry-run --offline to preview from the cache",
@@ -939,8 +1082,32 @@ public sealed class SeikoClient
         }
     }
 
-    private static SeiSpec ParseAddSpecification(string specification)
+    private static AddSpecification ParseAddSpecification(
+        string specification,
+        string root,
+        string workingDirectory)
     {
+        // A path wins on shape alone, so `hello.sei` can never be a nice
+        // accident. Once it looks like a path, `@range` is not accepted: one
+        // artifact is pinned by its digest (ADR-0044).
+        if (OriginPaths.IsPathLike(specification, workingDirectory))
+        {
+            if (specification.Contains('@', StringComparison.Ordinal))
+            {
+                throw new SeikoException(
+                    $"'{specification}' is a local file; drop the @range",
+                    "usage");
+            }
+
+            var full = OriginPaths.Normalize(specification, root, workingDirectory);
+            if (!File.Exists(OriginPaths.Resolve(full, root)))
+            {
+                throw new SeikoException($"origin file not found: {full}", "usage");
+            }
+
+            return new AddSpecification(null, null, full);
+        }
+
         var at = specification.LastIndexOf('@');
         var name = (at > 0 ? specification[..at] : specification).Trim();
         var version = at > 0 ? specification[(at + 1)..].Trim() : null;
@@ -949,8 +1116,17 @@ public sealed class SeikoClient
             throw new SeikoException("add requires a sei name and optional @range", "usage");
         }
 
-        return new SeiSpec { Name = name, Version = version };
+        return new AddSpecification(name, version, null);
     }
+
+    private static OriginSpec AddOrigin(SeikoConfig config, string name)
+    {
+        var origin = new OriginSpec { Name = name };
+        config.Origin.Add(origin);
+        return origin;
+    }
+
+    private sealed record AddSpecification(string? Name, string? Version, string? Path);
 
     public SyncResult Remove(
         string root,
@@ -992,6 +1168,10 @@ public sealed class SeikoClient
         {
             throw new SeikoException($"{name} is not a direct dependency", "resolve");
         }
+
+        // The origin entry is only the address of the bytes; it goes with the
+        // declaration, or the next load sees an origin without a sei (ADR-0044).
+        config.Origin.RemoveAll(origin => string.Equals(origin.Name, name, StringComparison.Ordinal));
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
         SourceScope? preloaded = null;
@@ -1048,6 +1228,7 @@ public sealed class SeikoClient
             return WriteSpecsAndSync(
                 root,
                 config.Sei,
+                config.Origin,
                 transaction => SyncLocked(
                     root,
                     storePath,
@@ -1211,7 +1392,7 @@ public sealed class SeikoClient
             }
 
             return writeConfig
-                ? WriteSpecsAndSync(root, config.Sei, transaction => Sync(transaction))
+                ? WriteSpecsAndSync(root, config.Sei, config.Origin, transaction => Sync(transaction))
                 : Sync(null);
         }
         finally
@@ -3159,9 +3340,20 @@ public sealed class SeikoClient
         DownloadSession session,
         string? storePath = null,
         bool offline = false)
-        => config.Sources
-            .Select(source => CreateSource(source, root, proxy, session, storePath, offline))
-            .ToList();
+    {
+        // Origin entries answer before any configured source (ADR-0044).
+        var sources = new List<ISeiSource>(config.Origin.Count + config.Sources.Count);
+        if (config.Origin.Count > 0)
+        {
+            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+            sources.AddRange(config.Origin.Select(
+                origin => new OriginSource(origin, root, rid, storePath)));
+        }
+
+        sources.AddRange(config.Sources.Select(
+            source => CreateSource(source, root, proxy, session, storePath, offline)));
+        return sources;
+    }
 
     private static ISeiSource CreateSource(
         SourceConfig source,
