@@ -180,11 +180,19 @@ public sealed class LocalSource : ISeiSource
 
     internal static string ResolvePath(string value, string root)
     {
-        if (value.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+        var path = value.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+            ? new Uri(value).LocalPath
+            : Path.IsPathRooted(value) ? value : Path.GetFullPath(Path.Combine(root, value));
+
+        // A source may name its directory (design §7); the index file inside
+        // it is then implied. A configured file path keeps working unchanged.
+        if (Directory.Exists(path)
+            || path.EndsWith(Path.DirectorySeparatorChar)
+            || path.EndsWith(Path.AltDirectorySeparatorChar))
         {
-            return new Uri(value).LocalPath;
+            return Path.GetFullPath(Path.Combine(path, IndexRoot.FileName));
         }
 
-        return Path.IsPathRooted(value) ? value : Path.GetFullPath(Path.Combine(root, value));
+        return path;
     }
 }

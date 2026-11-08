@@ -67,6 +67,10 @@ public sealed class IndexRoot
 {
     public const int CurrentSchemaVersion = 2;
 
+    // A local source may be configured as its directory (design §7); the
+    // index file always has this name inside it.
+    public const string FileName = "index.json";
+
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string? GeneratedBy { get; set; }
     public List<string>? Sei { get; set; }

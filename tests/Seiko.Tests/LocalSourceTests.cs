@@ -5,6 +5,37 @@ namespace Seiko.Tests;
 public sealed class LocalSourceTests
 {
     [Fact]
+    public void SourceIndexMayNameTheDirectory()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+        });
+        fixture.WriteConfig("win-x64");
+        var directory = fixture.SourceDirectory.Replace('\\', '/');
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $"schemaVersion = 2\nsources = [\n  {{ id = \"local\", index = \"{directory}\" }}\n]\n");
+
+        // A local source is a directory (design §7); the index inside it is
+        // implied. The explicit file path stays valid.
+        var status = Assert.Single(new SeikoClient().SourceStatus(
+            fixture.Root,
+            storeRoot: fixture.StoreDirectory));
+        Assert.True(status.Reachable);
+        Assert.Empty(status.Problems);
+        Assert.Equal(1, status.SeiCount);
+
+        var client = new SeikoClient();
+        client.Add(fixture.Root, "hello@[1.0.0]", storeRoot: fixture.StoreDirectory);
+        Assert.Equal(
+            "hello",
+            File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
     public async Task DownloadAsync_AllowsHttpPrefixedRelativePaths()
     {
         using var fixture = new Fixture();
