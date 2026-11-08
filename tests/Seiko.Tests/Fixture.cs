@@ -48,6 +48,21 @@ internal sealed class Fixture : IDisposable
     private readonly Dictionary<string, SeiIndex> _indexes = new(StringComparer.Ordinal);
     private int _artifactIndex;
 
+    // Tests that omit --store must not write the developer's real cache. Only
+    // those tests depend on the variable, so they set it themselves; everything
+    // else passes --store explicitly.
+    public static IDisposable UseDefaultStore(string directory)
+    {
+        var prior = Environment.GetEnvironmentVariable("SEIKO_STORE");
+        Environment.SetEnvironmentVariable("SEIKO_STORE", directory);
+        return new Restore(() => Environment.SetEnvironmentVariable("SEIKO_STORE", prior));
+    }
+
+    private sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
     public Fixture()
     {
         Root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));

@@ -53,6 +53,7 @@ internal static class OfflineMetadata
         }
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var pendingOrigin = new SortedSet<string>(StringComparer.Ordinal);
         while (pending.Count > 0)
         {
             var name = pending.Dequeue();
@@ -67,33 +68,26 @@ internal static class OfflineMetadata
             // locked graph, which already names every target.
             if (originNames.Contains(name))
             {
-                if (lockedGraph is null && originIndexes.TryGetValue(name, out var originSpec))
-                {
-                    var versionsOf = VersionsOf(config);
-                    // Names already seen plus those still queued: the graph is
-                    // the whole set, not just the unprocessed remainder.
-                    var known = seen.Concat(pending).ToHashSet(StringComparer.Ordinal);
-                    // Only the files this environment would actually use: a
-                    // path selected for another platform cannot add cache
-                    // requirements (ADR-0027 selection rules).
-                    foreach (var full in OriginFiles(originSpec, root, rid, storePath, known, versionsOf))
-                    {
-                        if (OriginManifest.Dependencies(full) is { } manifest)
-                        {
-                            Enqueue(manifest, pending);
-                        }
-                    }
-                }
-
+                // Expanded after the walk instead: a selector may need a name a
+                // later source only reveals, so one pass here would depend on
+                // declaration order.
+                pendingOrigin.Add(name);
                 continue;
             }
 
+            CollectName(name);
+        }
+
+        // Looks one name up in the configured sources and queues what it
+        // depends on. Shared by the first pass and the origin fixpoint below.
+        void CollectName(string lookup)
+        {
             SeiIndex? found = null;
             foreach (var source in config.Sources)
             {
                 if (IsHttp(source))
                 {
-                    var uri = new Uri(new Uri(source.Index), $"sei/{name}.json");
+                    var uri = new Uri(new Uri(source.Index), $"sei/{lookup}.json");
                     var path = MetadataCache.PathFor(storePath, uri.AbsoluteUri);
                     // A recorded 404 is an answer, not a missing entry.
                     if (MetadataCache.IsMissing(path))
@@ -103,14 +97,14 @@ internal static class OfflineMetadata
 
                     if (!File.Exists(path))
                     {
-                        missing.Add($"sei/{name}.json from source '{source.Id}'");
+                        missing.Add($"sei/{lookup}.json from source '{source.Id}'");
                         continue;
                     }
 
                     found = MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex);
                     if (found is null)
                     {
-                        missing.Add($"sei/{name}.json from source '{source.Id}' (unreadable)");
+                        missing.Add($"sei/{lookup}.json from source '{source.Id}' (unreadable)");
                     }
 
                     break;
@@ -118,7 +112,7 @@ internal static class OfflineMetadata
 
                 // A local miss must keep looking: the resolver and the search
                 // walk fall through to later sources too.
-                found = LocalIndex(source, name, root);
+                found = LocalIndex(source, lookup, root);
                 if (found is not null)
                 {
                     break;
@@ -129,7 +123,7 @@ internal static class OfflineMetadata
 
             if (found is null)
             {
-                continue;
+                return;
             }
 
             // A replay only needs the index of each locked name, not the
@@ -137,10 +131,72 @@ internal static class OfflineMetadata
             // target that will be installed.
             if (lockedGraph is not null)
             {
-                continue;
+                return;
             }
 
             Enqueue(found, pending);
+        }
+
+        // Origin entries last, repeated until the graph stops growing: only then
+        // is every selector judged against the full set of names, so swapping
+        // two declarations cannot change the answer (ADR-0027).
+        if (lockedGraph is null)
+        {
+            var rangesOf = RangesOf(config);
+            var expanded = new SortedSet<string>(StringComparer.Ordinal);
+            while (true)
+            {
+                var before = seen.Count;
+                foreach (var name in pendingOrigin.Where(expanded.Add))
+                {
+                    if (!originIndexes.TryGetValue(name, out var originSpec))
+                    {
+                        continue;
+                    }
+
+                    foreach (var full in OriginFiles(originSpec, root, rid, storePath, seen, rangesOf))
+                    {
+                        if (OriginManifest.Dependencies(full) is not { } manifest)
+                        {
+                            continue;
+                        }
+
+                        var added = new Queue<string>();
+                        Enqueue(manifest, added);
+                        foreach (var dependency in added)
+                        {
+                            if (seen.Add(dependency))
+                            {
+                                pending.Enqueue(dependency);
+                            }
+                        }
+                    }
+                }
+
+                // Dependencies found here may be source names that reveal more
+                // names, so drain the queue through the same walk.
+                while (pending.Count > 0)
+                {
+                    var next = pending.Dequeue();
+                    if (!SeiName.IsValid(next))
+                    {
+                        continue;
+                    }
+
+                    if (originNames.Contains(next))
+                    {
+                        pendingOrigin.Add(next);
+                        continue;
+                    }
+
+                    CollectName(next);
+                }
+
+                if (seen.Count == before)
+                {
+                    break;
+                }
+            }
         }
 
         if (missing.Count > 0)
@@ -278,7 +334,7 @@ internal static class OfflineMetadata
         string rid,
         string? storeRoot,
         ISet<string> known,
-        Func<string, string?> versionsOf)
+        Func<string, string?> rangesOf)
     {
         for (var i = 0; i < spec.Paths.Count; i++)
         {
@@ -294,7 +350,7 @@ internal static class OfflineMetadata
             // A condition on a package that is not in the graph at all, or on a
             // version range the graph cannot satisfy, cannot hold; that file's
             // relations are then not a cache requirement (ADR-0027).
-            if (selector is not null && !Holds(selector, known, versionsOf))
+            if (selector is not null && !Holds(selector, known, rangesOf))
             {
                 continue;
             }
@@ -316,12 +372,13 @@ internal static class OfflineMetadata
     }
 
     // A selector can only apply if every package it names is in the graph and
-    // its allowed range admits the version the declaration pins. Nothing here
-    // resolves; a range that cannot be judged yet is treated as holding.
+    // the ranges intersect. Both sides are ranges, so the selector range is
+    // parsed as one rather than as a concrete version; an empty intersection
+    // means the resolver could never pick that file.
     private static bool Holds(
         OriginSelector selector,
         ISet<string> graph,
-        Func<string, string?> versionsOf)
+        Func<string, string?> rangeOf)
     {
         foreach (var item in selector.Prerequisites)
         {
@@ -330,15 +387,17 @@ internal static class OfflineMetadata
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(item.Version) || item.Version.Trim() == "*")
+            if (item.Version is not { } selectorRange
+                || rangeOf(item.Name) is not { } declaredRange
+                || !NuGet.Versioning.VersionRange.TryParse(selectorRange, out var wanted)
+                || !NuGet.Versioning.VersionRange.TryParse(declaredRange, out var declared))
             {
                 continue;
             }
 
-            if (NuGet.Versioning.VersionRange.TryParse(item.Version, out var range)
-                && versionsOf(item.Name) is { } pinned
-                && NuGet.Versioning.NuGetVersion.TryParse(pinned, out var version)
-                && !range.Satisfies(version))
+            // An empty intersection is the only way the pair cannot hold; the
+            // resolver still does the real search later.
+            if (NuGet.Versioning.VersionRange.CommonSubSet([declared, wanted]) is null)
             {
                 return false;
             }
@@ -350,7 +409,8 @@ internal static class OfflineMetadata
     // A stored snapshot beats nothing: the file name carries the digest, so a
     // rebuilt original cannot shadow it. The newest one is the best guess for
     // listing dependencies; the resolver still checks the real digest later.
-    private static Func<string, string?> VersionsOf(SeikoConfig config)
+    // The declared range of a directly declared name, if it has one.
+    private static Func<string, string?> RangesOf(SeikoConfig config)
         => name => config.Sei
             .FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))?
             .Version;

@@ -681,7 +681,10 @@ public sealed class OriginTests
     public void Frozen_PicksTheLockedSelectorConditionWithTwoMatchingRids()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("lib", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei(
+            "lib",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
+            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteConfig("win-x64");
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "from-a", fileName: "hello-a.sei");
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "from-b", fileName: "hello-b.sei");
@@ -691,7 +694,7 @@ public sealed class OriginTests
             "\"dist/hello-a.sei\", \"dist/hello-b.sei\"",
             "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] }, "
             + "{ rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]",
-            "lib");
+            "lib@[2.0.0]");
 
         // Both selectors match the rid; only the second is satisfiable, so the
         // old "first selector" pairing would pick the wrong condition.
@@ -712,15 +715,16 @@ public sealed class OriginTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
-        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-1.0.0.sei");
-        client.Add(fixture.Root, Rel(fixture, path));
-        File.Delete(Path.Combine(fixture.Root, path));
-
+        using var defaultStore = Fixture.UseDefaultStore(Path.Combine(fixture.Root, "default-store"));
+        var path = fixture.WriteOrigin("hello-default", "1.0.0", "hello.txt", "one", fileName: "hello-default-1.0.0.sei");
         // No --store on either call: the default store must hold the snapshot,
         // and it is named after the sei rather than the file.
         client.Add(fixture.Root, Rel(fixture, path));
+        File.Delete(Path.Combine(fixture.Root, path));
 
-        Assert.Equal("dist/hello-1.0.0.sei", Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths[0]);
+        client.Add(fixture.Root, Rel(fixture, path));
+
+        Assert.Equal("dist/hello-default-1.0.0.sei", Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths[0]);
     }
 
     [Fact]
@@ -730,13 +734,13 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools", fileName: "hello-tools-win.sei");
-        client.Add(fixture.Root, Rel(fixture, tools));
+        client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
         // `hello` is a prefix of `hello-tools`; its snapshot is newer.
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base", fileName: "hello.sei");
-        client.Add(fixture.Root, Rel(fixture, "dist/hello.sei"));
+        client.Add(fixture.Root, Rel(fixture, "dist/hello.sei"), storeRoot: fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, tools));
 
-        client.Add(fixture.Root, Rel(fixture, tools));
+        client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
 
         Assert.Contains(
             ConfigLoader.Load(fixture.Root).Origin,
@@ -751,15 +755,19 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
-        client.Add(fixture.Root, Rel(fixture, path));
+        var store = fixture.StoreDirectory;
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: store);
 
-        // Same version, same relations, different payload; the tree stays.
+        // Same version, same relations, different payload. The unpacked tree
+        // stays, so only the file digest check can notice.
+        var locked = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
+        Assert.True(Directory.Exists(Path.Combine(store, locked)));
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "two");
 
         var frozen = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            () => client.Sync(fixture.Root, store, mode: SyncMode.Frozen));
         var preview = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen, dryRun: true));
+            () => client.Sync(fixture.Root, store, mode: SyncMode.Frozen, dryRun: true));
 
         Assert.Equal("checksum", frozen.Code);
         Assert.Equal("checksum", preview.Code);
@@ -790,6 +798,8 @@ public sealed class OriginTests
         fixture.AddSei("lib", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("other", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("lib", "[1.0.0]"));
+        // The declaration keeps its real range; WriteOriginConfig appends a
+        // second sei block, so lib is pinned to 1.0.0 here.
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", fileName: "hello-a.sei");
         // The second file needs lib@2 and pulls a package only it names; the
         // declaration pins lib@1, so that dependency must not be required.
@@ -799,26 +809,49 @@ public sealed class OriginTests
             "hello.txt",
             "two",
             fileName: "hello-b.sei",
-            dependencies: [("other", null)]);
+            dependencies: [("other", null)],
+            dependencyLevel: "artifact");
         WriteOriginConfig(
             fixture,
             "hello",
             "\"dist/hello-a.sei\", \"dist/hello-b.sei\"",
             "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] }, "
             + "{ rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]",
-            "lib");
+            "lib@[1.0.0]");
 
-        // Cached for lib (matched above) but not for `other`.
+        // hello-b's selector needs lib@2 while the declaration pins lib@1, so
+        // the resolver will use hello-a; `other` is only named by hello-b's
+        // artifact and must not become a cache requirement. Without the range
+        // check the pre-check would demand it and this would fail offline.
         new SeikoClient().Add(fixture.Root, Rel(fixture, "dist/hello-a.sei"), storeRoot: fixture.StoreDirectory);
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+        new SeikoClient().Add(
             fixture.Root,
             Rel(fixture, "dist/hello-b.sei"),
             storeRoot: fixture.StoreDirectory,
-            offline: true));
+            offline: true);
 
-        Assert.Equal("source", error.Code);
-        // hello-b is now the declared path, so its own dependency is required.
-        Assert.Contains("sei/other.json", error.Message);
+        Assert.Equal(
+            "dist/hello-a.sei",
+            Assert.Single(new SeikoClient().ReadLock(fixture.Root)!.Sei, item => item.Name == "hello").OriginPath);
+    }
+
+    [Fact]
+    public void Sync_FindsTheRightSnapshotWhenALongerNameIsNewer()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var hello = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "base");
+        var tools = fixture.WriteOrigin("hello-tools", "1.0.0", "tools.txt", "tools");
+        client.Add(fixture.Root, Rel(fixture, hello), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, tools), storeRoot: fixture.StoreDirectory);
+
+        // The hello-tools snapshot is now the newer one; a `hello-*.sei` glob
+        // would match it and hand `hello` the wrong manifest.
+        File.Delete(Path.Combine(fixture.Root, hello));
+        client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
+
+        Assert.Equal("base", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]
@@ -883,12 +916,34 @@ public sealed class OriginTests
         string selectors,
         params string[] alsoDirect)
     {
+        // Rewrite the sei block rather than appending: HOCON concatenates two
+        // `sei` arrays, which would duplicate every entry.
         var config = Path.Combine(fixture.Root, "seiko.conf");
-        File.WriteAllText(
-            config,
-            File.ReadAllText(config)
-            + $"origin = [ {{ name = \"{name}\", paths = [{Quoted(path)}], {selectors} }} ]\n"
-            + $"sei = [ {{ name = \"{name}\" }}{string.Concat(alsoDirect.Select(n => $", {{ name = \"{n}\" }}"))} ]\n");
+        var lines = File.ReadAllLines(config).ToList();
+        var start = lines.FindIndex(line => line.StartsWith("sei =", StringComparison.Ordinal));
+        if (start >= 0)
+        {
+            // The block ends at its `]` or, for a one-line `sei = []`, at once.
+            var end = lines[start].Contains(']', StringComparison.Ordinal)
+                ? start
+                : lines.FindIndex(start, line => line.TrimStart().StartsWith(']'));
+            lines.RemoveRange(start, end - start + 1);
+        }
+
+        lines.Add($"origin = [ {{ name = \"{name}\", paths = [{Quoted(path)}], {selectors} }} ]");
+        lines.Add($"sei = [ {{ name = \"{name}\" }}"
+            + string.Concat(alsoDirect.Select(SpecText))
+            + " ]");
+        File.WriteAllText(config, string.Join('\n', lines) + "\n");
+    }
+
+    // "lib@[1.0.0]" keeps its range; a bare name is declared without one.
+    private static string SpecText(string text)
+    {
+        var at = text.IndexOf('@');
+        return at < 0
+            ? $", {{ name = \"{text}\" }}"
+            : $", {{ name = \"{text[..at]}\", version = \"{text[(at + 1)..]}\" }}";
     }
 
     // One path is taken as-is; an explicit list (already quoted) passes through.

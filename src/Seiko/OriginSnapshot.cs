@@ -17,6 +17,15 @@ internal static class OriginSnapshot
     public static string SnapshotPath(string storeRoot, string name, string sha256)
         => Path.Combine(Folder(storeRoot), FileName(name, sha256));
 
+    // The sei a snapshot belongs to: everything before the digest, which is
+    // last because a sei name may itself contain '-'.
+    public static string NameOf(string snapshot)
+    {
+        var file = Path.GetFileNameWithoutExtension(snapshot);
+        var dash = file.LastIndexOf('-');
+        return dash < 0 ? file : file[..dash];
+    }
+
     public static string FileName(string name, string sha256)
         => $"{name}-{Hashing.NormalizeSha256(sha256)}.sei";
 

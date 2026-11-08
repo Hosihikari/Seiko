@@ -766,7 +766,16 @@ public sealed class SeikoClient
         // giving that name (ADR-0044).
         foreach (var addition in additions.Where(addition => addition.Path is not null))
         {
-            var manifest = OriginSource.ReadName(OriginPaths.Resolve(addition.Path!, root), storePath);
+            var declaredOrigin = config.Origin.FirstOrDefault(origin =>
+                origin.Paths.Any(candidate => string.Equals(
+                    OriginPaths.Resolve(candidate, root),
+                    OriginPaths.Resolve(addition.Path!, root),
+                    StringComparison.Ordinal)));
+            var manifest = OriginSource.ReadName(
+                OriginPaths.Resolve(addition.Path!, root),
+                storePath,
+                declaredOrigin?.Name,
+                LockedDigest(root, declaredOrigin?.Name));
             var existingOrigin = config.Origin.FirstOrDefault(
                 origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
             var declared = config.Sei.FirstOrDefault(
@@ -1252,6 +1261,19 @@ public sealed class SeikoClient
     // Snapshots are named after the sei, not the file, so identity is the
     // declared name (from an existing declaration or the lock) or, for an
     // unknown path, the name its own manifest declares.
+    // The digest a lock pinned for this sei, if any: the exact bytes to prefer.
+    private static string? LockedDigest(string root, string? name)
+    {
+        if (name is null)
+        {
+            return null;
+        }
+
+        var locked = LockFile.Read(Path.Combine(root, "seiko.lock.json"))?
+            .Sei.FirstOrDefault(sei => string.Equals(sei.Name, name, StringComparison.Ordinal));
+        return locked?.Artifact.Sha256;
+    }
+
     private static bool HasSnapshotFor(string storePath, string storedPath, string? declaredName)
     {
         var folder = OriginSnapshot.Folder(storePath);

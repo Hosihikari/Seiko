@@ -42,12 +42,30 @@ internal sealed class OriginSource : ISeiSource
 
     // Used by `add` before the declaration exists; reads the name only. The
     // path may name a snapshot when the original is gone.
-    public static string ReadName(string path, string? storePath = null)
+    public static string ReadName(
+        string path,
+        string? storePath = null,
+        string? declaredName = null,
+        string? lockedDigest = null)
     {
-        string? name = null;
+        string? name = declaredName;
         if (!File.Exists(path) && storePath is not null)
         {
-            path = SnapshotByStem(storePath, path, out name) ?? path;
+            // A declaration or lock already names the sei; only an unknown path
+            // has to be identified from the snapshots themselves.
+            if (declaredName is not null && lockedDigest is not null)
+            {
+                var exact = OriginSnapshot.SnapshotPath(storePath, declaredName, lockedDigest);
+                if (File.Exists(exact))
+                {
+                    path = exact;
+                }
+            }
+
+            if (!File.Exists(path))
+            {
+                path = SnapshotByStem(storePath, path, declaredName, out name) ?? path;
+            }
         }
 
         var manifest = ReadManifestHeader(path);
@@ -127,9 +145,15 @@ internal sealed class OriginSource : ISeiSource
             }
         }
 
+        // `hello-*.sei` also matches `hello-tools-<sha>.sei`, so the name is
+        // checked exactly (digest is last; a name may contain '-').
         var directory = OriginSnapshot.Folder(StoreRoot);
         return Directory.Exists(directory)
-            ? Directory.EnumerateFiles(directory, name + "-*.sei")
+            ? Directory.EnumerateFiles(directory, "*.sei")
+                .Where(candidate => string.Equals(
+                    OriginSnapshot.NameOf(candidate),
+                    name,
+                    StringComparison.Ordinal))
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault()
             : null;
@@ -415,7 +439,11 @@ internal sealed class OriginSource : ISeiSource
     // a name the stem can belong to. A prefix match alone is not enough, since
     // `hello` is a prefix of `hello-tools`; the manifest decides, and an
     // ambiguous stem is refused rather than resolved by timestamp.
-    private static string? SnapshotByStem(string storePath, string path, out string? name)
+    private static string? SnapshotByStem(
+        string storePath,
+        string path,
+        string? declaredName,
+        out string? name)
     {
         var folder = OriginSnapshot.Folder(storePath);
         if (!Directory.Exists(folder))
@@ -442,7 +470,8 @@ internal sealed class OriginSource : ISeiSource
                 continue;
             }
 
-            if (OriginPaths.StemMatches(path, manifest.Name))
+            if (string.Equals(manifest.Name, declaredName, StringComparison.Ordinal)
+                || (declaredName is null && OriginPaths.StemMatches(path, manifest.Name)))
             {
                 matches.Add(candidate);
             }
