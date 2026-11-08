@@ -98,7 +98,7 @@ public static class LockFile
                     Name = p.Name,
                     Version = p.Version,
                     Source = p.Source.Id,
-                    OriginPath = p.Artifact.OriginPath,
+                    OriginPath = p.Source is OriginSource ? p.Artifact.OriginPath : null,
                     Direct = p.Direct,
                     Artifact = new LockedArtifact
                     {

@@ -37,9 +37,15 @@ internal sealed class OriginSource : ISeiSource
     public SeiIndex? GetSei(string name)
         => _specs.TryGetValue(name, out var spec) ? Build(spec) : null;
 
-    // Used by `add` before the declaration exists; reads the name only.
-    public static string ReadName(string path)
+    // Used by `add` before the declaration exists; reads the name only. The
+    // path may name a snapshot when the original is gone.
+    public static string ReadName(string path, string? storeRoot = null)
     {
+        if (!File.Exists(path) && storeRoot is not null)
+        {
+            path = LatestSnapshotIgnorePath(storeRoot, path) ?? path;
+        }
+
         var manifest = ReadManifestHeader(path);
         if (manifest is null || string.IsNullOrWhiteSpace(manifest.Name))
         {
@@ -126,11 +132,11 @@ internal sealed class OriginSource : ISeiSource
 
     private SeiIndex Build(OriginSpec spec)
     {
-        var chosen = Choose(spec);
-        if (_lockedPath.TryGetValue(spec.Name, out var locked) && chosen.Count == 1)
-        {
-            chosen = [(locked, chosen[0].Selector)];
-        }
+        // A replay names the file, so its path replaces whatever the current
+        // declaration would pick — including when several selectors match.
+        var chosen = _lockedPath.TryGetValue(spec.Name, out var locked)
+            ? [(locked, Choose(spec)[0].Selector)]
+            : Choose(spec);
 
         var artifacts = new List<ArtifactEntry>();
         SeiManifest? first = null;
@@ -306,6 +312,20 @@ internal sealed class OriginSource : ISeiSource
         }
 
         return manifest;
+    }
+
+    private static string? LatestSnapshotIgnorePath(string storeRoot, string path)
+    {
+        var folder = OriginSnapshot.Folder(storeRoot);
+        if (!Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(path);
+        return Directory.EnumerateFiles(folder, stem + "-*.sei")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
     }
 
     // Reads the root manifest entry only. The size limit applies to that entry,

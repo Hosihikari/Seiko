@@ -17,7 +17,11 @@ public sealed record SyncData(
     List<string> Warnings,
     List<PreviewDiagnostic>? Diagnostics,
     int External,
-    List<string> ExternalHosts);
+    List<string> ExternalHosts,
+    // Per package: where it came from and whether an index cross-checked it.
+    List<SyncSeiData>? Packages = null);
+
+public sealed record SyncSeiData(string Name, string Version, string Source, bool IndexVerified);
 
 public sealed record PreviewData(
     List<PlannedChange> Changes,

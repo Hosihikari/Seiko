@@ -381,14 +381,16 @@ public sealed class OriginTests
             "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] } ]",
             "lib");
 
+        // lib is direct, so its presence proves nothing; the artifact only
+        // applies if the selector condition holds, so the install succeeds
+        // with the selector and would fail without it.
         new SeikoClient().Add(
             fixture.Root,
             Rel(fixture, "dist/hello.sei"),
             storeRoot: fixture.StoreDirectory);
 
-        // The selector adds lib as an artifact prerequisite, so it is pulled in
-        // and the artifact is chosen because the condition holds.
-        Assert.Contains("lib", new SeikoClient().ReadLock(fixture.Root)!.Sei.Select(sei => sei.Name));
+        var sei = Assert.Single(new SeikoClient().ReadLock(fixture.Root)!.Sei, item => item.Name == "hello");
+        Assert.Contains(sei.Artifact.Prerequisites, relation => relation.Name == "lib");
     }
 
     [Fact]
@@ -404,8 +406,8 @@ public sealed class OriginTests
             "dist/hello.sei",
             "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]");
 
-        // Without the selector range the artifact would be accepted against
-        // lib 1.0.0; both ranges apply, so no version satisfies and it fails.
+        // The manifest wants lib [1.0.0], the selector [2.0.0]. Dropping the
+        // selector range would accept lib 1.0.0; keeping both admits nothing.
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root,
             Rel(fixture, "dist/hello.sei"),
@@ -494,6 +496,134 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void DryRun_DoesNotWriteASnapshot()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+
+        new SeikoClient().Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory, dryRun: true);
+
+        var folder = Path.Combine(fixture.StoreDirectory, "origin");
+        Assert.False(Directory.Exists(folder) && Directory.GetFiles(folder).Length > 0);
+    }
+
+    [Fact]
+    public void Frozen_UsesTheLockedPathWithSeveralSelectors()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "win", fileName: "hello-win.sei");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "linux", fileName: "hello-linux.sei");
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "\"dist/hello-win.sei\", \"dist/hello-linux.sei\"",
+            "selectors = [ { rid = \"win-x64\" }, { rid = \"linux-x64\" } ]");
+
+        // Pin the linux file by hand, the way a moved declaration would look.
+        new SeikoClient().Add(fixture.Root, Rel(fixture, "dist/hello-win.sei"), storeRoot: fixture.StoreDirectory);
+        var client = new SeikoClient();
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(lockPath))!;
+        node["sei"]![0]!["originPath"] = "dist/hello-linux.sei";
+        node["sei"]![0]!["artifact"]!["sha256"] =
+            Hashing.Sha256File(Path.Combine(fixture.Root, "dist/hello-linux.sei"));
+        File.WriteAllText(lockPath, node.ToJsonString());
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+
+        Assert.Equal("linux", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
+    public void IndexOriginPathIsNotTreatedAsALocalFile()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "indexed" } }],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
+
+        // A plain indexed artifact that also mirrors the optional field.
+        var indexPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(indexPath))!;
+        node["versions"]![0]!["artifacts"]![0]!["originPath"] = "dist/elsewhere.sei";
+        File.WriteAllText(indexPath, node.ToJsonString());
+
+        // A real file at that path with different bytes must not be captured
+        // or compared; the field is display data on an indexed artifact.
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "dist"));
+        File.WriteAllBytes(
+            Path.Combine(fixture.Root, "dist/elsewhere.sei"),
+            [1, 2, 3]);
+
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Null(Assert.Single(client.ReadLock(fixture.Root)!.Sei).OriginPath);
+        Assert.False(Directory.Exists(Path.Combine(fixture.StoreDirectory, "origin")));
+        Assert.Equal("indexed", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+    }
+
+    [Fact]
+    public void Add_OfflineReportsArtifactLevelDependencies()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin(
+            "hello",
+            "1.0.0",
+            "hello.txt",
+            "one",
+            dependencies: [("a", null), ("b", null)],
+            dependencyLevel: "artifact");
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Rel(fixture, origin),
+            storeRoot: fixture.StoreDirectory,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("sei/", error.Message);
+    }
+
+    [Fact]
+    public void Add_OfflineReadsDependenciesFromTheSnapshot()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin(
+            "hello",
+            "1.0.0",
+            "hello.txt",
+            "one",
+            dependencies: [("a", null)]);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        File.Delete(Path.Combine(fixture.Root, origin));
+        Directory.Delete(Path.Combine(fixture.StoreDirectory, ".metadata"), recursive: true);
+
+        // The dependency is read from the snapshot, so it is still reported
+        // rather than surfacing as the first parse failure.
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Rel(fixture, origin),
+            storeRoot: fixture.StoreDirectory,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("sei/a.json", error.Message);
+    }
+
+    [Fact]
     public void Add_RejectsAFileUrlInput()
     {
         using var fixture = new Fixture();
@@ -559,9 +689,13 @@ public sealed class OriginTests
         File.WriteAllText(
             config,
             File.ReadAllText(config)
-            + $"origin = [ {{ name = \"{name}\", paths = [\"{path}\"], {selectors} }} ]\n"
+            + $"origin = [ {{ name = \"{name}\", paths = [{Quoted(path)}], {selectors} }} ]\n"
             + $"sei = [ {{ name = \"{name}\" }}{string.Concat(alsoDirect.Select(n => $", {{ name = \"{n}\" }}"))} ]\n");
     }
+
+    // One path is taken as-is; an explicit list (already quoted) passes through.
+    private static string Quoted(string path)
+        => path.StartsWith('"') ? path : $"\"{path}\"";
 
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('.', '/');
 }

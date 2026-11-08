@@ -132,11 +132,13 @@ internal sealed class Fixture : IDisposable
         string? rid = null,
         (string Name, string? Version)[]? prerequisites = null,
         (string Name, string? Version)[]? dependencies = null,
-        (string Name, string? Version)[]? manifestPrerequisites = null)
+        (string Name, string? Version)[]? manifestPrerequisites = null,
+        string? fileName = null,
+        string? dependencyLevel = null)
     {
         var directory = Path.Combine(Root, "dist");
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, name + ".sei");
+        var path = Path.Combine(directory, fileName ?? name + ".sei");
         if (File.Exists(path))
         {
             File.Delete(path);
@@ -154,6 +156,9 @@ internal sealed class Fixture : IDisposable
             {
                 Layout = "root",
                 Rid = rid,
+                Dependencies = string.Equals(dependencyLevel, "artifact", StringComparison.Ordinal)
+                    ? ToDependencies((dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version)))
+                    : [],
                 // The manifest never carries the selector condition; a caller
                 // that needs one uses the selector path instead.
                 Prerequisites = ToDependencies(

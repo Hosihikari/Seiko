@@ -25,7 +25,8 @@ internal static class OfflineMetadata
             // A replay is fully described by the lock: every name it needs is
             // a locked entry. Relations of unselected versions, unselected
             // artifacts and non-retaining kinds would only be extra cache
-            // requirements, so the walk does not follow them here.
+            // requirements, so the walk does not follow them here, and origin
+            // files are not expanded for the same reason.
             foreach (var locked in lockedGraph.Sei)
             {
                 pending.Enqueue(locked.Name);
@@ -34,6 +35,7 @@ internal static class OfflineMetadata
 
         // A name served by an origin never consults a source, so a source
         // index is only required when some reached name has to come from one.
+        var rid = string.IsNullOrWhiteSpace(config.Rid) ? SeikoClient.DefaultRid() : config.Rid;
         var originIndexes = config.Origin.ToDictionary(origin => origin.Name, StringComparer.Ordinal);
         var originNames = originIndexes.Keys.ToHashSet(StringComparer.Ordinal);
         var needsIndex = pending.Any(name => !originNames.Contains(name));
@@ -60,22 +62,18 @@ internal static class OfflineMetadata
             }
 
             // The origin answers this name from disk, so no source is consulted
-            // — but its own dependencies still are, so they are enqueued here
-            // instead of being read from an index.
+            // — but its dependencies still are, so they are enqueued here
+            // instead of being read from an index. A replay only follows the
+            // locked graph, which already names every target.
             if (originNames.Contains(name))
             {
-                if (originIndexes.TryGetValue(name, out var originSpec))
+                if (lockedGraph is null && originIndexes.TryGetValue(name, out var originSpec))
                 {
-                    foreach (var stored in originSpec.Paths)
+                    // Only the files this environment would actually use: a
+                    // path selected for another platform cannot add cache
+                    // requirements (ADR-0027 selection rules).
+                    foreach (var full in OriginFiles(originSpec, root, rid, storePath))
                     {
-                        var full = LocalSource.ResolvePath(stored, root);
-                        if (!File.Exists(full))
-                        {
-                            // The declaration may still be satisfied by a
-                            // snapshot; the source reports it if not.
-                            continue;
-                        }
-
                         if (OriginManifest.Dependencies(full) is { } manifest)
                         {
                             Enqueue(manifest, pending);
@@ -266,8 +264,56 @@ internal static class OfflineMetadata
         }
     }
 
-    // Local sources are always readable; their files still contribute relation
-    // names, and a missing local file is reported by the source itself later.
+    // Every declared file whose condition fits this platform, whether the
+    // original or a stored snapshot answers it. Making the requirement on an
+    // origin name at least as broad as the resolver's is the point; a missing
+    // file is still reported by the source itself later.
+    private static IEnumerable<string> OriginFiles(
+        OriginSpec spec, string root, string rid, string? storeRoot)
+    {
+        for (var i = 0; i < spec.Paths.Count; i++)
+        {
+            var selector = i < spec.Selectors.Count ? spec.Selectors[i] : null;
+            if (selector is not null
+                && !string.IsNullOrWhiteSpace(selector.Rid)
+                && !string.Equals(selector.Rid, "*", StringComparison.Ordinal)
+                && !string.Equals(selector.Rid, rid, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // The original is preferred; a deleted one is answered by the
+            // snapshot with the same digest, if it is still there.
+            var full = LocalSource.ResolvePath(spec.Paths[i], root);
+            if (File.Exists(full))
+            {
+                yield return full;
+                continue;
+            }
+
+            if (storeRoot is not null && OriginSnapshotPath(storeRoot, spec.Name) is { } snapshot)
+            {
+                yield return snapshot;
+            }
+        }
+    }
+
+    // A stored snapshot beats nothing: the file name carries the digest, so a
+    // rebuilt original cannot shadow it. The newest one is the best guess for
+    // listing dependencies; the resolver still checks the real digest later.
+    private static string? OriginSnapshotPath(string storeRoot, string name)
+    {
+        var folder = OriginSnapshot.Folder(storeRoot);
+        if (!Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateFiles(folder, name + "-*.sei")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
     private static SeiIndex? LocalIndex(SourceConfig source, string name, string root)
     {
         // Same path rule as LocalSource; relative indexes belong to the
@@ -354,6 +400,8 @@ internal static class OfflineMetadata
 // that cannot be read is left to the source, which reports the real problem.
 internal static class OriginManifest
 {
+    // Relations of the package and of the artifact both count; the artifact
+    // set is what a selector adds on top of the declaration.
     public static SeiIndex? Dependencies(string path)
     {
         try
@@ -375,6 +423,8 @@ internal static class OriginManifest
                 return null;
             }
 
+            // Artifact relations live on the artifact, so they are carried as
+            // the only artifact rather than flattened into the version.
             return new SeiIndex
             {
                 Name = manifest.Name,
@@ -387,7 +437,16 @@ internal static class OriginManifest
                         Prerequisites = manifest.Prerequisites,
                         OptionalPeers = manifest.OptionalPeers,
                         Conflicts = manifest.Conflicts,
-                        Artifacts = [],
+                        Artifacts =
+                        [
+                            new ArtifactEntry
+                            {
+                                Dependencies = manifest.Artifact?.Dependencies ?? [],
+                                Prerequisites = manifest.Artifact?.Prerequisites ?? [],
+                                OptionalPeers = manifest.Artifact?.OptionalPeers ?? [],
+                                Conflicts = manifest.Artifact?.Conflicts ?? [],
+                            },
+                        ],
                     },
                 ],
             };

@@ -999,7 +999,14 @@ static int Sync(
                 result.Warnings.ToList(),
                 diagnostics ? result.Diagnostics.ToList() : null,
                 result.ExternalItems,
-                result.ExternalHosts.ToList())));
+                result.ExternalHosts.ToList(),
+                result.Lock.Sei
+                    .Select(sei => new SyncSeiData(
+                        sei.Name,
+                        sei.Version,
+                        sei.Source,
+                        sei.OriginPath is null))
+                    .ToList()))); 
         return 0;
     }
 
@@ -1033,6 +1040,13 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
         var detail = change.Source is null
             ? ""
             : $"source={change.Source} artifact={change.Artifact}";
+        // A local file is not checked against an index entry; say so without
+        // needing --diagnostics (ADR-0044).
+        if (string.Equals(change.Source, "origin", StringComparison.Ordinal))
+        {
+            detail += Loc.Get("not-index-verified");
+        }
+
         Console.WriteLine($"{change.Action}\t{change.Name}{from}{to}\t{detail}".TrimEnd());
     }
 

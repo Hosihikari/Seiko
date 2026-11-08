@@ -209,19 +209,7 @@ public sealed class SeikoClient
                     "lock");
             }
 
-            // A replay must read the locked bytes, not whatever the file
-            // holds now, so a missing or rebuilt file falls back to the
-            // matching snapshot instead of taking the current one.
-            if (sources.FirstOrDefault(sei => string.Equals(sei.Id, OriginPaths.SourceId, StringComparison.Ordinal))
-                is OriginSource origin)
-            {
-                foreach (var locked in existingLock.Sei.Where(
-                    sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
-                {
-                    origin.PreferLocked(locked.Name, locked.OriginPath!, locked.Artifact.Sha256);
-                }
-            }
-
+            BindLockedOrigins(sources, existingLock);
             resolved = LockReplay.Resolve(sources, existingLock, specs);
             lockFile = existingLock;
             warnings = Retirement.Warnings(resolved);
@@ -733,7 +721,7 @@ public sealed class SeikoClient
         root = Path.GetFullPath(root);
         var workingDirectory = Directory.GetCurrentDirectory();
         var additions = specifications
-            .Select(specification => ParseAddSpecification(specification, root, workingDirectory))
+            .Select(specification => ParseAddSpecification(specification, root, workingDirectory, storeRoot))
             .ToList();
         var removals = (remove ?? [])
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -767,7 +755,7 @@ public sealed class SeikoClient
             using var probeSession = new DownloadSession(jobs, cancellationToken);
             using var probe = new SourceScope(
                 LoadSources(config, root, proxy, probeSession, storePath, offline));
-            EnsureUnambiguousPaths(additions, probe.Sources, root);
+            EnsureUnambiguousPaths(additions, probe.Sources, root, storePath);
         }
 
         // Paths are read before anything is written: the manifest supplies the
@@ -775,7 +763,7 @@ public sealed class SeikoClient
         // giving that name (ADR-0044).
         foreach (var addition in additions.Where(addition => addition.Path is not null))
         {
-            var manifest = OriginSource.ReadName(OriginPaths.Resolve(addition.Path!, root));
+            var manifest = OriginSource.ReadName(OriginPaths.Resolve(addition.Path!, root), storeRoot);
             var existingOrigin = config.Origin.FirstOrDefault(
                 origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
             var declared = config.Sei.FirstOrDefault(
@@ -864,14 +852,18 @@ public sealed class SeikoClient
         // A snapshot makes the granted generation survive a deleted or rebuilt
         // original (ADR-0044). Only the paths this run touches are read: an
         // untouched entry whose original is gone must not fail the command.
-        foreach (var origin in originTargets)
+        // A preview writes nothing, so it does not capture (ADR-0029).
+        if (!dryRun)
         {
-            foreach (var stored in origin.Paths)
+            foreach (var origin in originTargets)
             {
-                var full = OriginPaths.Resolve(stored, root);
-                if (File.Exists(full))
+                foreach (var stored in origin.Paths)
                 {
-                    OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
+                    var full = OriginPaths.Resolve(stored, root);
+                    if (File.Exists(full))
+                    {
+                        OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
+                    }
                 }
             }
         }
@@ -1064,6 +1056,26 @@ public sealed class SeikoClient
             : $"[{lower},{version.Major + 1}.0.0)";
     }
 
+    // A replay must read the locked bytes, not whatever the file holds now, so
+    // the path and digest come from the lock and a missing file falls back to
+    // the snapshot with that digest. Frozen and rollback both go through here
+    // (ADR-0044).
+    private static void BindLockedOrigins(IReadOnlyList<ISeiSource> sources, SeikoLock lockFile)
+    {
+        if (sources.FirstOrDefault(
+            source => string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal))
+            is not OriginSource origin)
+        {
+            return;
+        }
+
+        foreach (var locked in lockFile.Sei.Where(
+            sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
+        {
+            origin.PreferLocked(locked.Name, locked.OriginPath!, locked.Artifact.Sha256);
+        }
+    }
+
     // Records the bytes a run actually resolved, so a later replay or rollback
     // still has them after the original is deleted or rebuilt. Only origin
     // entries have a stored original; everything else already lives in the
@@ -1072,12 +1084,14 @@ public sealed class SeikoClient
     {
         foreach (var sei in resolved)
         {
-            if (sei.Artifact.OriginPath is not { } stored)
+            // Only a real origin artifact is a local file; the index may mirror
+            // the field on an ordinary artifact too, where it is display data.
+            if (sei.Source is not OriginSource origin || sei.Artifact.OriginPath is not { } stored)
             {
                 continue;
             }
 
-            var full = OriginPaths.Resolve(stored, sei.Source is OriginSource origin ? origin.Root : ".");
+            var full = OriginPaths.Resolve(stored, origin.Root);
             if (File.Exists(full))
             {
                 OriginSnapshot.Capture(storePath, sei.Name, full, sei.Artifact.Source.Sha256);
@@ -1155,7 +1169,8 @@ public sealed class SeikoClient
     private static AddSpecification ParseAddSpecification(
         string specification,
         string root,
-        string workingDirectory)
+        string workingDirectory,
+        string? storeRoot)
     {
         // A path wins on shape alone, so `hello.sei` can never be a nice
         // accident. Once it looks like a path, `@range` is not accepted: one
@@ -1170,7 +1185,7 @@ public sealed class SeikoClient
             }
 
             var full = OriginPaths.Normalize(specification, root, workingDirectory);
-            if (!File.Exists(OriginPaths.Resolve(full, root)))
+            if (!File.Exists(OriginPaths.Resolve(full, root)) && !HasSnapshotFor(storeRoot, full))
             {
                 throw new SeikoException($"origin file not found: {full}", "usage");
             }
@@ -1195,7 +1210,8 @@ public sealed class SeikoClient
     private static void EnsureUnambiguousPaths(
         IReadOnlyList<AddSpecification> additions,
         IReadOnlyList<ISeiSource> sources,
-        string root)
+        string root,
+        string storeRoot)
     {
         foreach (var addition in additions)
         {
@@ -1205,7 +1221,7 @@ public sealed class SeikoClient
                 continue;
             }
 
-            var name = OriginSource.ReadName(OriginPaths.Resolve(addition.Path, root));
+            var name = OriginSource.ReadName(OriginPaths.Resolve(addition.Path, root), storeRoot);
             if (sources.Any(source => source.GetSei(name) is not null))
             {
                 throw new SeikoException(
@@ -1221,6 +1237,25 @@ public sealed class SeikoClient
         var origin = new OriginSpec { Name = name };
         config.Origin.Add(origin);
         return origin;
+    }
+
+    // A deleted original is still a usable declaration when a snapshot exists;
+    // the file name stem identifies it before any manifest can be read.
+    private static bool HasSnapshotFor(string? storeRoot, string storedPath)
+    {
+        if (storeRoot is null)
+        {
+            return false;
+        }
+
+        var folder = OriginSnapshot.Folder(Path.GetFullPath(storeRoot));
+        if (!Directory.Exists(folder))
+        {
+            return false;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(storedPath);
+        return Directory.EnumerateFiles(folder, stem + "-*.sei").Any();
     }
 
     private sealed record AddSpecification(string? Name, string? Version, string? Path, string Raw);
@@ -2283,6 +2318,7 @@ public sealed class SeikoClient
                 .Where(item => item.Direct)
                 .Select(item => new SeiSpec { Name = item.Name, Version = $"[{item.Version}]" })
                 .ToList();
+            BindLockedOrigins(sources, snapshotLock);
             var resolved = LockReplay.Resolve(sources, snapshotLock, specs);
             sei = resolved
                 .Select(item =>
