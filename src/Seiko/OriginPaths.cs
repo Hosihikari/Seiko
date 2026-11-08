@@ -28,28 +28,20 @@ internal static class OriginPaths
         return File.Exists(Path.Combine(workingDirectory, specification));
     }
 
-    // Stored form is always relative to the install root, so a committed lock
-    // survives a move to another machine or clone directory. Relative input is
-    // resolved against the working directory first, then relativized; config
-    // and lock only ever hold the result.
+    // Only a relative input is accepted, resolved against the working
+    // directory; the stored form is always relative to the install root, so a
+    // committed lock survives a move to another machine or clone directory.
     public static string Normalize(string specification, string root, string workingDirectory)
     {
-        // Only relative input is accepted; absolute input and file: URLs are
-        // rejected rather than silently converted (ADR-0044).
+        // An absolute path or a file: URL is rejected, not converted: the
+        // relative form is the one contract and input keeps the same shape
+        // (ADR-0044).
         if (!IsStoredForm(specification))
         {
-            var absolute = IsAbsolute(specification)
-                ? Path.GetFullPath(specification)
-                : Path.GetFullPath(Path.Combine(workingDirectory, specification));
-            var converted = Path.GetRelativePath(root, absolute).Replace('\\', '/');
-            if (Path.IsPathRooted(converted))
-            {
-                throw new SeikoException(
-                    $"{specification} is on another volume; move it under {root} and use a relative path",
-                    "usage");
-            }
-
-            return converted;
+            throw new SeikoException(
+                $"{specification} must be relative to the install root, "
+                + "or to the working directory when adding it",
+                "usage");
         }
 
         var full = Path.GetFullPath(Path.Combine(workingDirectory, specification));
@@ -88,15 +80,10 @@ internal static class OriginPaths
             || stem.StartsWith(name + ".", StringComparison.Ordinal);
     }
 
-    // Only a relative path is a stored form; absolute input and file: URLs
-    // have to be converted, which Normalize does and the config loader checks.
+    // The only accepted shape, for input, config and lock alike.
     public static bool IsStoredForm(string value)
         => !Path.IsPathRooted(value)
             && !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsAbsolute(string value)
-        => !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
-            && Path.IsPathRooted(value);
 
     // The form a declaration and a lock must hold.
     public static void EnsureStored(string path, string what)

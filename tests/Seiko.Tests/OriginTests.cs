@@ -11,7 +11,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi");
 
-        new SeikoClient().Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         Assert.Equal("hi", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
         var config = ConfigLoader.Load(fixture.Root);
@@ -32,7 +32,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi");
 
-        new SeikoClient().Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         var spec = Assert.Single(ConfigLoader.Load(fixture.Root).Sei);
         Assert.Null(spec.Version);
@@ -47,7 +47,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi");
         var client = new SeikoClient();
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         client.Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
 
@@ -139,7 +139,7 @@ public sealed class OriginTests
 
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root,
-            Path.Combine(fixture.Root, "dist", "other.sei"),
+            Rel(fixture, "dist/other.sei"),
             storeRoot: fixture.StoreDirectory));
 
         Assert.Equal("usage", error.Code);
@@ -177,7 +177,7 @@ public sealed class OriginTests
 
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root,
-            full,
+            Rel(fixture, path),
             storeRoot: fixture.StoreDirectory));
 
         Assert.Equal("source", error.Code);
@@ -192,7 +192,7 @@ public sealed class OriginTests
         var client = new SeikoClient();
         client.Add(
             fixture.Root,
-            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
             storeRoot: fixture.StoreDirectory);
 
         client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
@@ -209,7 +209,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         // Rebuilt under the same version: the file is gone, so a replay must
         // still serve the granted bytes from the snapshot.
@@ -227,7 +227,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, path));
         foreach (var snapshot in Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")))
         {
@@ -249,12 +249,12 @@ public sealed class OriginTests
         var client = new SeikoClient();
         client.Add(
             fixture.Root,
-            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
             storeRoot: fixture.StoreDirectory);
 
         client.Add(
             fixture.Root,
-            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.1", "hello.txt", "two")),
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.1", "hello.txt", "two")),
             storeRoot: fixture.StoreDirectory);
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -270,7 +270,7 @@ public sealed class OriginTests
         var client = new SeikoClient();
         client.Add(
             fixture.Root,
-            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
             storeRoot: fixture.StoreDirectory);
 
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "two");
@@ -289,7 +289,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, path));
         File.Delete(Path.Combine(fixture.Root, "hello.txt"));
         client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
@@ -306,7 +306,7 @@ public sealed class OriginTests
 
         new SeikoClient().Add(
             fixture.Root,
-            Path.Combine(fixture.Root, path),
+            Rel(fixture, path),
             storeRoot: fixture.StoreDirectory,
             offline: true);
 
@@ -336,7 +336,7 @@ public sealed class OriginTests
         var client = new SeikoClient();
         client.Add(
             fixture.Root,
-            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
             storeRoot: fixture.StoreDirectory);
         var folder = Path.Combine(fixture.StoreDirectory, "origin");
         var referenced = Assert.Single(Directory.GetFiles(folder));
@@ -356,13 +356,13 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
         var snapshot = Assert.Single(
             Directory.GetFiles(Path.Combine(fixture.StoreDirectory, "origin")));
         var expected = Hashing.Sha256File(snapshot);
         File.WriteAllText(snapshot, "tampered");
 
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         Assert.Equal(expected, Hashing.Sha256File(snapshot));
     }
@@ -383,7 +383,7 @@ public sealed class OriginTests
 
         new SeikoClient().Add(
             fixture.Root,
-            Path.Combine(fixture.Root, "dist/hello.sei"),
+            Rel(fixture, "dist/hello.sei"),
             storeRoot: fixture.StoreDirectory);
 
         // The selector adds lib as an artifact prerequisite, so it is pulled in
@@ -408,7 +408,7 @@ public sealed class OriginTests
         // lib 1.0.0; both ranges apply, so no version satisfies and it fails.
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root,
-            Path.Combine(fixture.Root, "dist/hello.sei"),
+            Rel(fixture, "dist/hello.sei"),
             storeRoot: fixture.StoreDirectory));
 
         Assert.Equal("resolve", error.Code);
@@ -421,7 +421,7 @@ public sealed class OriginTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
         var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
-        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        client.Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, path));
 
         client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
@@ -437,7 +437,7 @@ public sealed class OriginTests
         var client = new SeikoClient();
         client.Add(
             fixture.Root,
-            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            Rel(fixture, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
             storeRoot: fixture.StoreDirectory);
 
         // A new version picked up by a plain sync must be snapshotted too.
@@ -456,16 +456,16 @@ public sealed class OriginTests
         fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
-        var origin = Path.Combine(fixture.Root, fixture.WriteOrigin(
+        var origin = fixture.WriteOrigin(
             "hello",
             "1.0.0",
             "hello.txt",
             "one",
-            dependencies: [("a", null), ("b", null)]));
+            dependencies: [("a", null), ("b", null)]);
 
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root,
-            origin,
+            Rel(fixture, origin),
             storeRoot: fixture.StoreDirectory,
             offline: true));
 
@@ -475,18 +475,78 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void Lock_RejectsAnAbsoluteOriginPath()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        new SeikoClient().Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(lockPath))!;
+        node["sei"]![0]!["originPath"] = Path.Combine(fixture.Root, path).Replace('\\', '/');
+        File.WriteAllText(lockPath, node.ToJsonString());
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().ReadLock(fixture.Root));
+
+        Assert.Equal("lock", error.Code);
+        Assert.Contains("relative", error.Message);
+    }
+
+    [Fact]
+    public void Add_RejectsAFileUrlInput()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi");
+        var url = new Uri(Path.Combine(fixture.Root, path)).AbsoluteUri;
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            url,
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("usage", error.Code);
+    }
+
+    [Fact]
+    public void Config_RejectsAFileUrlOriginPath()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var url = new Uri(Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "hi"))).AbsoluteUri;
+        var config = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            config,
+            File.ReadAllText(config)
+            + $"origin = [ {{ name = \"hello\", paths = [\"{url}\"], selectors = [ {{ rid = \"*\" }} ] }} ]\n"
+            + "sei = [ { name = \"hello\" } ]\n");
+
+        var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
+
+        Assert.Equal("config", error.Code);
+    }
+
+    [Fact]
     public void Add_RejectsAnAbsoluteInputPath()
     {
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
         var absolute = Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one"));
 
-        // Only a relative path is stored, so absolute input is converted; this
-        // asserts the conversion happened rather than the input being kept.
-        new SeikoClient().Add(fixture.Root, absolute, storeRoot: fixture.StoreDirectory);
+        // Only relative input is accepted; an absolute path is rejected.
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            absolute,
+            storeRoot: fixture.StoreDirectory));
 
-        Assert.Equal("dist/hello.sei", Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths[0]);
+        Assert.Equal("usage", error.Code);
+        Assert.Contains("relative", error.Message);
+        Assert.Empty(ConfigLoader.Load(fixture.Root).Origin);
     }
+
+    private static string Rel(Fixture fixture, string relative)
+        => Path.GetRelativePath(Directory.GetCurrentDirectory(), Path.Combine(fixture.Root, relative));
 
     private static void WriteOriginConfig(
         Fixture fixture,
