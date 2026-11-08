@@ -3021,8 +3021,9 @@ public sealed class OriginTests
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
         // The third artifact is reached: cold is read, which is the point.
-        // Equally specific artifacts also make the run itself ambiguous.
-        Assert.Equal("resolve", error.Code);
+        // The graph still holds guesses, so the tied specificity is not
+        // settled here; the answer stays a gap.
+        Assert.Equal("source", error.Code);
         Assert.Equal(
             new[]
             {
@@ -3392,8 +3393,9 @@ public sealed class OriginTests
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
         // Everything below is a gap too; cold is the one that only gets read
-        // because the deeper version's range survived.
-        Assert.Equal("resolve", error.Code);
+        // because the deeper version's range survived. With guesses in the
+        // graph the ambiguity is left to the fill-in run.
+        Assert.Equal("source", error.Code);
         Assert.Equal(
             new[]
             {
@@ -3539,6 +3541,43 @@ public sealed class OriginTests
     public void Gaps_ParsesEveryMessageShape(string message, string expected)
     {
         Assert.Equal(expected.Split("; "), Gaps(message));
+    }
+
+    [Fact]
+    public void OfflinePrecheck_LeavesAmbiguityToTheFillInRunWhenTheGraphIsGuessed()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        // The first source answers 404 for x, so the probe falls back to the
+        // mirror's x 1.0 — a shadowed answer with two tied artifacts, and it
+        // reports an ambiguity. But the first source may hold any x tomorrow,
+        // and then the mirror is never used at all.
+        second.AddSei("x", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture()],
+        });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,4.0.0)")]);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+
+        // Give the mirror's cached x a second, equally specific artifact after
+        // the fact: online this would be a real ambiguity, offline it is only
+        // the cached answer of a shadowed name.
+        var mirrored = MetadataCache.PathFor(
+            fixture.StoreDirectory, secondServer.BaseUrl.TrimEnd('/') + "/sei/x.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(mirrored))!;
+        var artifacts = node["versions"]![0]!["artifacts"]!.AsArray();
+        artifacts.Add(artifacts[0]!.DeepClone());
+        File.WriteAllText(mirrored, node.ToJsonString());
+        // And the first source's own x goes cold, so the mirror's answer is
+        // only a stand-in for something the first source may hold instead.
+        File.Delete(MetadataCache.PathFor(
+            fixture.StoreDirectory, first.BaseUrl.TrimEnd('/') + "/sei/x.json"));
+
     }
 
     [Fact]

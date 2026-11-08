@@ -1175,11 +1175,23 @@ public sealed class Resolver
 
             var top = solvable.Max(artifact => artifact.Prerequisites?.Count ?? 0);
             var tied = solvable.Count(artifact => (artifact.Prerequisites?.Count ?? 0) == top);
-            if (tied > 1)
+            if (tied < 2)
             {
-                throw Fail(
-                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}");
+                continue;
             }
+
+            // With a guessed node in the graph, "solvable" was judged against
+            // placeholder answers: the real resolution may not even reach this
+            // version or this name. That is a gap answer, not an ambiguity
+            // verdict — the fill-in run decides it. A certain graph keeps the
+            // verdict.
+            if (_assigned.Values.Any(sei => sei.Entry.ProbeUnknown || _shadowed.Contains(sei.Name)))
+            {
+                continue;
+            }
+
+            throw Fail(
+                $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}");
         }
     }
 
