@@ -294,8 +294,10 @@ public sealed class Resolver
     // the assignment it came from, and the probe wants a stable graph.
     private void Report()
     {
+        // Assignment order, not name order: the cross-source check in the
+        // real run walks the graph the way it was built, and its first
+        // failure decides which later reads never happen.
         var answer = _assigned.Values
-            .OrderBy(p => p.Name, StringComparer.Ordinal)
             .Select(sei => new ResolvedSei
             {
                 Name = sei.Name,
@@ -308,7 +310,16 @@ public sealed class Resolver
             })
             .ToList();
         _collected?.Add(answer);
-        _onSolution?.Invoke(answer);
+        try
+        {
+            _onSolution?.Invoke(answer);
+        }
+        catch (SeikoException) when (!_checkAmbiguity)
+        {
+            // A child probe only asks whether its artifact is solvable, so a
+            // failure of the cross-source check just means "this one is not".
+            // The main search lets it through: it fails the whole run.
+        }
     }
 
     // Constraint bookkeeping is part of the branch, so it is saved here and
@@ -411,7 +422,10 @@ public sealed class Resolver
         return left.Count == 0;
     }
 
-    // Subtract one exclusion from one interval, appending what is left.
+    // Subtract one exclusion from one interval, appending what is left. A
+    // disjoint exclusion leaves the interval untouched; only the overlap is
+    // cut out, so the pieces are the interval's own ends. A null bound is
+    // unbounded on that side.
     private static void Cut(
         NuGetVersion? lo,
         bool loInc,
@@ -423,31 +437,35 @@ public sealed class Resolver
         var cLo = cut.MinVersion;
         var cHi = cut.MaxVersion;
 
-        // The piece below the exclusion, kept only when the exclusion starts
-        // inside the interval.
-        if (cLo is not null
-            && (hi is null || cLo < hi || (cLo.Equals(hi) && hiInc)))
+        // Disjoint: the exclusion lies wholly before or after the interval,
+        // or touches it only at a point neither side includes.
+        var disjoint =
+            (hi is not null && cLo is not null
+                && (cLo > hi || (cLo.Equals(hi) && !(hiInc && cut.IsMinInclusive))))
+            || (lo is not null && cHi is not null
+                && (cHi < lo || (cHi.Equals(lo) && !(loInc && cut.IsMaxInclusive))));
+        if (disjoint)
         {
-            var pieceHi = hi is null || cLo < hi
-                ? cLo
-                : hi;
-            var pieceHiInc = hi is not null && hi.Equals(cLo) && hiInc && !cut.IsMinInclusive
-                ? true
-                : !cut.IsMinInclusive;
-            Add(lo, loInc, pieceHi, pieceHiInc, output);
+            Add(lo, loInc, hi, hiInc, output);
+            return;
         }
 
-        // The piece above it, symmetric.
-        if (cHi is not null
-            && (lo is null || cHi > lo || (cHi.Equals(lo) && loInc)))
+        // The overlap is the tighter of the two on each side.
+        var oLo = lo is not null && (cLo is null || lo > cLo) ? lo : cLo;
+        var oLoInc = ReferenceEquals(oLo, lo) ? loInc : cut.IsMinInclusive;
+        var oHi = hi is not null && (cHi is null || hi < cHi) ? hi : cHi;
+        var oHiInc = ReferenceEquals(oHi, hi) ? hiInc : cut.IsMaxInclusive;
+
+        // Left of the overlap.
+        if (oLo is not null)
         {
-            var pieceLo = lo is null || cHi > lo
-                ? cHi
-                : lo;
-            var pieceLoInc = lo is not null && lo.Equals(cHi) && loInc && !cut.IsMaxInclusive
-                ? true
-                : !cut.IsMaxInclusive;
-            Add(pieceLo, pieceLoInc, hi, hiInc, output);
+            Add(lo, loInc, oLo, !oLoInc, output);
+        }
+
+        // Right of it.
+        if (oHi is not null)
+        {
+            Add(oHi, !oHiInc, hi, hiInc, output);
         }
     }
 
@@ -532,7 +550,15 @@ public sealed class Resolver
             sei.Direct = directNames.Contains(sei.Name);
         }
 
-        CrossSourceCheck.Verify(_sources, _assigned.Values, "checksum");
+        // Verification first, in build order; only the result is ordered by
+        // name for display, so both runs judge the same reads in the same
+        // order. A collecting run leaves the check to its listener: the
+        // resolver only ever sees one aggregate source, so the comparison
+        // belongs to whoever built that aggregate.
+        if (!_collectAll)
+        {
+            CrossSourceCheck.Verify(_sources, _assigned.Values, "checksum");
+        }
         return _assigned.Values.OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
     }
 
@@ -654,11 +680,12 @@ public sealed class Resolver
             // failed artifact restores to "this version, still uncertain",
             // not to before the name was assigned at all.
             var constraintsBefore = Snapshot();
-            if (entry.ProbeUnknown)
+            if (entry.ProbeUnknown || indexData.ProbeShadowed)
             {
                 // Everything already pending for the name is a known range
-                // too; the placeholder satisfies all of them at once, which
-                // is exactly the over-fit this bookkeeping guards against.
+                // too; the untrusted answer satisfies all of them at once,
+                // which is exactly the over-fit this guards against. It holds
+                // for a shadowed answer as much as for a placeholder.
                 _unknownConstraints[requirement.Name] = _pending
                     .Where(item => string.Equals(item.Name, requirement.Name, StringComparison.Ordinal))
                     .Select(item => item.Range)
@@ -1038,6 +1065,14 @@ public sealed class Resolver
         {
             if (!resolved.ParsedVersion.IsPrerelease || _allowPrerelease)
             {
+                continue;
+            }
+
+            if (Uncertain(name))
+            {
+                // The prerelease label belongs to the cached answer; the
+                // earlier source that could not be read may well serve a
+                // stable version and win. So the label cannot disqualify it.
                 continue;
             }
 

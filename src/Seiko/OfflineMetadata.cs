@@ -48,59 +48,26 @@ internal static class OfflineMetadata
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
 
-        // `--frozen` is the one mode that never resolves: it reads the locked
-        // source of every entry and then every other source's index for the
-        // same names (the cross-source check), then compares. So the check is
-        // a replay of exactly those reads, with the same readability rule as
-        // the real cache read and with "a cached 404" told apart from "no
-        // cached answer". `--locked` resolves normally and takes the path
-        // below with the lock passed in.
+        // `--frozen` is the one mode that never resolves: it replays the
+        // lock, which reads the locked source of every entry and then every
+        // other source's index for the same names (the cross-source check),
+        // and stops at the first failure. So the check is the real replay,
+        // run over offline probe sources: same reads, same order, same
+        // verdicts. `--locked` resolves normally and takes the path below.
         if (frozenGraph is not null)
         {
-            // The locked source answering "not there" is a lock failure, not a
-            // cache gap: refetching may well answer 404 again. It is kept
-            // apart so the failure keeps its own code, and merged with real
-            // gaps at the end.
-            var absent = new SortedSet<string>(StringComparer.Ordinal);
-            var dead = new SortedSet<string>(StringComparer.Ordinal);
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var locked in frozenGraph.Sei)
+            var target = string.IsNullOrWhiteSpace(rid) ? SeikoClient.DefaultRid() : rid;
+            using var replay = new ProbeSource(config, root, storePath, target);
+            try
             {
-                if (!seen.Add(locked.Name)
-                    || string.Equals(locked.Source, OriginPaths.SourceId, StringComparison.Ordinal))
-                {
-                    // Origin entries are read from disk, not from the cache.
-                    continue;
-                }
-
-                CheckLockedRead(config, root, storePath, locked.Source, locked.Name, missing, absent, dead,
-                    crossCheck: false);
-                foreach (var source in config.Sources)
-                {
-                    if (!string.Equals(source.Id, locked.Source, StringComparison.Ordinal))
-                    {
-                        CheckLockedRead(config, root, storePath, source.Id, locked.Name, missing, absent, dead,
-                            crossCheck: true);
-                    }
-                }
+                LockReplay.Resolve(replay.Real, frozenGraph, specs);
+            }
+            catch (SeikoException ex) when (ex.Code is "source" or "lock")
+            {
+                return new VerifyResult(replay.Gaps(), ex, false);
             }
 
-            if (dead.Count > 0)
-            {
-                // The source itself is unusable; that is the run's failure
-                // code, not a lock verdict.
-                return new VerifyResult(missing, new SeikoException(string.Join("; ", dead), "source"), false);
-            }
-
-            if (absent.Count > 0)
-            {
-                return new VerifyResult(
-                    missing,
-                    new SeikoException($"offline: the lock cannot be replayed: {string.Join("; ", absent)}", "lock"),
-                    false);
-            }
-
-            return new VerifyResult(missing, null, false);
+            return new VerifyResult(replay.Gaps(), null, false);
         }
 
         // The probe runs the real resolver with the planned declarations and
@@ -142,7 +109,7 @@ internal static class OfflineMetadata
 
 
 
-        return new VerifyResult(missing, probe.CheckFailure ?? failure, resolver.Incomplete);
+        return new VerifyResult(missing, failure, resolver.Incomplete);
     }
 
     // A failure met after gaps were read carries them along: the gaps are
@@ -252,6 +219,69 @@ internal static class OfflineMetadata
             return Placeholder(name);
         }
 
+        // The real sources one by one, for a caller that matches by id (the
+        // replay does). Each read still goes through the gap log.
+        public IReadOnlyList<ISeiSource> Real
+            => _forward ??= _real
+                .Select((source, index) => (ISeiSource)new Forwarder(this, source, index))
+                .ToList();
+
+        // The gaps as the message form the callers produce.
+        public SortedSet<string> Gaps()
+        {
+            var gaps = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var (source, name) in Missing)
+            {
+                gaps.Add($"sei/{name}.json from source '{source}'");
+            }
+
+            return gaps;
+        }
+
+        private List<ISeiSource>? _forward;
+
+        // One source, routed through the probe so its reads are recorded.
+        private sealed class Forwarder : ISeiSource
+        {
+            private readonly ProbeSource _owner;
+            private readonly ISeiSource _source;
+            private readonly int _index;
+
+            public Forwarder(ProbeSource owner, ISeiSource source, int index)
+            {
+                _owner = owner;
+                _source = source;
+                _index = index;
+            }
+
+            public string Id => _source.Id;
+
+            public IndexRoot Index => _source.Index;
+
+            public SeiCatalog? Catalog => _source.Catalog;
+
+            public SeiIndex? GetSei(string name)
+            {
+                var read = _owner.Read(_index, name);
+                if (read is not null)
+                {
+                    _owner._owner.TryAdd(name, _index);
+                }
+
+                return read;
+            }
+
+            public string ResolveArtifact(ArtifactLocation source) => _source.ResolveArtifact(source);
+
+            public Task DownloadAsync(
+                string name,
+                ArtifactLocation source,
+                string directory,
+                DownloadSession session,
+                CancellationToken cancellationToken)
+                => _source.DownloadAsync(name, source, directory, session, cancellationToken);
+        }
+
         // The graph the rest of the run would cross-check. The check inside
         // Resolve only ever sees this one aggregate source, so the other
         // sources are read here exactly the way CrossSourceCheck reads them;
@@ -267,8 +297,22 @@ internal static class OfflineMetadata
                 // already the answer — the resolver wraps the call anyway.
                 // Only names an index source actually owns reach the check;
                 // an origin entry is exempt (ADR-0044).
+                // The check matches the owner by identity, and the entries
+                // name the probe as their source; restamp them with the real
+                // source that answered.
                 var owned = resolved
-                    .Where(sei => _owner.TryGetValue(sei.Name, out var index) && _real[index] is not OriginSource)
+                    .Where(sei => _owner.TryGetValue(sei.Name, out var index)
+                        && !string.Equals(_real[index].Id, OriginPaths.SourceId, StringComparison.Ordinal))
+                    .Select(sei => new ResolvedSei
+                    {
+                        Name = sei.Name,
+                        ParsedVersion = sei.ParsedVersion,
+                        Entry = sei.Entry,
+                        Source = _real[_owner[sei.Name]],
+                        Direct = sei.Direct,
+                        Artifact = sei.Artifact,
+                        PackageDeprecated = sei.PackageDeprecated,
+                    })
                     .ToList();
                 if (owned.Count == 0)
                 {
@@ -284,22 +328,13 @@ internal static class OfflineMetadata
                     }
                 });
             }
-            catch (SeikoException ex) when (ex.Code == "checksum")
+            catch (SeikoException ex) when (ex.Code != "checksum")
             {
-                _checkFailure = ex;
-            }
-            catch (SeikoException)
-            {
-                // Anything else (a source's own failure) is the resolver's to
-                // report; the gaps already collected still stand.
+                // A source's own failure is the resolver's to report; the
+                // gaps already collected still stand. A mismatch goes on: it
+                // fails this graph here, exactly as it fails the real run.
             }
         }
-
-        // A cross-source failure already proven by cached data. It is the
-        // run's stopping point, so it takes precedence over gaps found later.
-        public SeikoException? CheckFailure => _checkFailure;
-
-        private SeikoException? _checkFailure;
 
         private SeiIndex? Read(int index, string name)
         {

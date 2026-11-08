@@ -128,22 +128,6 @@ public sealed class SeikoClient
         bool offline = false,
         SourceScope? preloaded = null)
     {
-        var pendingTransaction = false;
-        if (transaction is null)
-        {
-            var recoveryDirectory = Path.Combine(root, ".seiko");
-            if (dryRun)
-            {
-                // Recovery writes config/lock/deployment; a preview must not
-                // (ADR-0029). Detect it and let the real sync recover.
-                pendingTransaction = File.Exists(Path.Combine(recoveryDirectory, "transaction.json"));
-            }
-            else
-            {
-                Deployer.Recover(root, recoveryDirectory);
-            }
-        }
-
         // `add <path>` resolves from a local file, so a normal resolution is
         // allowed offline when the caller says so; `OfflineMetadata.Verify`
         // below still reports every dependency it cannot get from cache.
@@ -162,6 +146,88 @@ public sealed class SeikoClient
         var session = preloaded?.Session ?? ownSession!;
         session.Progress = progress;
         session.Log = log;
+
+        // From here on the session exists; everything below runs under the
+        // scope's ownership so no early failure can leak it.
+        SourceScope? scope = null;
+        try
+        {
+            return SyncLockedScoped(
+                scope = new SourceScope([], ownSession),
+                config,
+                session,
+                downloadCts,
+                root,
+                storePath,
+                allowPrerelease,
+                mode,
+                jobs,
+                proxy,
+                progress,
+                log,
+                cancellationToken,
+                updateNames,
+                latestInstallable,
+                allowCritical,
+                transaction,
+                dryRun,
+                specsOverride,
+                originsOverride,
+                originsOverrideAllowed,
+                adopt,
+                force,
+                offline,
+                preloaded);
+        }
+        finally
+        {
+            scope?.Dispose();
+        }
+    }
+
+    private SyncResult SyncLockedScoped(
+        SourceScope scope,
+        SeikoConfig config,
+        DownloadSession session,
+        CancellationTokenSource downloadCts,
+        string root,
+        string storePath,
+        bool allowPrerelease,
+        SyncMode mode,
+        int jobs,
+        string? proxy,
+        IProgress<SyncProgress>? progress,
+        Action<string>? log,
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? updateNames,
+        bool latestInstallable,
+        bool allowCritical,
+        DeploymentTransaction? transaction,
+        bool dryRun,
+        IReadOnlyList<SeiSpec>? specsOverride,
+        IReadOnlyList<OriginSpec>? originsOverride,
+        bool originsOverrideAllowed,
+        bool adopt,
+        bool force,
+        bool offline,
+        SourceScope? preloaded)
+    {
+        var pendingTransaction = false;
+        if (transaction is null)
+        {
+            var recoveryDirectory = Path.Combine(root, ".seiko");
+            if (dryRun)
+            {
+                // Recovery writes config/lock/deployment; a preview must not
+                // (ADR-0029). Detect it and let the real sync recover.
+                pendingTransaction = File.Exists(Path.Combine(recoveryDirectory, "transaction.json"));
+            }
+            else
+            {
+                Deployer.Recover(root, recoveryDirectory);
+            }
+        }
+
         var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
         var lockPath = Path.Combine(root, "seiko.lock.json");
         var existingLock = LockFile.Read(lockPath);
@@ -196,25 +262,9 @@ public sealed class SeikoClient
                 latestInstallable: latestInstallable).ThrowIfAny();
         }
 
-        IReadOnlyList<ISeiSource>? sources = null;
-        if (preloaded is null)
-        {
-            try
-            {
-                sources = LoadSources(config, root, proxy, session, storePath, offline);
-            }
-            catch
-            {
-                // Nothing owns the session yet.
-                ownSession?.Dispose();
-                throw;
-            }
-        }
-
-        sources ??= preloaded!.Sources;
-        // The scope releases the sources and, when this call made it, the
-        // session too.
-        using var sourceScope = preloaded is null ? new SourceScope(sources, ownSession) : null;
+        var sources = preloaded?.Sources
+            ?? LoadSources(config, root, proxy, session, storePath, offline);
+        scope.Sources = sources;
 
         IReadOnlyList<ResolvedSei> resolved;
         SeikoLock lockFile;

@@ -22,7 +22,9 @@ internal static class CrossSourceCheck
         {
             // A local file's bytes are picked by the user, so a published
             // artifact of the same version legitimately differs (ADR-0044).
-            if (sei.Source is OriginSource)
+            // By id: a pre-check may wrap the source, so the type is not
+            // reliable.
+            if (string.Equals(sei.Source.Id, OriginPaths.SourceId, StringComparison.Ordinal))
             {
                 continue;
             }

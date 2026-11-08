@@ -1729,9 +1729,10 @@ public sealed class OriginTests
             fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen, offline: true));
 
         // A recorded 404 is not a cache gap: refetching may answer 404 again,
-        // so the failure is the lock's, not a "fill this cache" instruction.
+        // so the replay fails with the lock's own code and the replay's own
+        // wording, exactly as the real frozen run would.
         Assert.Equal("lock", error.Code);
-        Assert.Contains("sei/x.json from source 'first' (recorded as absent)", error.Message);
+        Assert.Contains("x is not in source 'first'", error.Message);
     }
 
     [Fact]
@@ -1914,7 +1915,9 @@ public sealed class OriginTests
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
+        Assert.Equal("source", error.Code);
         Assert.Equal(["sei/w.json from source 'http'"], Gaps(error.Message));
+        Assert.DoesNotContain("ambiguous", error.Message);
     }
 
     [Fact]
@@ -2670,6 +2673,204 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void OfflinePrecheck_KeepsAnArtifactAliveWhenTheConflictLiesOutside()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("b", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Conflicts = [new DepFixture("x", "[9.0.0,10.0.0)")],
+                    Dependencies = [new DepFixture("y", null)],
+                },
+            ],
+        });
+        fixture.AddSei(
+            "x",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        // x is unknown and the conflict is far away, so the artifact lives and
+        // y is a real requirement. A subtractor that mangles disjoint ranges
+        // would call it dead.
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", null), ("b", null)]);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var index = new Uri(server.BaseUrl.TrimEnd('/') + "/index.json");
+        var keep = MetadataCache.PathFor(fixture.StoreDirectory, new Uri(index, "sei/b.json").AbsoluteUri);
+        var saved = File.ReadAllBytes(keep);
+        var root = MetadataCache.PathFor(fixture.StoreDirectory, index.AbsoluteUri);
+        var savedRoot = File.ReadAllBytes(root);
+        Directory.Delete(cache, recursive: true);
+        Directory.CreateDirectory(cache);
+        File.WriteAllBytes(keep, saved);
+        File.WriteAllBytes(root, savedRoot);
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Contains("sei/y.json", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_SavesTheInitialRangeOfAShadowedAnswer()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        // x is unknown in the first source and 1.0 in the second; the root
+        // pins x below 2, and a's artifact needs x at 2 or above. Both known
+        // ranges already contradict, so the artifact is dead and y must not
+        // be read. Only the initial range saved makes that visible.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("x", "[2.0.0,3.0.0)")],
+                    Dependencies = [new DepFixture("y", null)],
+                },
+            ],
+        });
+        fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        second.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,2.0.0)"), ("a", null)]);
+        Assert.Throws<SeikoException>(
+            () => new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory));
+        var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var firstIndex = new Uri(first.BaseUrl.TrimEnd('/') + "/index.json");
+        var secondIndex = new Uri(secondServer.BaseUrl.TrimEnd('/') + "/index.json");
+        var keep = new[]
+        {
+            MetadataCache.PathFor(fixture.StoreDirectory, firstIndex.AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/a.json").AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, secondIndex.AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(secondIndex, "sei/x.json").AbsoluteUri),
+        }.ToDictionary(path => path, File.ReadAllBytes);
+        Directory.Delete(cache, recursive: true);
+        Directory.CreateDirectory(cache);
+        foreach (var (path, bytes) in keep)
+        {
+            File.WriteAllBytes(path, bytes);
+        }
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.DoesNotContain("sei/y.json", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_DoesNotFailTheWholeRunOnAProbedArtifactsChecksum()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        // Everything cached. a0 is more specific and is what the run picks;
+        // only the mirror disagrees on a1, which the ambiguity probe visits.
+        // That must not turn a success into a failure.
+        fixture.AddSei("p", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["p.txt"] = "p" } }] });
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Prerequisites = [new DepFixture("p", null)] },
+                new ArtifactFixture(),
+            ],
+        });
+        second.AddSei("p", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["p.txt"] = "p" } }] });
+        second.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Prerequisites = [new DepFixture("p", null)] },
+                new ArtifactFixture(),
+            ],
+        });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("p", null), ("a", null)]);
+        var client = new SeikoClient();
+        client.Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        // Make only the mirror's a1 disagree: same conditions, other bytes.
+        var indexPath = Path.Combine(second.SourceDirectory, "sei", "a.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(indexPath))!;
+        node["versions"]![0]!["artifacts"]![1]!["source"]!["sha256"] = new string('b', 64);
+        File.WriteAllText(indexPath, node.ToJsonString());
+        // Re-fetch the mirror's metadata so the cache holds the disagreement.
+        File.Delete(MetadataCache.PathFor(
+            fixture.StoreDirectory, secondServer.BaseUrl.TrimEnd('/') + "/sei/a.json"));
+        // Prime the mirror's a again without failing the test either way.
+        try
+        {
+            client.Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+            // The mismatch itself is not what this test is about.
+        }
+
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        var lockNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(lockPath))!;
+        lockNode["sei"]!.AsArray().Single(item => item!["name"]!.GetValue<string>() == "a")!["artifact"]!["sha256"] =
+            node["versions"]![0]!["artifacts"]![0]!["source"]!["sha256"]!.GetValue<string>();
+        File.WriteAllText(lockPath, lockNode.ToJsonString());
+
+        // Every metadata file is cached now; the pre-check must accept.
+        var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked, offline: true);
+
+        Assert.Equal(3, result.SeiInstalled);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_StopsOnTheSameSourceOrderAsTheRun()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        // Root order z, a. The run checks z first, hits the mirror's mismatch
+        // there and never reads the mirror's a. Sorted order would read a
+        // first and turn it into a gap.
+        fixture.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["z.txt"] = "z" } }] });
+        fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }] });
+        second.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["z.txt"] = "z" } }] });
+        second.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }] });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("z", null), ("a", null)]);
+        var client = new SeikoClient();
+        client.Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        // The mirror's cached z gets a different digest than the first
+        // source's; its a goes cold, so reading it would show up as a gap.
+        var zPath = MetadataCache.PathFor(
+            fixture.StoreDirectory, secondServer.BaseUrl.TrimEnd('/') + "/sei/z.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(zPath))!;
+        node["versions"]![0]!["artifacts"]![0]!["source"]!["sha256"] = new string('c', 64);
+        File.WriteAllText(zPath, node.ToJsonString());
+        File.Delete(MetadataCache.PathFor(
+            fixture.StoreDirectory, secondServer.BaseUrl.TrimEnd('/') + "/sei/a.json"));
+
+        var error = Assert.Throws<SeikoException>(() => client.Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Equal("checksum", error.Code);
+        Assert.DoesNotContain("sei/a.json from source 'second'", error.Message);
+    }
+
+    [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
     {
         using var fixture = new Fixture();
@@ -2793,14 +2994,26 @@ public sealed class OriginTests
     // limit note may follow it.
     private static string[] Gaps(string message)
     {
+        // The list runs to the closing sentence or, inside a Combined
+        // message, to the wrapper's closing parenthesis. Entries themselves
+        // are separated by "; " and never contain a bare ')', so the split is
+        // on that suffix only.
         var list = message
             .Split("missing cached metadata: ", StringSplitOptions.None)[1];
-        var end = new[] { ". ", ")" }
+        var end = new[] { ". ", ") (", "). " }
             .Select(marker => list.IndexOf(marker, StringComparison.Ordinal))
             .Where(index => index >= 0)
             .DefaultIfEmpty(list.Length)
             .Min();
-        return list[..end].Split("; ", StringSplitOptions.None);
+        list = list[..end];
+        // A search-limit note follows the last entry as a sentence.
+        var note = list.IndexOf("; the probe hit", StringComparison.Ordinal);
+        if (note >= 0)
+        {
+            list = list[..note];
+        }
+
+        return list.Split("; ", StringSplitOptions.None);
     }
 
     // Two http sources in order; each fixture serves its own directory.

@@ -5,22 +5,27 @@ namespace Seiko;
 // the request caches warm instead of fetching the same metadata twice.
 internal sealed class SourceScope : IDisposable
 {
-    private readonly IReadOnlyList<ISeiSource> _sources;
-    private readonly DownloadSession? _session;
+    private DownloadSession? _session;
 
     public SourceScope(IReadOnlyList<ISeiSource> sources, DownloadSession? session = null)
     {
-        _sources = sources;
+        Sources = sources;
         _session = session;
     }
 
-    public IReadOnlyList<ISeiSource> Sources => _sources;
+    // Filled after construction: the scope can exist, and own the session,
+    // before the sources do.
+    public IReadOnlyList<ISeiSource> Sources { get; set; } = [];
+
+    // Takes over a session created before the scope existed; the scope now
+    // releases it.
+    public void Own(DownloadSession session) => _session = session;
 
     public DownloadSession? Session => _session;
 
     public void Dispose()
     {
-        foreach (var source in _sources)
+        foreach (var source in Sources)
         {
             (source as IDisposable)?.Dispose();
         }
