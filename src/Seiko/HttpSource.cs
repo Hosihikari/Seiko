@@ -12,7 +12,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly HttpClient _client;
+    private readonly HttpClient _client = null!;
     private readonly Uri _baseUri;
     private readonly Uri _indexUri;
     private readonly HashSet<string> _tokenHosts;
@@ -33,7 +33,8 @@ public sealed class HttpSource : ISeiSource, IDisposable
 
     public void Dispose()
     {
-        _client.Dispose();
+        // A constructor exception can reach here before the client exists.
+        _client?.Dispose();
         if (_ownsSession)
         {
             _session.Dispose();
@@ -58,10 +59,10 @@ public sealed class HttpSource : ISeiSource, IDisposable
     // failure. The root index is not required, since only names are read. The
     // probe creates its own session and disposes it with itself.
     internal HttpSource(SourceConfig config, string? metadataRoot)
-        : this(config, null, new DownloadSession(1, CancellationToken.None), metadataRoot, offline: true, handler: null)
+        : this(config, null, new DownloadSession(1, CancellationToken.None), metadataRoot, offline: true, handler: null,
+            ownsSession: true)
     {
         OfflineProbe = true;
-        _ownsSession = true;
     }
 
     // The handler seam lets tests observe which requests carry credentials
@@ -72,28 +73,32 @@ public sealed class HttpSource : ISeiSource, IDisposable
         DownloadSession session,
         string? metadataRoot,
         bool offline,
-        HttpMessageHandler? handler)
+        HttpMessageHandler? handler,
+        bool ownsSession = false)
     {
         Id = config.Id;
         _session = session;
         _metadataRoot = metadataRoot;
         _offline = offline;
+        // Set before anything can fail: the instance is gone on a constructor
+        // exception, so only Dispose can release what was handed in.
+        _ownsSession = ownsSession;
         if (!Uri.TryCreate(config.Index, UriKind.Absolute, out var indexUri)
             || (indexUri.Scheme != Uri.UriSchemeHttp && indexUri.Scheme != Uri.UriSchemeHttps))
         {
             throw new SeikoException($"source '{Id}': invalid http index '{config.Index}'", "config");
         }
 
-        _client = handler is null
-            ? CreateClient(proxy)
-            : new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        _baseUri = new Uri(indexUri, ".");
-        _indexUri = indexUri;
-        _tokenHosts = new HashSet<string>(
-            config.TokenHosts ?? [],
-            StringComparer.OrdinalIgnoreCase);
         try
         {
+            _client = handler is null
+                ? CreateClient(proxy)
+                : new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+            _baseUri = new Uri(indexUri, ".");
+            _indexUri = indexUri;
+            _tokenHosts = new HashSet<string>(
+                config.TokenHosts ?? [],
+                StringComparer.OrdinalIgnoreCase);
             Index = FetchIndex(indexUri);
         }
         catch

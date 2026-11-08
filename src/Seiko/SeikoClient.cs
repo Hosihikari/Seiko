@@ -195,7 +195,7 @@ public sealed class SeikoClient
                 existing: existingLock,
                 rid: rid,
                 updateNames: updateNames,
-                latestInstallable: latestInstallable);
+                latestInstallable: latestInstallable).ThrowIfAny(incomplete: false);
         }
 
         var sources = preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
@@ -891,7 +891,7 @@ public sealed class SeikoClient
         // origin and options as the run, minus what the run adds itself.
         if (offline)
         {
-            OfflineMetadata.Verify(
+            var precheck = OfflineMetadata.Verify(
                 config,
                 storePath,
                 root,
@@ -903,10 +903,13 @@ public sealed class SeikoClient
                 latestInstallable: latestInstallable);
 
             // The ambiguity check below asks the sources for each bare name
-            // before the run does; those reads are summarised the same way.
+            // before the run does. Both halves collect into one list and
+            // fail together: the second must not stay hidden behind the
+            // first.
             if (bare.Count > 0 && config.Sources.Count > 0)
             {
                 OfflineMetadata.VerifyNames(
+                    precheck.Missing,
                     config,
                     storePath,
                     root,
@@ -917,6 +920,8 @@ public sealed class SeikoClient
                             storePath,
                             DeclaredOriginName(config, root, OriginPaths.Resolve(addition.Path!, root)))));
             }
+
+            precheck.ThrowIfAny(incomplete: false);
         }
 
         // The ambiguity check reads source indexes, so it belongs here, after
@@ -3656,14 +3661,31 @@ public sealed class SeikoClient
     {
         // Origin entries answer before any configured source (ADR-0044).
         var sources = new List<ISeiSource>(config.Origin.Count + config.Sources.Count);
-        if (config.Origin.Count > 0)
+        try
         {
-            var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
-            sources.Add(new OriginSource(config.Origin, root, rid, storePath));
+            if (config.Origin.Count > 0)
+            {
+                var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
+                sources.Add(new OriginSource(config.Origin, root, rid, storePath));
+            }
+
+            foreach (var source in config.Sources)
+            {
+                sources.Add(CreateSource(source, root, proxy, session, storePath, offline));
+            }
+        }
+        catch
+        {
+            // No SourceScope owns the list yet, so a later source failing
+            // has to hand back the ones already built here.
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+
+            throw;
         }
 
-        sources.AddRange(config.Sources.Select(
-            source => CreateSource(source, root, proxy, session, storePath, offline)));
         return sources;
     }
 

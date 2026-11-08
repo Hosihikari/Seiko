@@ -7,7 +7,32 @@ namespace Seiko;
 // first failure, and nothing is downloaded implicitly.
 internal static class OfflineMetadata
 {
-    public static void Verify(
+    // The gaps found, and a failure met on the way ("missing" and "broken" are
+    // both set when both happened). The caller throws once the whole
+    // operation has been checked, so two pre-checks cannot hide each other's
+    // gaps behind the first exception.
+    public sealed record VerifyResult(SortedSet<string> Missing, SeikoException? Failure)
+    {
+        public void ThrowIfAny(bool incomplete)
+        {
+            if (Failure is not null && Missing.Count > 0)
+            {
+                throw Combined(Failure, Missing, incomplete);
+            }
+
+            if (Missing.Count > 0)
+            {
+                throw MissingError(Missing, incomplete);
+            }
+
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+        }
+    }
+
+    public static VerifyResult Verify(
         SeikoConfig config,
         string storePath,
         string root,
@@ -36,6 +61,7 @@ internal static class OfflineMetadata
             // apart so the failure keeps its own code, and merged with real
             // gaps at the end.
             var absent = new SortedSet<string>(StringComparer.Ordinal);
+            var dead = new SortedSet<string>(StringComparer.Ordinal);
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var locked in frozenGraph.Sei)
             {
@@ -46,35 +72,33 @@ internal static class OfflineMetadata
                     continue;
                 }
 
-                CheckLockedRead(config, root, storePath, locked.Source, locked.Name, missing, absent,
+                CheckLockedRead(config, root, storePath, locked.Source, locked.Name, missing, absent, dead,
                     crossCheck: false);
                 foreach (var source in config.Sources)
                 {
                     if (!string.Equals(source.Id, locked.Source, StringComparison.Ordinal))
                     {
-                        CheckLockedRead(config, root, storePath, source.Id, locked.Name, missing, absent,
+                        CheckLockedRead(config, root, storePath, source.Id, locked.Name, missing, absent, dead,
                             crossCheck: true);
                     }
                 }
             }
 
+            if (dead.Count > 0)
+            {
+                // The source itself is unusable; that is the run's failure
+                // code, not a lock verdict.
+                return new VerifyResult(missing, new SeikoException(string.Join("; ", dead), "source"));
+            }
+
             if (absent.Count > 0)
             {
-                var detail = string.Join("; ", absent);
-                throw new SeikoException(
-                    $"offline: the lock cannot be replayed: {detail}"
-                    + (missing.Count > 0
-                        ? $" (offline: missing cached metadata: {string.Join("; ", missing)})"
-                        : ""),
-                    "lock");
+                return new VerifyResult(
+                    missing,
+                    new SeikoException($"offline: the lock cannot be replayed: {string.Join("; ", absent)}", "lock"));
             }
 
-            if (missing.Count > 0)
-            {
-                throw Missing(missing);
-            }
-
-            return;
+            return new VerifyResult(missing, null);
         }
 
         // The probe runs the real resolver with the planned declarations and
@@ -114,18 +138,7 @@ internal static class OfflineMetadata
             missing.Add($"sei/{name}.json from source '{source}'");
         }
 
-        if (missing.Count > 0)
-        {
-            throw failure is null
-                ? Missing(missing, resolver.Incomplete)
-                : Combined(failure, missing, resolver.Incomplete);
-        }
-
-        if (failure is not null)
-        {
-            // Nothing was reported as a gap, so the failure speaks for itself.
-            throw failure;
-        }
+        return new VerifyResult(missing, failure);
     }
 
     // A failure met after gaps were read carries them along: the gaps are
@@ -146,7 +159,7 @@ internal static class OfflineMetadata
             HintKey = failure.HintKey,
         };
 
-    private static SeikoException Missing(IEnumerable<string> missing, bool incomplete = false)
+    private static SeikoException MissingError(IEnumerable<string> missing, bool incomplete)
         => new(
             $"offline: missing cached metadata: {string.Join("; ", missing)}. "
             + (incomplete
@@ -208,20 +221,24 @@ internal static class OfflineMetadata
 
         public SeiIndex? GetSei(string name)
         {
-            var answered = false;
+            var unknownBefore = false;
             for (var i = 0; i < _real.Count; i++)
             {
                 var read = Read(i, name);
                 if (read is not null)
                 {
                     _owner.TryAdd(name, i);
+                    // The real run still stops at the earlier source that
+                    // could not be read: whatever it holds wins, and it is
+                    // not necessarily this entry.
+                    read.ProbeShadowed = unknownBefore;
                     return read;
                 }
 
-                answered |= _real[i] is HttpSource http && http.IsCacheUnknown(name);
+                unknownBefore |= _real[i] is HttpSource http && http.IsCacheUnknown(name);
             }
 
-            if (!answered)
+            if (!unknownBefore)
             {
                 return null;
             }
@@ -322,6 +339,7 @@ internal static class OfflineMetadata
         string name,
         SortedSet<string> missing,
         SortedSet<string> absent,
+        SortedSet<string> dead,
         bool crossCheck)
     {
         var source = config.Sources.FirstOrDefault(
@@ -334,12 +352,20 @@ internal static class OfflineMetadata
 
         if (!IsHttp(source))
         {
-            // The local file answers or it does not; either way there is
-            // nothing cached and nothing to refill.
+            // A source that does not open at all cannot be said to lack the
+            // name; the real run fails on the index before it gets that far.
             var index = LocalSource.ResolvePath(source.Index, root);
-            if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"))
+            if (!File.Exists(index))
+            {
+                // The real run fails opening the source before it can say
+                // whether the name is there, so keep the source's own code.
+                dead.Add($"source '{sourceId}': index not found: {index}");
+            }
+            else if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json"))
                 && !crossCheck)
             {
+                // An open local source answers from its directory: a missing
+                // file is "this source does not have the name".
                 absent.Add($"sei/{name}.json from source '{sourceId}'");
             }
 
@@ -376,9 +402,17 @@ internal static class OfflineMetadata
     // The bare-token disambiguation asks each index source for one name in
     // order and stops at the first hit, exactly like `info`. Its reads happen
     // before the real run too, so they get the same treatment.
-    public static void VerifyNames(SeikoConfig config, string storePath, string root, IEnumerable<string> names)
+    // The answer is written into the caller's list, so a resolution pre-check
+    // and this walk fail together instead of one hiding the other. A name
+    // keeps walking while the read source is unknown or does not have it; an
+    // unknown source is not a hit and may well defer to a later one.
+    public static void VerifyNames(
+        SortedSet<string> missing,
+        SeikoConfig config,
+        string storePath,
+        string root,
+        IEnumerable<string> names)
     {
-        var missing = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var name in names)
         {
             foreach (var source in config.Sources)
@@ -405,7 +439,7 @@ internal static class OfflineMetadata
                 if (!File.Exists(path))
                 {
                     missing.Add($"sei/{name}.json from source '{source.Id}'");
-                    break;
+                    continue;
                 }
 
                 if (MetadataCache.TryRead(path, SeikoJsonContext.Default.SeiIndex) is null)
@@ -416,11 +450,6 @@ internal static class OfflineMetadata
                 break;
             }
         }
-
-        if (missing.Count > 0)
-        {
-            throw Missing(missing);
-        }
     }
 
     // `info` walks the sources in order and stops at the first one that has
@@ -430,6 +459,16 @@ internal static class OfflineMetadata
     public static void VerifyInfo(SeikoConfig config, string storePath, string root, string name)
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
+
+        // The real source list starts with the origin declarations, and the
+        // command stops at the first answer; an origin entry answers first.
+        var origin = config.Origin.FirstOrDefault(
+            item => string.Equals(item.Name, name, StringComparison.Ordinal));
+        if (origin is not null)
+        {
+            return;
+        }
+
         foreach (var source in config.Sources)
         {
             if (!IsHttp(source))
@@ -467,7 +506,7 @@ internal static class OfflineMetadata
 
         if (missing.Count > 0)
         {
-            throw Missing(missing);
+            throw MissingError(missing, incomplete: false);
         }
     }
 

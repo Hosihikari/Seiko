@@ -45,6 +45,7 @@ public sealed class Resolver
     private HashSet<string> _directNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _unknownConstraints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<VersionRange>> _unknownExcluded = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _shadowed = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private bool _hintsGrew;
     private List<IReadOnlyList<ResolvedSei>>? _collected;
@@ -313,8 +314,9 @@ public sealed class Resolver
     // Constraint bookkeeping is part of the branch, so it is saved here and
     // restored when the branch below fails. A plain deep copy is enough; the
     // searches are small and this only exists in collecting runs.
-    private (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded) Snapshot()
-        => (Copy(_unknownConstraints), Copy(_unknownExcluded));
+    private (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded,
+        HashSet<string> Shadowed) Snapshot()
+        => (Copy(_unknownConstraints), Copy(_unknownExcluded), new HashSet<string>(_shadowed, StringComparer.Ordinal));
 
     private static Dictionary<string, List<VersionRange>> Copy(
         Dictionary<string, List<VersionRange>> source)
@@ -324,10 +326,13 @@ public sealed class Resolver
             StringComparer.Ordinal);
 
     private void Restore(
-        (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded) snapshot)
+        (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded,
+            HashSet<string> Shadowed) snapshot)
     {
         Replace(_unknownConstraints, snapshot.Keep);
         Replace(_unknownExcluded, snapshot.Excluded);
+        _shadowed.Clear();
+        _shadowed.UnionWith(snapshot.Shadowed);
     }
 
     private static void Replace(
@@ -341,9 +346,10 @@ public sealed class Resolver
         }
     }
 
-    // Whether the known ranges leave any version at all once the exclusions
-    // from conflicts are taken away. Only a proven-empty remainder counts; a
-    // partial overlap stays a guess.
+    // Whether the known ranges leave any version once the exclusions from
+    // conflicts are cut away. Only a proven-empty remainder counts; a partial
+    // overlap stays a guess. Several exclusions may cover between them what
+    // none covers alone, so the union is subtracted, not matched one by one.
     private bool Contradicts(string name)
     {
         if (!_unknownConstraints.TryGetValue(name, out var ranges) || ranges.Count == 0)
@@ -352,20 +358,115 @@ public sealed class Resolver
         }
 
         var common = VersionRange.CommonSubSet(ranges);
-        if (_unknownExcluded.TryGetValue(name, out var excluded)
-            && excluded.Any(range => common.IsSubSetOrEqualTo(range)))
+        if (Empty(common))
         {
             return true;
         }
 
-        // An empty intersection is the degenerate `(0.0.0, 0.0.0)` — a
-        // singleton with both ends open. An unbounded answer has no bounds at
-        // all, and a real singleton is inclusive.
-        return common.MinVersion is { } min
-            && common.MaxVersion is { } max
+        if (!_unknownExcluded.TryGetValue(name, out var excluded) || excluded.Count == 0)
+        {
+            return false;
+        }
+
+        return Covered(common, excluded);
+    }
+
+    // Whether the exclusions between them cover the allowed interval. Each
+    // round takes the exclusion reaching furthest from the current point, so
+    // no gap can survive; a null bound is unbounded on that side.
+    private static bool Covered(VersionRange allowed, List<VersionRange> excluded)
+    {
+        if (allowed.MinVersion is null || allowed.MaxVersion is null)
+        {
+            return excluded.Any(range => range.MinVersion is null && range.MaxVersion is null);
+        }
+
+        var cursor = allowed.MinVersion;
+        var cursorInclusive = allowed.IsMinInclusive;
+        for (var guard = 0; guard <= excluded.Count; guard++)
+        {
+            var path = excluded
+                .Where(range => range.MinVersion is not null && range.MaxVersion is not null)
+                .Where(range => StartsBy(range, cursor, cursorInclusive))
+                .ToList();
+            if (path.Count == 0)
+            {
+                return false;
+            }
+
+            var reach = path.Max(range => range.MaxVersion)!;
+            if (reach > allowed.MaxVersion)
+            {
+                return true;
+            }
+
+            if (reach.Equals(allowed.MaxVersion))
+            {
+                return path.Any(range =>
+                    range.MaxVersion!.Equals(allowed.MaxVersion) && range.IsMaxInclusive)
+                    || !allowed.IsMaxInclusive;
+            }
+
+            var inclusive = path.Any(range =>
+                range.MaxVersion!.Equals(reach) && range.IsMaxInclusive);
+            var open = path.Any(range =>
+                range.MaxVersion!.Equals(reach) && !range.IsMaxInclusive);
+            if (reach.Equals(cursor) && !inclusive && cursorInclusive)
+            {
+                // Only open ends here: the boundary point itself is uncovered.
+                return false;
+            }
+
+            cursor = reach;
+            cursorInclusive = inclusive;
+            if (!inclusive && !open)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool StartsBy(VersionRange range, NuGetVersion cursor, bool cursorInclusive)
+        => range.MinVersion! < cursor
+            || (range.MinVersion!.Equals(cursor) && (range.IsMinInclusive || !cursorInclusive));
+
+    // An empty intersection is the degenerate `(0.0.0, 0.0.0)` — a singleton
+    // with both ends open. An unbounded answer has no bounds at all, and a
+    // real singleton is inclusive.
+    private static bool Empty(VersionRange range)
+        => range.MinVersion is { } min
+            && range.MaxVersion is { } max
             && min.Equals(max)
-            && !common.IsMinInclusive
-            && !common.IsMaxInclusive;
+            && !range.IsMinInclusive
+            && !range.IsMaxInclusive;
+
+    // Would this artifact certainly lose against the placeholders already in
+    // the graph? The real run drops it in CanStillMatch as soon as any X is in
+    // hand, so its dependencies never join the search.
+    private bool CannotMatch(ArtifactEntry artifact)
+    {
+        foreach (var conflict in artifact.Conflicts ?? [])
+        {
+            if (!_assigned.TryGetValue(conflict.Name, out var target) || !target.Entry.ProbeUnknown)
+            {
+                continue;
+            }
+
+            var excluded = _unknownExcluded.TryGetValue(conflict.Name, out var list)
+                ? list
+                : _unknownExcluded[conflict.Name] = [];
+            excluded.Add(ParseRange(conflict.Version, conflict.Name));
+            var dead = Contradicts(conflict.Name);
+            excluded.RemoveAt(excluded.Count - 1);
+            if (dead)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // The accepted graph, in lock order. A collecting run also reports it
@@ -399,13 +500,15 @@ public sealed class Resolver
             }
 
             Report();
-            // The normal run would stop here, and it may: a leaf made only of
-            // cached answers is proven and nothing below can change the
-            // choice. A placeholder answers for its name even where the real
-            // version could not, so a leaf holding one is a guess and the
-            // walk continues until the guesses are gone or the alternatives
-            // are exhausted.
-            return !_assigned.Values.Any(sei => sei.Entry.ProbeUnknown);
+            // The normal run would stop here, and it may only when the leaf is
+            // proven. Two things make it a guess: a placeholder, which
+            // answers for its name where the real version could not, and a
+            // name taken from a later source after an earlier one could not
+            // be read — that earlier source may well have a different answer
+            // and wins. Keep walking until neither remains, or the
+            // alternatives run out.
+            return !_assigned.Values.Any(sei =>
+                sei.Entry.ProbeUnknown || _shadowed.Contains(sei.Name));
         }
 
         var requirement = _pending[index];
@@ -490,6 +593,10 @@ public sealed class Resolver
             };
             _assigned[requirement.Name] = resolved;
             var constraintsBefore = Snapshot();
+            if (indexData.ProbeShadowed)
+            {
+                _shadowed.Add(requirement.Name);
+            }
             if (entry.ProbeUnknown)
             {
                 // Everything already pending for the name is a known range
@@ -527,6 +634,10 @@ public sealed class Resolver
 
             var artifactCandidates = ridArtifacts
                 .Where(artifact => CanStillMatch(artifact, resolved))
+                // An artifact already proven dead against a placeholder is
+                // dropped before its dependencies join the search, exactly
+                // where the real run drops it once the version is in hand.
+                .Where(artifact => !CannotMatch(artifact))
                 .ToList();
 
             // A probe pins the sibling it is testing, so the search must not

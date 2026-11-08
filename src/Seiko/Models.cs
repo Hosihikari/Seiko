@@ -105,6 +105,11 @@ public sealed class SeiIndex
     public List<OriginSelector>? OriginSelectors { get; set; }
 
     public List<SeiVersionEntry> Versions { get; set; } = [];
+
+    // Only ever set in memory by the offline probe: an earlier source could
+    // not be read, so the entries here may not be what the real run chooses.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ProbeShadowed { get; set; }
 }
 
 public sealed class ProjectMetadata
