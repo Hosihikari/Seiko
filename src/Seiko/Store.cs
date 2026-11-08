@@ -579,8 +579,12 @@ public sealed class Store
             throw new SeikoException($"{sei.Name}: sei.json layout does not match the index artifact", "io");
         }
 
+        // An origin artifact carries its own declaration and its selector
+        // condition, and there is no index entry to compare against, so its
+        // prerequisite list legitimately differs from the manifest's (ADR-0044).
         if (!RelationsEqual(manifest.Artifact.Dependencies, sei.Artifact.Dependencies)
-            || !RelationsEqual(manifest.Artifact.Prerequisites, sei.Artifact.Prerequisites)
+            || (sei.Source is not OriginSource
+                && !RelationsEqual(manifest.Artifact.Prerequisites, sei.Artifact.Prerequisites))
             || !RelationsEqual(manifest.Artifact.OptionalPeers, sei.Artifact.OptionalPeers)
             || !RelationsEqual(manifest.Artifact.Conflicts, sei.Artifact.Conflicts))
         {

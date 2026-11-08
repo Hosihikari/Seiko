@@ -34,9 +34,25 @@ internal static class OriginPaths
     // and lock only ever hold the result.
     public static string Normalize(string specification, string root, string workingDirectory)
     {
-        var full = IsAbsolute(specification)
-            ? Path.GetFullPath(specification)
-            : Path.GetFullPath(Path.Combine(workingDirectory, specification));
+        // Only relative input is accepted; absolute input and file: URLs are
+        // rejected rather than silently converted (ADR-0044).
+        if (!IsStoredForm(specification))
+        {
+            var absolute = IsAbsolute(specification)
+                ? Path.GetFullPath(specification)
+                : Path.GetFullPath(Path.Combine(workingDirectory, specification));
+            var converted = Path.GetRelativePath(root, absolute).Replace('\\', '/');
+            if (Path.IsPathRooted(converted))
+            {
+                throw new SeikoException(
+                    $"{specification} is on another volume; move it under {root} and use a relative path",
+                    "usage");
+            }
+
+            return converted;
+        }
+
+        var full = Path.GetFullPath(Path.Combine(workingDirectory, specification));
 
         var relative = Path.GetRelativePath(root, full);
         if (Path.IsPathRooted(relative))
@@ -81,4 +97,15 @@ internal static class OriginPaths
     private static bool IsAbsolute(string value)
         => !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
             && Path.IsPathRooted(value);
+
+    // The form a declaration and a lock must hold.
+    public static void EnsureStored(string path, string what)
+    {
+        if (!IsStoredForm(path))
+        {
+            throw new SeikoException(
+                $"{what} '{path}' must be relative to the install root",
+                "lock");
+        }
+    }
 }

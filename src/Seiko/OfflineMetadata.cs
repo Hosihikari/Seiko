@@ -34,9 +34,8 @@ internal static class OfflineMetadata
 
         // A name served by an origin never consults a source, so a source
         // index is only required when some reached name has to come from one.
-        var originNames = config.Origin
-            .Select(origin => origin.Name)
-            .ToHashSet(StringComparer.Ordinal);
+        var originIndexes = config.Origin.ToDictionary(origin => origin.Name, StringComparer.Ordinal);
+        var originNames = originIndexes.Keys.ToHashSet(StringComparer.Ordinal);
         var needsIndex = pending.Any(name => !originNames.Contains(name));
 
         if (needsIndex)
@@ -60,9 +59,30 @@ internal static class OfflineMetadata
                 continue;
             }
 
-            // The origin answers this name from disk, so no source is consulted.
+            // The origin answers this name from disk, so no source is consulted
+            // — but its own dependencies still are, so they are enqueued here
+            // instead of being read from an index.
             if (originNames.Contains(name))
             {
+                if (originIndexes.TryGetValue(name, out var originSpec))
+                {
+                    foreach (var stored in originSpec.Paths)
+                    {
+                        var full = LocalSource.ResolvePath(stored, root);
+                        if (!File.Exists(full))
+                        {
+                            // The declaration may still be satisfied by a
+                            // snapshot; the source reports it if not.
+                            continue;
+                        }
+
+                        if (OriginManifest.Dependencies(full) is { } manifest)
+                        {
+                            Enqueue(manifest, pending);
+                        }
+                    }
+                }
+
                 continue;
             }
 
@@ -327,4 +347,54 @@ internal static class OfflineMetadata
             || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsHttpUri(ISeiSource source) => source is HttpSource;
+}
+
+// Reads only the relations of an origin artifact, so an offline run can list
+// what the local dependency graph needs before it starts (ADR-0044). A file
+// that cannot be read is left to the source, which reports the real problem.
+internal static class OriginManifest
+{
+    public static SeiIndex? Dependencies(string path)
+    {
+        try
+        {
+            using var archive = System.IO.Compression.ZipFile.OpenRead(path);
+            var entry = archive.Entries.FirstOrDefault(
+                item => ArchiveLimits.NormalizeName(item.FullName) == "sei.json");
+            if (entry is null)
+            {
+                return null;
+            }
+
+            using var stream = entry.Open();
+            var manifest = System.Text.Json.JsonSerializer.Deserialize(
+                stream,
+                SeikoJsonContext.Default.SeiManifest);
+            if (manifest is null)
+            {
+                return null;
+            }
+
+            return new SeiIndex
+            {
+                Name = manifest.Name,
+                Versions =
+                [
+                    new SeiVersionEntry
+                    {
+                        Version = manifest.Version,
+                        Dependencies = manifest.Dependencies,
+                        Prerequisites = manifest.Prerequisites,
+                        OptionalPeers = manifest.OptionalPeers,
+                        Conflicts = manifest.Conflicts,
+                        Artifacts = [],
+                    },
+                ],
+            };
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
 }

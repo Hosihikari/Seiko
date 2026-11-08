@@ -124,7 +124,15 @@ internal sealed class Fixture : IDisposable
 
     // Writes a standalone .sei artifact outside any index and returns its path
     // relative to the install root, the form `add` stores (ADR-0044).
-    public string WriteOrigin(string name, string version, string file, string content)
+    public string WriteOrigin(
+        string name,
+        string version,
+        string file,
+        string content,
+        string? rid = null,
+        (string Name, string? Version)[]? prerequisites = null,
+        (string Name, string? Version)[]? dependencies = null,
+        (string Name, string? Version)[]? manifestPrerequisites = null)
     {
         var directory = Path.Combine(Root, "dist");
         Directory.CreateDirectory(directory);
@@ -138,7 +146,19 @@ internal sealed class Fixture : IDisposable
             SchemaVersion = SeiManifest.CurrentSchemaVersion,
             Name = name,
             Version = version,
-            Artifact = new ArtifactManifest { Layout = "root" },
+            Dependencies = ToDependencies(
+                (dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version))),
+            Prerequisites = ToDependencies(
+                (manifestPrerequisites ?? []).Select(item => new DepFixture(item.Name, item.Version))),
+            Artifact = new ArtifactManifest
+            {
+                Layout = "root",
+                Rid = rid,
+                // The manifest never carries the selector condition; a caller
+                // that needs one uses the selector path instead.
+                Prerequisites = ToDependencies(
+                    (prerequisites ?? []).Select(item => new DepFixture(item.Name, item.Version))),
+            },
         };
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
         {

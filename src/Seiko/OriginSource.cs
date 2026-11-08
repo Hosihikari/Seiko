@@ -10,6 +10,7 @@ internal sealed class OriginSource : ISeiSource
 {
     private readonly Dictionary<string, OriginSpec> _specs;
     private readonly Dictionary<string, string> _preferred = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _lockedPath = new(StringComparer.Ordinal);
     private readonly string _rid;
 
     public OriginSource(IEnumerable<OriginSpec> specs, string root, string rid, string? storeRoot = null)
@@ -57,27 +58,12 @@ internal sealed class OriginSource : ISeiSource
 
     public string ResolveArtifact(ArtifactLocation source) => source.Url;
 
-    // Used by `--frozen`: the lock already names the bytes, so a snapshot is
-    // chosen by that digest rather than by recency.
-    public void PreferDigest(string name, string sha256)
-        => _preferred[name] = Hashing.NormalizeSha256(sha256);
-
-    // The stored form for the lock: relative to the install root.
-    public string? PathOf(ArtifactEntry artifact)
+    // Used by `--frozen`: the lock already names the path and the bytes, so
+    // both are bound rather than re-read from the current declaration.
+    public void PreferLocked(string name, string path, string sha256)
     {
-        var full = artifact.Source.Url;
-        foreach (var spec in _specs.Values)
-        {
-            foreach (var stored in spec.Paths)
-            {
-                if (string.Equals(OriginPaths.Resolve(stored, Root), full, StringComparison.Ordinal))
-                {
-                    return stored;
-                }
-            }
-        }
-
-        return null;
+        _lockedPath[name] = path;
+        _preferred[name] = Hashing.NormalizeSha256(sha256);
     }
 
     public Task DownloadAsync(
@@ -141,6 +127,11 @@ internal sealed class OriginSource : ISeiSource
     private SeiIndex Build(OriginSpec spec)
     {
         var chosen = Choose(spec);
+        if (_lockedPath.TryGetValue(spec.Name, out var locked) && chosen.Count == 1)
+        {
+            chosen = [(locked, chosen[0].Selector)];
+        }
+
         var artifacts = new List<ArtifactEntry>();
         SeiManifest? first = null;
         foreach (var (stored, selector) in chosen)
@@ -226,7 +217,8 @@ internal sealed class OriginSource : ISeiSource
     }
 
     // Both sets must hold for the file to apply, so the artifact carries the
-    // union; the resolver evaluates it like any other condition.
+    // union and the resolver evaluates it like any other condition. A name in
+    // both keeps both ranges: dropping one would silently widen the condition.
     private static List<SeiDependency> Merge(
         List<SeiDependency> intrinsic,
         List<SeiDependency> fromSelector)
@@ -234,14 +226,8 @@ internal sealed class OriginSource : ISeiSource
         var merged = intrinsic
             .Select(item => new SeiDependency { Name = item.Name, Version = item.Version })
             .ToList();
-        foreach (var item in fromSelector)
-        {
-            if (!merged.Any(existing => string.Equals(existing.Name, item.Name, StringComparison.Ordinal)))
-            {
-                merged.Add(new SeiDependency { Name = item.Name, Version = item.Version });
-            }
-        }
-
+        merged.AddRange(fromSelector.Select(
+            item => new SeiDependency { Name = item.Name, Version = item.Version }));
         return merged;
     }
 

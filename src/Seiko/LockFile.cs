@@ -48,6 +48,13 @@ public static class LockFile
                 throw new SeikoException($"invalid lock file: {path}", "lock");
             }
 
+            // A locked store path is always relative to the install root, so a
+            // committed lock survives a move (ADR-0044).
+            if (entry.OriginPath is not null)
+            {
+                OriginPaths.EnsureStored(entry.OriginPath, $"{entry.Name} originPath");
+            }
+
             // Relation elements are read directly by replay; a JSON `null`
             // would otherwise surface as an internal NRE.
             if (entry.Dependencies.Concat(entry.Prerequisites)
@@ -91,7 +98,7 @@ public static class LockFile
                     Name = p.Name,
                     Version = p.Version,
                     Source = p.Source.Id,
-                    OriginPath = (p.Source as OriginSource)?.PathOf(p.Artifact),
+                    OriginPath = p.Artifact.OriginPath,
                     Direct = p.Direct,
                     Artifact = new LockedArtifact
                     {

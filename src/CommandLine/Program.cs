@@ -1330,6 +1330,8 @@ static int CacheStatusCommand(string? store, bool json)
     Console.WriteLine(Loc.Get("cache.partials", status.PartialItems));
     Console.WriteLine(Loc.Get("cache.staging", status.StagingItems));
     Console.WriteLine(Loc.Get("cache.staging-bytes", status.StagingBytes));
+    Console.WriteLine(Loc.Get("cache.origins", status.Origins));
+    Console.WriteLine(Loc.Get("cache.origin-bytes", status.OriginBytes));
     return 0;
 }
 
@@ -1432,7 +1434,12 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
 
     foreach (var sei in result.Lock.Sei)
     {
-        Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}");
+        // A local file is not cross-checked against an index entry, so the
+        // default output says so (ADR-0044).
+        var origin = sei.OriginPath is { } path
+            ? Loc.Get("origin-suffix", path)
+            : "";
+        Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}{origin}");
     }
 
     if (diagnostics)

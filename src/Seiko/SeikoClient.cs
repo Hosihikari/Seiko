@@ -43,7 +43,9 @@ public sealed record CacheStatusInfo(
     long Bytes,
     int PartialItems,
     int StagingItems,
-    long StagingBytes);
+    long StagingBytes,
+    int Origins = 0,
+    long OriginBytes = 0);
 
 public sealed record CacheFinding(string Severity, string Code, string Message, string? Path);
 
@@ -216,7 +218,7 @@ public sealed class SeikoClient
                 foreach (var locked in existingLock.Sei.Where(
                     sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
                 {
-                    origin.PreferDigest(locked.Name, locked.Artifact.Sha256);
+                    origin.PreferLocked(locked.Name, locked.OriginPath!, locked.Artifact.Sha256);
                 }
             }
 
@@ -291,6 +293,15 @@ public sealed class SeikoClient
         // re-checks against the on-disk state.
         var stored = DownloadAll(store, resolved, session, downloadCts);
         cancellationToken.ThrowIfCancellationRequested();
+
+        // The bytes were just verified; snapshotting them now keeps the
+        // granted generation reproducible even for a version that was picked
+        // up by a plain sync rather than an `add` (ADR-0044).
+        if (mode == SyncMode.Normal)
+        {
+            CaptureOrigins(storePath, resolved);
+        }
+
         progress?.Report(new SyncProgress(
             SyncPhase.Deploying,
             null,
@@ -851,16 +862,15 @@ public sealed class SeikoClient
         }
 
         // A snapshot makes the granted generation survive a deleted or rebuilt
-        // original (ADR-0044). Capture only runs for a real change and only
-        // over declarations that are still present after the removals, so a
-        // vanished file of an unrelated entry cannot fail the command.
-        if (!dryRun)
+        // original (ADR-0044). Only the paths this run touches are read: an
+        // untouched entry whose original is gone must not fail the command.
+        foreach (var origin in originTargets)
         {
-            foreach (var origin in config.Origin)
+            foreach (var stored in origin.Paths)
             {
-                foreach (var stored in origin.Paths)
+                var full = OriginPaths.Resolve(stored, root);
+                if (File.Exists(full))
                 {
-                    var full = OriginPaths.Resolve(stored, root);
                     OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
                 }
             }
@@ -1052,6 +1062,27 @@ public sealed class SeikoClient
         return version.Major == 0
             ? $"[{lower},0.{version.Minor + 1}.0)"
             : $"[{lower},{version.Major + 1}.0.0)";
+    }
+
+    // Records the bytes a run actually resolved, so a later replay or rollback
+    // still has them after the original is deleted or rebuilt. Only origin
+    // entries have a stored original; everything else already lives in the
+    // content-addressed store.
+    private static void CaptureOrigins(string storePath, IReadOnlyList<ResolvedSei> resolved)
+    {
+        foreach (var sei in resolved)
+        {
+            if (sei.Artifact.OriginPath is not { } stored)
+            {
+                continue;
+            }
+
+            var full = OriginPaths.Resolve(stored, sei.Source is OriginSource origin ? origin.Root : ".");
+            if (File.Exists(full))
+            {
+                OriginSnapshot.Capture(storePath, sei.Name, full, sei.Artifact.Source.Sha256);
+            }
+        }
     }
 
     // A rebuilt file with the same version is a different artifact under one
@@ -1697,7 +1728,19 @@ public sealed class SeikoClient
         var partials = Directory.Exists(partialRoot)
             ? Directory.EnumerateFileSystemEntries(partialRoot).Count()
             : 0;
-        return new CacheStatusInfo(artifacts, bytes, partials, staging.Count, stagingBytes);
+
+        // Origin snapshots are stored bytes like any other; they are counted
+        // separately because they are not content-addressed and take part in
+        // clean, not in verify (ADR-0044).
+        var originFiles = OriginFiles(storePath);
+        return new CacheStatusInfo(
+            artifacts,
+            bytes,
+            partials,
+            staging.Count,
+            stagingBytes,
+            originFiles.Count,
+            originFiles.Sum(file => new FileInfo(file).Length));
     }
 
     public IReadOnlyList<CacheFinding> CacheVerify(string? storeRoot = null)
@@ -2026,6 +2069,23 @@ public sealed class SeikoClient
             var snapshotDirectory = OriginSnapshot.Folder(storePath);
             if (Directory.Exists(snapshotDirectory))
             {
+                // A killed capture leaves a temp file behind; it is never
+                // referenced, so it always goes (ADR-0044).
+                foreach (var leftover in Directory.EnumerateFiles(
+                    snapshotDirectory, "*" + OriginSnapshot.TempSuffix + "*"))
+                {
+                    try
+                    {
+                        bytes += new FileInfo(leftover).Length;
+                        File.Delete(leftover);
+                        removed++;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        throw new SeikoException($"could not remove {leftover}: {ex.Message}", "io", ex);
+                    }
+                }
+
                 foreach (var snapshot in Directory.EnumerateFiles(snapshotDirectory, "*.sei"))
                 {
                     var file = Path.GetFileName(snapshot);
@@ -2097,6 +2157,14 @@ public sealed class SeikoClient
         {
             yield return Path.Combine(directory, "lock.json");
         }
+    }
+
+    private static List<string> OriginFiles(string storePath)
+    {
+        var folder = OriginSnapshot.Folder(storePath);
+        return Directory.Exists(folder)
+            ? Directory.EnumerateFiles(folder, "*.sei").ToList()
+            : [];
     }
 
     private static IEnumerable<string> ArtifactDirectories(string storePath)

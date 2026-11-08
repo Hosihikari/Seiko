@@ -8,6 +8,10 @@ internal static class OriginSnapshot
 {
     public const string FolderName = "origin";
 
+    // Torn captures are left behind when the process dies between copy and
+    // rename; they carry this suffix.
+    public const string TempSuffix = ".tmp-";
+
     public static string Folder(string storeRoot) => Path.Combine(storeRoot, FolderName);
 
     public static string SnapshotPath(string storeRoot, string name, string sha256)
@@ -30,7 +34,7 @@ internal static class OriginSnapshot
             return destination;
         }
 
-        var temp = destination + ".tmp-" + Guid.NewGuid().ToString("N");
+        var temp = destination + TempSuffix + Guid.NewGuid().ToString("N");
         try
         {
             File.Copy(sourcePath, temp, overwrite: true);

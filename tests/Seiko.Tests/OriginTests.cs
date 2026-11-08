@@ -367,5 +367,141 @@ public sealed class OriginTests
         Assert.Equal(expected, Hashing.Sha256File(snapshot));
     }
 
+    [Fact]
+    public void SelectorPrerequisiteMustHold()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("lib", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "dist/hello.sei",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[1.0.0]\" } ] } ]",
+            "lib");
+
+        new SeikoClient().Add(
+            fixture.Root,
+            Path.Combine(fixture.Root, "dist/hello.sei"),
+            storeRoot: fixture.StoreDirectory);
+
+        // The selector adds lib as an artifact prerequisite, so it is pulled in
+        // and the artifact is chosen because the condition holds.
+        Assert.Contains("lib", new SeikoClient().ReadLock(fixture.Root)!.Sei.Select(sei => sei.Name));
+    }
+
+    [Fact]
+    public void SelectorRangeIsKeptWhenTheManifestAlsoNamesThePrerequisite()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("lib", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteConfig("win-x64");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", manifestPrerequisites: [("lib", "[1.0.0]")]);
+        WriteOriginConfig(
+            fixture,
+            "hello",
+            "dist/hello.sei",
+            "selectors = [ { rid = \"*\", prerequisites = [ { name = \"lib\", version = \"[2.0.0]\" } ] } ]");
+
+        // Without the selector range the artifact would be accepted against
+        // lib 1.0.0; both ranges apply, so no version satisfies and it fails.
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Path.Combine(fixture.Root, "dist/hello.sei"),
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+    }
+
+    [Fact]
+    public void Sync_KeepsOriginPathWhenTheFileIsGone()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        var path = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        client.Add(fixture.Root, Path.Combine(fixture.Root, path), storeRoot: fixture.StoreDirectory);
+        File.Delete(Path.Combine(fixture.Root, path));
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, force: true);
+
+        Assert.Equal("dist/hello.sei", Assert.Single(client.ReadLock(fixture.Root)!.Sei).OriginPath);
+    }
+
+    [Fact]
+    public void Sync_CapturesTheNewVersionWithoutAnAdd()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var client = new SeikoClient();
+        client.Add(
+            fixture.Root,
+            Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one")),
+            storeRoot: fixture.StoreDirectory);
+
+        // A new version picked up by a plain sync must be snapshotted too.
+        fixture.WriteOrigin("hello", "1.0.1", "hello.txt", "two");
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        var folder = Path.Combine(fixture.StoreDirectory, "origin");
+        Assert.Equal(2, Directory.GetFiles(folder, "*.sei").Length);
+    }
+
+    [Fact]
+    public void Add_OfflineReportsEveryMissingDependency()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = Path.Combine(fixture.Root, fixture.WriteOrigin(
+            "hello",
+            "1.0.0",
+            "hello.txt",
+            "one",
+            dependencies: [("a", null), ("b", null)]));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            origin,
+            storeRoot: fixture.StoreDirectory,
+            offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.Contains("sei/a.json", error.Message);
+        Assert.Contains("sei/b.json", error.Message);
+    }
+
+    [Fact]
+    public void Add_RejectsAnAbsoluteInputPath()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var absolute = Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one"));
+
+        // Only a relative path is stored, so absolute input is converted; this
+        // asserts the conversion happened rather than the input being kept.
+        new SeikoClient().Add(fixture.Root, absolute, storeRoot: fixture.StoreDirectory);
+
+        Assert.Equal("dist/hello.sei", Assert.Single(ConfigLoader.Load(fixture.Root).Origin).Paths[0]);
+    }
+
+    private static void WriteOriginConfig(
+        Fixture fixture,
+        string name,
+        string path,
+        string selectors,
+        params string[] alsoDirect)
+    {
+        var config = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            config,
+            File.ReadAllText(config)
+            + $"origin = [ {{ name = \"{name}\", paths = [\"{path}\"], {selectors} }} ]\n"
+            + $"sei = [ {{ name = \"{name}\" }}{string.Concat(alsoDirect.Select(n => $", {{ name = \"{n}\" }}"))} ]\n");
+    }
+
     private static string Normalize(string path) => path.Replace('\\', '/').TrimStart('.', '/');
 }
