@@ -44,8 +44,25 @@ public sealed class LocalSource : ISeiSource
             return null;
         }
 
-        var sei = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex)
-            ?? throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}", "source");
+        SeiIndex? sei;
+        try
+        {
+            sei = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex);
+        }
+        catch (JsonException ex)
+        {
+            // Normalized here, at the file boundary: callers only ever deal
+            // with SeikoException, and the source and name stay in the text.
+            throw new SeikoException(
+                $"source '{Config.Id}': invalid sei index for {name} ({ex.Message})",
+                "source",
+                ex);
+        }
+
+        if (sei is null)
+        {
+            throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}", "source");
+        }
 
         if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion)
         {

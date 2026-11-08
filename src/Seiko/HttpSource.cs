@@ -213,8 +213,25 @@ public sealed class HttpSource : ISeiSource, IDisposable
             }
 
             var bytes = await ReadAllBytesAsync(response, _session.CancellationToken).ConfigureAwait(false);
-            var sei = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiIndex)
-                ?? throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
+            SeiIndex? sei;
+            try
+            {
+                sei = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiIndex);
+            }
+            catch (JsonException ex)
+            {
+                // Normalized at the response boundary, so callers only ever
+                // see SeikoException and the source and name stay in the text.
+                throw new SeikoException(
+                    $"source '{Id}': invalid sei index for {name} ({ex.Message})",
+                    "source",
+                    ex);
+            }
+
+            if (sei is null)
+            {
+                throw new SeikoException($"source '{Id}': invalid sei index for {name}", "source");
+            }
 
             ValidateSei(sei, name);
             if (cachePath is not null)
