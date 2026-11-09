@@ -3635,6 +3635,177 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void OfflinePrecheck_IgnoresADeterministicallyUnsolvableRival()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // All cached and determined. a's three artifacts tie; the third needs
+        // a version that does not exist, so only the first two compete.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                new ArtifactFixture { Files = { ["b.txt"] = "b" } },
+                new ArtifactFixture { Dependencies = [new DepFixture("cold", "[9.0.0]")] },
+            ],
+        });
+        fixture.AddSei("cold", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("ambiguous artifact for a 1.0.0", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_DoesNotSettleATieReachedOnlyThroughAShadowedAnswer()
+    {
+        using var fixture = new Fixture();
+        using var first = new TestHttpServer(fixture.SourceDirectory);
+        using var second = new Fixture();
+        using var secondServer = new TestHttpServer(second.SourceDirectory);
+        // The parent graph is fully determined. The rival artifact needs
+        // cold, whose first-source cache is unknown and whose mirror copy is
+        // usable: the rival is only "maybe", so the tie stays open.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                new ArtifactFixture { Dependencies = [new DepFixture("cold", null)] },
+            ],
+        });
+        second.AddSei("cold", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+        try
+        {
+            // Online the tie is a real ambiguity; only the caches matter here.
+            new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        // Only the first source's cold goes cold; the mirror keeps answering.
+        var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var firstIndex = new Uri(first.BaseUrl.TrimEnd('/') + "/index.json");
+        var cold = MetadataCache.PathFor(
+            fixture.StoreDirectory, new Uri(firstIndex, "sei/cold.json").AbsoluteUri);
+        File.Delete(cold);
+        File.Delete(cold + ".404");
+        Assert.True(Directory.Exists(cache));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.DoesNotContain("ambiguous", error.Message);
+        Assert.Contains("sei/cold.json from source 'first'", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_SettlesWhenALaterVersionProvesTheRival()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // The rival artifact needs cold. A high cold version drags in a
+        // missing package (guess leaf first), a lower one does not and is
+        // proven second; the rival is settled by that later proof.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                new ArtifactFixture { Dependencies = [new DepFixture("cold", null)] },
+            ],
+        });
+        fixture.AddSei(
+            "cold",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("missing", null)],
+                Artifacts = [new ArtifactFixture()],
+            },
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+        try
+        {
+            new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        // missing goes cold: the high cold version now only guesses.
+        var missing = MetadataCache.PathFor(
+            fixture.StoreDirectory, new Uri(new Uri(server.BaseUrl), "sei/missing.json").AbsoluteUri);
+        File.Delete(missing);
+        File.Delete(missing + ".404");
+        Assert.False(File.Exists(missing));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("sei/missing.json", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_LowerUnknownRivalCannotCancelATopTie()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // Two prerequisites tie at the top and both are proven; the third
+        // artifact is less specific and only guesses. It cannot change the
+        // top tie, so the verdict stands.
+        fixture.AddSei("p", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("q", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("cold", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                new ArtifactFixture { Prerequisites = [new DepFixture("p", null)] },
+                new ArtifactFixture { Prerequisites = [new DepFixture("q", null)] },
+                new ArtifactFixture { Dependencies = [new DepFixture("cold", null)] },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null), ("p", null), ("q", null)]);
+        try
+        {
+            new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        var cold = MetadataCache.PathFor(
+            fixture.StoreDirectory, new Uri(new Uri(server.BaseUrl), "sei/cold.json").AbsoluteUri);
+        File.Delete(cold);
+        File.Delete(cold + ".404");
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("ambiguous artifact", error.Message);
+    }
+
+    [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
     {
         using var fixture = new Fixture();

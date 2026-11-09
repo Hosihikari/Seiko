@@ -1194,7 +1194,11 @@ public sealed class Resolver
                 continue;
             }
 
-            if (verdicts.Any(item => item.Verdict == SolveVerdict.Maybe))
+            // Only the tied top layer decides the verdict; a lower, unknown
+            // candidate cannot change whether the top is ambiguous.
+            if (verdicts.Any(item =>
+                (item.Artifact.Prerequisites?.Count ?? 0) == top
+                && item.Verdict == SolveVerdict.Maybe))
             {
                 continue;
             }
@@ -1241,23 +1245,26 @@ public sealed class Resolver
         try
         {
             probe.ResolveOnce(_specs);
-            // A graph with placeholders or shadowed answers was reached by
-            // guessing; the real fill-in run may land elsewhere. The answer
-            // itself can be gone from `_assigned` after backtracking, so the
-            // collected leaf is what counts.
-            IEnumerable<ResolvedSei> answered = probe._collected is { Count: > 0 } collected
-                ? collected[0]
-                : probe._assigned.Values;
-            return answered.Any(sei => sei.Entry.ProbeUnknown)
+            // A proven leaf ends the walk with the assignment in place. The
+            // exhausted-search fallback (`_collected`) only exists because
+            // every leaf was a guess.
+            if (probe._assigned.Count == 0)
+            {
+                return SolveVerdict.Maybe;
+            }
+
+            // A graph holding placeholders or shadowed answers was reached by
+            // guessing; the real fill-in run may land elsewhere.
+            return probe._assigned.Values.Any(sei => Uncertain(sei.Name))
                 ? SolveVerdict.Maybe
                 : SolveVerdict.Solvable;
         }
         catch (SeikoException) when (!_budget.Exhausted && !_budget.DepthSpent)
         {
-            // A spent budget or depth limit only proves the answer is unknown,
-            // so that case propagates instead of being reported as
-            // "unsolvable".
-            return SolveVerdict.Maybe;
+            // The search ran out of candidates: nothing proved, but nothing
+            // unknown either. A spent budget or depth limit only proves the
+            // answer is unknown, so those propagate.
+            return SolveVerdict.Unsolvable;
         }
     }
 
