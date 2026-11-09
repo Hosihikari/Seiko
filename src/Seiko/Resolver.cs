@@ -145,6 +145,10 @@ public sealed class Resolver
         // one. Probe children share the instance's object, so the reset has to
         // happen here and nowhere deeper.
         _budget.Reset();
+        // So do the preferences: a limit hit inside a retry throws before the
+        // fallback removes them, and the next call must not inherit the dead
+        // ones.
+        _forced.Clear();
         try
         {
             return ResolveWithPreference(specs);

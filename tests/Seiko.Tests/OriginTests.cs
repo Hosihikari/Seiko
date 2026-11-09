@@ -4241,6 +4241,95 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void Resolve_ResetsItsLimitsAndPreferencesBetweenCalls()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // The b2/b1 shape from the depth test: after the limit fails the
+        // first call, the forced preference it left behind would filter the
+        // only artifact that can satisfy b [2.0.0] + a. A fresh budget and a
+        // cleared preference set are what let the second call succeed.
+        fixture.AddSei("b", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture(),
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("b", "[1.0.0]")],
+                    Dependencies = [new DepFixture("p", null)],
+                },
+            ],
+        });
+        fixture.AddSei("p", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture(),
+                new ArtifactFixture { Dependencies = [new DepFixture("n0", null)] },
+            ],
+        });
+        for (var i = 0; i < 600; i++)
+        {
+            fixture.AddSei($"n{i}", new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = i + 1 < 600 ? [new DepFixture($"n{i + 1}", null)] : [],
+                Artifacts = [new ArtifactFixture()],
+            });
+        }
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        foreach (var (from, to) in new[] { (0, 300), (300, 600) })
+        {
+            File.WriteAllText(
+                configPath,
+                $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+                + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = [ { name = \"b\" }, { name = \"a\" }, { name = \"p\" }, "
+                + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
+                + " ]\n");
+            try
+            {
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+            }
+            catch (SeikoException)
+            {
+            }
+        }
+
+        var config = ConfigLoader.Load(fixture.Root);
+        var sources = LoadSourcesForTest(config, fixture);
+        try
+        {
+            var resolver = new Resolver(sources, null, "win-x64", allowPrerelease: false, allowCritical: false);
+            Assert.Throws<SeikoException>(() => resolver.Resolve(
+                [new() { Name = "b" }, new() { Name = "a" }]));
+            Assert.True(resolver.Incomplete);
+
+            // b [2.0.0] can only pair with a0: a1 needs b [1.0.0]. With the
+            // leftover force on a1 both artifacts would be excluded.
+            var second = resolver.Resolve(
+                [new() { Name = "b", Version = "[2.0.0]" }, new() { Name = "a" }]);
+
+            Assert.Contains(second, sei => sei.Name == "b" && sei.Version == "2.0.0");
+            Assert.False(resolver.Incomplete);
+        }
+        finally
+        {
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+        }
+    }
+
+    [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
     {
         using var fixture = new Fixture();
