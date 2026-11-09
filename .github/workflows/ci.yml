@@ -16,9 +16,15 @@ concurrency:
 
 jobs:
   build-test:
-    name: Build and test
-    runs-on: ubuntu-latest
+    # Both platforms: path handling is volume- and separator-sensitive, and
+    # the Release matrix is the wrong place to find that out after tagging.
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -31,6 +37,7 @@ jobs:
       - name: Test
         run: dotnet test tests/Seiko.Tests/Seiko.Tests.csproj -c Release --no-build
       - name: Installer architecture detection
+        if: runner.os == 'Linux'
         run: bash tests/installer-detect.sh
 
   aot:
