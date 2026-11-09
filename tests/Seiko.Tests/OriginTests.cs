@@ -3951,12 +3951,84 @@ public sealed class OriginTests
         }
     }
 
-    private static IReadOnlyList<ISeiSource> LoadSourcesForTest(SeikoConfig config, Fixture fixture)
-        => [
-            .. config.Sources.Select(source => source.Index.StartsWith("http", StringComparison.Ordinal)
-                ? (ISeiSource)new HttpSource(source, fixture.StoreDirectory)
-                : new LocalSource(source, fixture.Root)),
-        ];
+    // A failed construction would orphan the sources built before it, so the
+    // half-built list is released here rather than left to the caller's
+    // finally, which never runs when this throws.
+    [Fact]
+    public void LoadSourcesForTest_ReleasesTheSourcesItAlreadyBuilt()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("ok", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        // The HTTP source builds first; the missing local index then throws
+        // inside the helper. The caller's finally never runs, so the helper
+        // itself has to release what it built — checked through the catalog's
+        // live entries.
+        File.AppendAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $"sei = [ {{ name = \"ok\" }} ]\n");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")).Replace(
+                " }\n]\nrid",
+                $" }},\n  {{ id = \"missing\", index = \"{Path.Combine(fixture.Root, "nope", "index.json").Replace('\\', '/')}\" }}\n]\nrid",
+                StringComparison.Ordinal));
+        var config = ConfigLoader.Load(fixture.Root);
+        List<ISeiSource> built = [];
+
+        Assert.Throws<SeikoException>(() => LoadSourcesForTest(config, fixture, built));
+
+        // The HTTP source that was already built must be disposed: its session
+        // is gone, so an online read no longer gets a slot.
+        var source = Assert.IsType<HttpSource>(Assert.Single(built));
+        Assert.True(OwnsDisposedSession(source));
+    }
+
+    // A disposed source cannot hand out its session slots any more; the
+    // owning probe-constructed source is the only kind the helper builds.
+    private static bool OwnsDisposedSession(HttpSource source)
+    {
+        try
+        {
+            var session = (DownloadSession)typeof(HttpSource)
+                .GetField("_session", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(source)!;
+            return !session.HttpSlots.Wait(0);
+        }
+        catch (ObjectDisposedException)
+        {
+            return true;
+        }
+    }
+
+    private static IReadOnlyList<ISeiSource> LoadSourcesForTest(
+        SeikoConfig config,
+        Fixture fixture,
+        List<ISeiSource>? built = null)
+    {
+        var sources = built ?? [];
+        try
+        {
+            foreach (var source in config.Sources)
+            {
+                sources.Add(source.Index.StartsWith("http", StringComparison.Ordinal)
+                    ? new HttpSource(source, fixture.StoreDirectory)
+                    : new LocalSource(source, fixture.Root));
+            }
+
+            return sources;
+        }
+        catch
+        {
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+
+            throw;
+        }
+    }
 
     [Fact]
     public void OfflinePrecheck_ReportsAHitLimitInsteadOfAcceptingTheAnswer()
