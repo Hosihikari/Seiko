@@ -559,10 +559,12 @@ public sealed class OriginTests
 
         // The path is outside the install root, so a fixed cwd-relative read
         // (the old code) would miss it and a root-relative one would find it;
-        // either way it must not be captured or compared.
+        // either way it must not be captured or compared. A sibling of the
+        // fixture keeps both on the same volume for the relative spelling.
         var elsewhere = Path.Combine(
-            Path.GetTempPath(),
-            "seiko-origin-" + Guid.NewGuid().ToString("N"));
+            Directory.GetCurrentDirectory(),
+            ".seiko-test-runs",
+            "origin-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(elsewhere);
         File.WriteAllBytes(Path.Combine(elsewhere, "elsewhere.sei"), [1, 2, 3]);
         node["versions"]![0]!["artifacts"]![0]!["originPath"] =
@@ -4497,6 +4499,31 @@ public sealed class OriginTests
         var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
 
         Assert.Equal("config", error.Code);
+    }
+
+    [Fact]
+    public void Add_StripsADotSlashFromBeforeAnAbsolutePath()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+        var absolute = Path.Combine(fixture.Root, fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one"));
+        var absoluteSpelling = absolute.Replace('\\', '/');
+
+        // `./C:\x` and `./C:/x` are still absolute paths; the prefix must not
+        // hide the drive from the shape check, nor survive into the combine.
+        var errorWithBackslashes = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            "./" + absolute,
+            storeRoot: fixture.StoreDirectory));
+        var errorWithSlashes = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            "./" + absoluteSpelling,
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("usage", errorWithBackslashes.Code);
+        Assert.Contains("must be relative", errorWithBackslashes.Message);
+        Assert.Equal("usage", errorWithSlashes.Code);
+        Assert.Contains("must be relative", errorWithSlashes.Message);
     }
 
     [Fact]

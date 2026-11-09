@@ -65,7 +65,15 @@ internal sealed class Fixture : IDisposable
 
     public Fixture()
     {
-        Root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        // Under the working directory, not the system temp dir: `sk add`
+        // resolves relative input against the working directory, so a root on
+        // another volume (C: temp vs. a D: checkout) has no relative form at
+        // all and every path-shaped test would build an absolute one.
+        Directory.CreateDirectory(Path.Combine(Directory.GetCurrentDirectory(), ".seiko-test-runs"));
+        Root = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            ".seiko-test-runs",
+            Guid.NewGuid().ToString("N"));
         SourceDirectory = Path.Combine(Root, "source");
         StoreDirectory = Path.Combine(Root, "store");
         Directory.CreateDirectory(Path.Combine(SourceDirectory, "sei"));
