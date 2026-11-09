@@ -39,7 +39,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk sync`：读 `seiko.conf`，从静态索引（本地或 HTTPS）解析 sei，按 `rid` 与构件前置条件选构件，校验 SHA-256，解包到内容寻址存储，部署到安装根，写 `seiko.lock.json`，并显示解析到的安装根。
 - `sk sync --frozen`：按 `seiko.lock.json` 回放，不重新解析；声明的直接集合必须与锁中的直接条目一致，锁的目标 `rid` 必须与配置一致；`--locked` 在锁过期时报错；`sk install` 是别名；两者都不重写锁。
 - `sk add <name>[@range]... [--remove <name>]...` / `sk remove <name>` / `sk update [name] [--latest]`：在同一事务里修改直接声明并同步。
-- `sk add <path>` 改为安装一个本地 `.sei` 文件：带路径分隔符、以 `.sei` 结尾、或存在同名文件时按路径处理（源里也有同名 sei 时写 `./x.sei` 区分）。路径以相对安装根的形式写入声明与锁（允许 `./` 与 `../`；绝对路径与 `file:` URL 一律拒绝），文件先复制为 `<store>/origin/<name>-<sha>.sei` 快照；不带路径的 `sk add <name>` 会清掉该声明；版本号不变而字节变化按 `checksum` 报错。`--offline` 只接受路径，不接受名字。不带范围的 `add` 写入 `[版本, 下一主版本)`（`0.y.z` 为下一小版本）；重复 `add A` 在现有范围内重新解析 A。`sync`、`add`、`update` 可传 `--latest-installable`，跳过没有匹配当前依赖图构件的版本；默认仍选最高版本。
+- `sk add <path>` 改为安装一个本地 `.sei` 文件：带路径分隔符、以 `.sei` 结尾、或存在同名文件时按路径处理（源里也有同名 sei 时写 `./x.sei` 区分）。路径以相对安装根的形式写入声明与锁（允许 `./` 与 `../`；绝对路径与 `file:` URL 一律拒绝），文件先复制为 `<store>/origin/<name>-<sha>.sei` 快照；不带路径的 `sk add <name>` 会清掉该声明；版本号不变而字节变化按 `checksum` 报错。同步输出、`--dry-run`、`sk info` 与 JSON 信封会把这类条目标成 `origin` 且未经索引校验，因为没有比对过任何索引条目。`--offline` 只接受路径，不接受名字。不带范围的 `add` 写入 `[版本, 下一主版本)`（`0.y.z` 为下一小版本）；重复 `add A` 在现有范围内重新解析 A。`sync`、`add`、`update` 可传 `--latest-installable`，跳过没有匹配当前依赖图构件的版本；默认仍选最高版本。
 - 关系分四类：`dependencies`（安装并保活）、`prerequisites`（必须存在、不自动加入、参与构件选择）、`optionalPeers`（存在时必须匹配）、`conflicts`。版本级与构件级作用域都生效，解析会同时回溯版本与构件。
 - `--dry-run` 输出计划 `changes` 与被阻塞项，完成解析但不下载载荷、不写配置/锁/部署；`--diagnostics` 展开关系与约束来源；`--offline` 只使用锁、存储与缓存索引元数据。
 - `--adopt` 保留现有或被编辑的文件并记录为已接管；`--force` 覆盖它们；两者都处理未受管路径与已修改的受管文件。默认情况下，已修改的受管文件会在部署前阻止。
@@ -52,8 +52,8 @@ sha256sum -c SHA256SUMS --ignore-missing
 - `sk info <name>`：显示版本、依赖与构件数。
 - 源可以是本地路径或 http(s) 索引；本地源可以写成目录，由目录内的 `index.json` 作索引；官方索引是 `https://raw.githubusercontent.com/Hosihikari/SeiIndex/main/index.json`。私有源用按主机名派生的 bearer token：设置 `SEIKO_TOKEN_<HOST>`，ASCII 字母与数字转大写，其余字符的每个 UTF-8 字节写成 `_XX`，例如 `packages.example.com` 对应 `SEIKO_TOKEN_PACKAGES_2EEXAMPLE_2ECOM`。token 只通过 HTTPS 发给索引主机或该源 `tokenHosts` 中列出的主机；项目配置不能指定任意环境变量。
 - `sk index verify [path] [--check-artifacts] [--strict]`：校验索引目录的 schema、名称、版本、构件 URL 与 SHA-256；`--check-artifacts` 还会下载构件并校验字节与根级 `sei.json`，`--strict` 把警告也视为失败。
-- 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。索引元数据缓存在 `<store>/.metadata` 供离线使用；每个选定版本都会与其他源中适用条件相同的构件交叉核对摘要。
-- `sk source add|remove|list`：管理源（可重复的 `--token-host`）；`sk config get|set rid`：读写平台覆盖。
+- 下载使用全局 HTTP 请求预算（`--jobs`，默认 4）、带退避的重试、大文件 Range 分块、`--proxy`，中断后可从 `<store>/.partial` 跨进程续传。索引元数据缓存在 `<store>/.metadata` 供离线使用；每个选定版本都会与其他源中适用条件相同的构件交叉核对摘要；`origin` 条目的字节由用户自己选定，因此不做这项交叉核对。
+- `sk source add|remove|list`：管理源（可重复的 `--token-host`）；`sk config get|set rid`：读写平台覆盖。本地索引路径在写配置前先检查存在；http(s) 索引不探测，命令保持离线。
 - `sk cache status|verify|clean`：查看存储、校验构件，或清理所有已注册安装根当前锁与保留的回滚代都未引用的构件。同步与回滚会重新下载摘要元数据或载荷缺失、损坏的构件。
 - `sk doctor [--clean]`：检查锁、存储、部署状态与残留 `.part`，并把未完成事务报告为 error。`sk check` 是它的只读形式。
 - `--json`：输出 `{schemaVersion, command, data}` 信封；错误也使用同一信封并带错误码。退出码 0 成功、1 领域错误、2 用法错误；带阻塞项的 dry-run 仍退出 0。
