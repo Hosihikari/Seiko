@@ -177,8 +177,14 @@ public sealed class Resolver
             }
             catch (SeikoException)
             {
+                if (_budget.Exhausted || _budget.DepthSpent)
+                {
+                    throw;
+                }
                 // The preference does not survive the other forced choices;
-                // fall back to the solution that was already complete.
+                // fall back to the solution that was already complete. A spent
+                // limit is not "does not survive": the question was never
+                // decided, so the whole resolution fails (ADR-0025).
                 foreach (var name in added)
                 {
                     _forced.Remove(name);

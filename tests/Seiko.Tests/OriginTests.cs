@@ -3998,6 +3998,185 @@ public sealed class OriginTests
     private const int MaxDepthNodes = 600;
 
     [Fact]
+    public void Resolve_ReportsADepthLimitHitOnlyAfterAForcedPreference()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // a1 is more specific (two prerequisites, so it is searched first) and
+        // carries the only dependency on p; a0 needs just one. The first pass
+        // therefore ends on a1 — but probes skip the ambiguity walk, so its
+        // tie at p is never explored there. Once a1 is forced, the retry's
+        // leaf walks every tie in the graph, probes p's rival, and drags in a
+        // chain that exceeds the depth limit. The limit is first hit inside
+        // the forced retry; its catch must propagate it rather than fall back
+        // to the answer as it was.
+        fixture.AddSei("m1", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("m2", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Prerequisites = [new DepFixture("m1", null)] },
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("m1", null), new DepFixture("m2", null)],
+                    Dependencies = [new DepFixture("p", null)],
+                },
+            ],
+        });
+        fixture.AddSei("p", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture(),
+                new ArtifactFixture { Dependencies = [new DepFixture("n0", null)] },
+            ],
+        });
+        for (var i = 0; i < 600; i++)
+        {
+            fixture.AddSei($"n{i}", new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = i + 1 < 600 ? [new DepFixture($"n{i + 1}", null)] : [],
+                Artifacts = [new ArtifactFixture()],
+            });
+        }
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        // The full chain is too deep for one run, so the metadata is fetched
+        // in two halves first (each fits under the limit).
+        foreach (var (from, to) in new[] { (0, 300), (300, 600) })
+        {
+            File.WriteAllText(
+                configPath,
+                $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+                + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = [ { name = \"a\" }, { name = \"m1\" }, { name = \"m2\" }, { name = \"p\" }, "
+                + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
+                + " ]\n");
+            try
+            {
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+            }
+            catch (SeikoException)
+            {
+            }
+        }
+        File.Delete(Path.Combine(fixture.Root, "seiko.lock.json"));
+
+        var config = ConfigLoader.Load(fixture.Root);
+        var sources = LoadSourcesForTest(config, fixture);
+        try
+        {
+            var resolver = new Resolver(sources, null, "win-x64", allowPrerelease: false, allowCritical: false);
+
+            var error = Assert.Throws<SeikoException>(() => resolver.Resolve(
+                [new() { Name = "a" }, new() { Name = "m1" }, new() { Name = "m2" }]));
+
+            Assert.Contains("depth budget", error.Message);
+            Assert.True(resolver.Incomplete);
+        }
+        finally
+        {
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void OfflinePrecheck_ReportsADepthLimitHitInAPreferenceRetry()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // Same shape as the resolver test: the limit hit in the forced retry
+        // is a failure with nothing missing, and the run is marked
+        // incomplete, so ThrowIfAny must still refuse.
+        fixture.AddSei("m1", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("m2", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Prerequisites = [new DepFixture("m1", null)] },
+                new ArtifactFixture
+                {
+                    Prerequisites = [new DepFixture("m1", null), new DepFixture("m2", null)],
+                    Dependencies = [new DepFixture("p", null)],
+                },
+            ],
+        });
+        fixture.AddSei("p", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture(),
+                new ArtifactFixture { Dependencies = [new DepFixture("n0", null)] },
+            ],
+        });
+        for (var i = 0; i < 600; i++)
+        {
+            fixture.AddSei($"n{i}", new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = i + 1 < 600 ? [new DepFixture($"n{i + 1}", null)] : [],
+                Artifacts = [new ArtifactFixture()],
+            });
+        }
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        foreach (var (from, to) in new[] { (0, 300), (300, 600) })
+        {
+            File.WriteAllText(
+                configPath,
+                $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+                + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = [ { name = \"a\" }, { name = \"m1\" }, { name = \"m2\" }, { name = \"p\" }, "
+                + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
+                + " ]\n");
+            try
+            {
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+            }
+            catch (SeikoException)
+            {
+            }
+        }
+        File.WriteAllText(
+            configPath,
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = [ { name = \"a\" }, { name = \"m1\" }, { name = \"m2\" } ]\n");
+
+        var config = ConfigLoader.Load(fixture.Root);
+        var precheck = OfflineMetadata.Verify(
+            config,
+            fixture.StoreDirectory,
+            fixture.Root,
+            config.Sei,
+            existing: LockFile.Read(Path.Combine(fixture.Root, "seiko.lock.json")),
+            rid: "win-x64");
+
+        // Nothing is missing; the failure is the unfinished walk itself.
+        Assert.Empty(precheck.Missing);
+        Assert.NotNull(precheck.Failure);
+        Assert.Equal("resolve", precheck.Failure!.Code);
+        Assert.Contains("depth budget", precheck.Failure.Message);
+        Assert.True(precheck.Incomplete);
+
+        var thrown = Assert.Throws<SeikoException>(() => precheck.ThrowIfAny());
+        Assert.Contains("depth budget", thrown.Message);
+    }
+
+    [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
     {
         using var fixture = new Fixture();
