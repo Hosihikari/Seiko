@@ -1164,10 +1164,13 @@ public sealed class Resolver
             // prerequisite that only holds under a different dependency
             // version is still a real alternative, so it must not be filtered
             // out against the current assignment first.
-            var solvable = ridArtifacts
-                .Where(artifact => ReferenceEquals(artifact, resolved.Artifact)
-                    || CanSolveWith(artifact, resolved))
+            var verdicts = ridArtifacts
+                .Select(artifact => ReferenceEquals(artifact, resolved.Artifact)
+                    ? (Artifact: artifact, Verdict: SolveVerdict.Solvable)
+                    : (Artifact: artifact, Verdict: TrySolveWith(artifact, resolved)))
+                .Where(item => item.Verdict != SolveVerdict.Unsolvable)
                 .ToList();
+            var solvable = verdicts.Select(item => item.Artifact).ToList();
             if (solvable.Count < 2)
             {
                 continue;
@@ -1184,8 +1187,14 @@ public sealed class Resolver
             // placeholder answers: the real resolution may not even reach this
             // version or this name. That is a gap answer, not an ambiguity
             // verdict — the fill-in run decides it. A certain graph keeps the
-            // verdict.
+            // verdict, and so does one whose alternatives were all proven: a
+            // "maybe" alone means only the fill-in run can settle the tie.
             if (_assigned.Values.Any(sei => sei.Entry.ProbeUnknown || _shadowed.Contains(sei.Name)))
+            {
+                continue;
+            }
+
+            if (verdicts.Any(item => item.Verdict == SolveVerdict.Maybe))
             {
                 continue;
             }
@@ -1200,6 +1209,11 @@ public sealed class Resolver
     // introduce its own conflicts, missing transitive targets or an
     // unsatisfiable prerequisite, and it must not create a false ambiguity.
     private bool CanSolveWith(ArtifactEntry artifact, ResolvedSei owner)
+        => TrySolveWith(artifact, owner) == SolveVerdict.Solvable;
+
+    // Solvable only when the artifact's own graph is proven: a probe that
+    // had to guess is a maybe, not an answer.
+    private SolveVerdict TrySolveWith(ArtifactEntry artifact, ResolvedSei owner)
     {
         var forced = new Dictionary<string, ForcedPick>(_forced, StringComparer.Ordinal)
         {
@@ -1227,15 +1241,31 @@ public sealed class Resolver
         try
         {
             probe.ResolveOnce(_specs);
-            return true;
+            // A graph with placeholders or shadowed answers was reached by
+            // guessing; the real fill-in run may land elsewhere. The answer
+            // itself can be gone from `_assigned` after backtracking, so the
+            // collected leaf is what counts.
+            IEnumerable<ResolvedSei> answered = probe._collected is { Count: > 0 } collected
+                ? collected[0]
+                : probe._assigned.Values;
+            return answered.Any(sei => sei.Entry.ProbeUnknown)
+                ? SolveVerdict.Maybe
+                : SolveVerdict.Solvable;
         }
         catch (SeikoException) when (!_budget.Exhausted && !_budget.DepthSpent)
         {
             // A spent budget or depth limit only proves the answer is unknown,
             // so that case propagates instead of being reported as
             // "unsolvable".
-            return false;
+            return SolveVerdict.Maybe;
         }
+    }
+
+    private enum SolveVerdict
+    {
+        Unsolvable,
+        Maybe,
+        Solvable,
     }
 
     // Sources return a fresh object graph per read, so a forced artifact is

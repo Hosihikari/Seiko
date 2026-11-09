@@ -3548,7 +3548,7 @@ public sealed class OriginTests
     {
         using var fixture = new Fixture();
         using var first = new TestHttpServer(fixture.SourceDirectory);
-        var second = new Fixture();
+        using var second = new Fixture();
         using var secondServer = new TestHttpServer(second.SourceDirectory);
         // The first source answers 404 for x, so the probe falls back to the
         // mirror's x 1.0 — a shadowed answer with two tied artifacts, and it
@@ -3575,9 +3575,63 @@ public sealed class OriginTests
         File.WriteAllText(mirrored, node.ToJsonString());
         // And the first source's own x goes cold, so the mirror's answer is
         // only a stand-in for something the first source may hold instead.
-        File.Delete(MetadataCache.PathFor(
-            fixture.StoreDirectory, first.BaseUrl.TrimEnd('/') + "/sei/x.json"));
+        // Both the cache file and its 404 marker have to go: the marker alone
+        // would keep x a known absence instead of an unknown answer.
+        var firstX = MetadataCache.PathFor(
+            fixture.StoreDirectory, first.BaseUrl.TrimEnd('/') + "/sei/x.json");
+        File.Delete(firstX);
+        File.Delete(firstX + ".404");
 
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        // The tie is only in the mirror's cached answer: a fill-in run from
+        // the first source may never reach it, so the answer stays a gap.
+        // (The parent passes this one too — its eager walk happened to end
+        // without a verdict — so it counts as coverage, not as a distinction.)
+        Assert.Equal("source", error.Code);
+        Assert.DoesNotContain("ambiguous", error.Message);
+        Assert.Equal(["sei/x.json from source 'first'"], Gaps(error.Message));
+    }
+
+    [Fact]
+    public void OfflinePrecheck_DoesNotCallAnAmbiguityWhenTheRivalNeedsAColdDependency()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // Both artifacts of a 1.0 are equally specific and both are "solvable"
+        // as far as the cache goes: the second one only through a placeholder
+        // for cold. Once cold is filled as 1.0, that artifact dies and a0 is
+        // the sole answer — so the tie is not a verdict yet.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                new ArtifactFixture { Dependencies = [new DepFixture("cold", "[2.0.0,3.0.0)")] },
+            ],
+        });
+        fixture.AddSei("cold", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+        new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
+
+        // cold goes cold; everything else has to stay cached, or gaps would
+        // rescue the verdict before the tie is ever judged.
+        var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
+        var index = new Uri(server.BaseUrl.TrimEnd('/') + "/index.json");
+        var coldPath = MetadataCache.PathFor(fixture.StoreDirectory, new Uri(index, "sei/cold.json").AbsoluteUri);
+        File.Delete(coldPath);
+        File.Delete(coldPath + ".404");
+        Assert.False(File.Exists(coldPath));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
+
+        Assert.Equal("source", error.Code);
+        Assert.DoesNotContain("ambiguous", error.Message);
+        Assert.Equal(["sei/cold.json from source 'http'"], Gaps(error.Message));
     }
 
     [Fact]
