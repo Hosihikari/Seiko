@@ -4177,6 +4177,70 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void Resolve_ResetsItsLimitsBetweenCalls()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("ok", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        // A deep enough chain that one resolution trips the depth limit.
+        for (var i = 0; i < 600; i++)
+        {
+            fixture.AddSei($"n{i}", new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = i + 1 < 600 ? [new DepFixture($"n{i + 1}", null)] : [],
+                Artifacts = [new ArtifactFixture()],
+            });
+        }
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        // Declare the chain directly and fetch it in halves (each fits under
+        // the limit); ok comes along so it lands in the cache too.
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        foreach (var (from, to) in new[] { (0, 300), (300, 600) })
+        {
+            File.WriteAllText(
+                configPath,
+                $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+                + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = [ "
+                + (from == 0 ? "{ name = \"ok\" }, " : "")
+                + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
+                + " ]\n");
+            try
+            {
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+            }
+            catch (SeikoException)
+            {
+            }
+        }
+
+        var config = ConfigLoader.Load(fixture.Root);
+        var sources = LoadSourcesForTest(config, fixture);
+        try
+        {
+            var resolver = new Resolver(sources, null, "win-x64", allowPrerelease: false, allowCritical: false);
+            Assert.Throws<SeikoException>(() => resolver.Resolve([new() { Name = "n0" }]));
+            Assert.True(resolver.Incomplete);
+
+            // The same instance must not carry the spent depth into the next
+            // call, nor claim the next answer was incomplete.
+            var second = resolver.Resolve([new() { Name = "ok" }]);
+
+            Assert.Contains(second, sei => sei.Name == "ok");
+            Assert.False(resolver.Incomplete);
+        }
+        finally
+        {
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+        }
+    }
+
+    [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
     {
         using var fixture = new Fixture();

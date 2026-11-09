@@ -141,6 +141,10 @@ public sealed class Resolver
         // cannot be solved is still measured up to the point it fails.
         _collected = _collectAll ? _collected ?? [] : null;
         _probeError = null;
+        // The budget belongs to one operation; a reused instance starts a new
+        // one. Probe children share the instance's object, so the reset has to
+        // happen here and nowhere deeper.
+        _budget.Reset();
         try
         {
             return ResolveWithPreference(specs);
@@ -1518,6 +1522,15 @@ public sealed class Resolver
         public bool Exhausted { get; private set; }
 
         public bool DepthSpent { get; set; }
+
+        // Shared by every search of one operation, so only the public entry
+        // resets it.
+        public void Reset()
+        {
+            Exhausted = false;
+            DepthSpent = false;
+            _used = 0;
+        }
 
         public bool TryConsume()
         {
