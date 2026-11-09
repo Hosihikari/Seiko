@@ -140,6 +140,7 @@ public sealed class Resolver
         // solution is reported as soon as it is found, so an optional set that
         // cannot be solved is still measured up to the point it fails.
         _collected = _collectAll ? _collected ?? [] : null;
+        _probeError = null;
         try
         {
             return ResolveWithPreference(specs);
@@ -1291,32 +1292,34 @@ public sealed class Resolver
         }
         catch (SeikoException ex)
         {
+            // A spent budget or depth limit means the question was never
+            // decided; the whole resolution is unfinished (ADR-0025). The
+            // child's own depth counter is the one that tripped, so its flag
+            // is what counts here.
+            if (_budget.Exhausted || _budget.DepthSpent || probe._budget.DepthSpent)
+            {
+                _budget.DepthSpent |= probe._budget.DepthSpent;
+                throw;
+            }
+
             // Only a search that ran to completion proves the artifact dead.
-            // A source read, an index check or the leaf listener can fail
-            // without saying anything about this artifact; such an error is
-            // kept so the caller can surface it instead of calling the
-            // question settled. A spent budget or depth limit is a maybe.
-            // A digest disagreement is about this artifact's own bytes: the
-            // mirror could not confirm them, so it is not a usable choice.
-            if (ex.Code == "checksum")
+            // Anything else — a source read, an index check, a checksum, the
+            // leaf listener — can fail without saying so, and the walk stops
+            // before the remaining versions and combinations are tried. So it
+            // is kept for the caller and the question stays open.
+            if (!probe._exhausted)
             {
-                return SolveVerdict.Unsolvable;
+                _probeError ??= ex;
+                return SolveVerdict.Maybe;
             }
 
-            // Anything else is about the cache, not the artifact: keep the
-            // error so the caller can surface it, and leave the question open.
-            if (!probe._exhausted && !(_budget.Exhausted || _budget.DepthSpent))
-            {
-                _probeError = ex;
-            }
-
-            return probe._exhausted ? SolveVerdict.Unsolvable : SolveVerdict.Maybe;
+            return SolveVerdict.Unsolvable;
         }
     }
 
     // The first real error a probe met, if any. It says nothing about the
     // artifact, so it has to reach the caller rather than be reported as a
-    // verdict.
+    // verdict. Cleared per public resolution.
     private SeikoException? _probeError;
 
     private enum SolveVerdict

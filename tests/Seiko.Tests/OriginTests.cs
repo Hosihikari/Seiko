@@ -15,7 +15,6 @@ public sealed class OriginTests
         new SeikoClient().Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         Assert.Equal("hi", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
-        File.AppendAllText("/tmp/pe.txt", "CONF=" + File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")) + "\n");
         var config = ConfigLoader.Load(fixture.Root);
         var origin = Assert.Single(config.Origin);
         Assert.Equal("./dist/hello.sei".TrimStart('.').TrimStart('/').Replace('/', '/'), Normalize(origin.Paths[0]));
@@ -199,7 +198,6 @@ public sealed class OriginTests
 
         client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
 
-        File.AppendAllText("/tmp/pe.txt", "CONF=" + File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")) + "\n");
         var config = ConfigLoader.Load(fixture.Root);
         Assert.Empty(config.Origin);
         Assert.Empty(config.Sei);
@@ -1788,7 +1786,8 @@ public sealed class OriginTests
             });
         fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
-        var origin = fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+        var origin = fixture.WriteOrigin(
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
         new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
         var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
         var index = new Uri(server.BaseUrl.TrimEnd('/') + "/index.json");
@@ -2830,10 +2829,12 @@ public sealed class OriginTests
             node["versions"]![0]!["artifacts"]![0]!["source"]!["sha256"]!.GetValue<string>();
         File.WriteAllText(lockPath, lockNode.ToJsonString());
 
-        // Every metadata file is cached now; the pre-check must accept.
-        var result = client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked, offline: true);
+        // Every metadata file is cached now, but the rival probe's checksum
+        // is reported rather than swallowed: the check never completed.
+        var error = Assert.Throws<SeikoException>(() => client.Sync(
+            fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked, offline: true));
 
-        Assert.Equal(3, result.SeiInstalled);
+        Assert.Equal("checksum", error.Code);
     }
 
     [Fact]
@@ -3121,13 +3122,13 @@ public sealed class OriginTests
         {
         }
 
-        client.Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true);
+        // A checksum met by the a1 probe is kept and reported now: a0 is
+        // probably the answer, but the check on the rival never finished.
+        var error = Assert.Throws<SeikoException>(() => client.Add(
+            fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
-        // a0 is the artifact both sides can prove solvable; a1 was rightly
-        // called unsolvable rather than becoming a second solvable choice.
-        var locked = Assert.Single(client.ReadLock(fixture.Root)!.Sei, item => item.Name == "a");
-        Assert.Contains(locked.Artifact.Prerequisites, item => item.Name == "p");
-        Assert.DoesNotContain(locked.Artifact.Prerequisites, item => item.Name == "q");
+        Assert.Equal("checksum", error.Code);
+        Assert.Contains("artifact digest for a 1.0.0", error.Message);
     }
 
     [Fact]
@@ -3833,22 +3834,37 @@ public sealed class OriginTests
             ],
         });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
-        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
-        WriteOriginConfig(fixture, "hello", "dist/hello.sei", "selectors = [ { rid = \"*\" } ]");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("cold", null), ("a", null)]);
+        // a is cached by its own sync first; the hello add would otherwise end
+        // on the ambiguity before writing a's metadata.
+        // A plain sync needs --locked/--frozen offline only; online it wants
+        // declarations, so `a` is declared by name for this priming run.
+        File.AppendAllText(Path.Combine(fixture.Root, "seiko.conf"), "sei = [ { name = \"a\" } ]\n");
         try
         {
-            // Online `bad` is unknown, so the tie is a plain ambiguity; the
-            // metadata of a is cached before that verdict.
-            new SeikoClient().Add(fixture.Root, Rel(fixture, "dist/hello.sei"), storeRoot: fixture.StoreDirectory);
+            // The tie is a real ambiguity online too.
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         }
         catch (SeikoException)
         {
         }
 
-        // The rival's name comes from a local source whose file is broken.
+        File.Delete(Path.Combine(fixture.Root, "seiko.lock.json"));
+        WriteOriginConfig(fixture, "hello", "dist/hello.sei", "selectors = [ { rid = \"*\" } ]");
+
+        // Make a second name a gap as well, so failure and gap coexist: a
+        // stays cached (its artifacts must expand), cold does not.
+        var cold = MetadataCache.PathFor(
+            fixture.StoreDirectory, new Uri(new Uri(server.BaseUrl), "sei/cold.json").AbsoluteUri);
+        File.Delete(cold);
+        File.Delete(cold + ".404");
+
+        // The rival's name comes from a local source whose file is broken and
+        // whose index does not list it: the root is well-formed, the file is
+        // there but unparseable, so reading it throws at the source boundary.
         var bad = Path.Combine(fixture.Root, "bad-index");
         Directory.CreateDirectory(Path.Combine(bad, "sei"));
-        File.WriteAllText(Path.Combine(bad, "index.json"), "{\"schemaVersion\":2,\"sei\":[]}");
+        File.WriteAllText(Path.Combine(bad, "index.json"), "{\"schemaVersion\":2,\"sei\":[\"bad\"]}");
         File.WriteAllText(Path.Combine(bad, "sei", "bad.json"), "{");
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
@@ -3864,10 +3880,123 @@ public sealed class OriginTests
             fixture.Root,
             config.Sei);
 
+        Assert.Equal(["sei/cold.json from source 'http'"], precheck.Missing.ToArray());
+        // The gap itself puts a placeholder in the graph, so the ambiguity
+        // is not raised; the read failure on the rival still has to arrive.
+        Assert.Equal(["sei/cold.json from source 'http'"], precheck.Missing.ToArray());
         Assert.NotNull(precheck.Failure);
-        Assert.Contains("invalid sei index for bad", precheck.Failure!.Message);
+        Assert.Equal("source", precheck.Failure!.Code);
+        Assert.Contains("invalid sei index for bad", precheck.Failure.Message);
         Assert.False(precheck.Incomplete);
+
+        // And the combined message carries both.
+        var combined = Assert.Throws<SeikoException>(() => precheck.ThrowIfAny());
+        Assert.Contains("invalid sei index for bad", combined.Message);
+        Assert.Contains("sei/cold.json from source 'http'", combined.Message);
     }
+
+    [Fact]
+    public void Resolve_DoesNotCarryAProbeErrorIntoTheNextCall()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture(),
+                new ArtifactFixture { Dependencies = [new DepFixture("bad", null)] },
+            ],
+        });
+        fixture.AddSei("ok", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var bad = Path.Combine(fixture.Root, "bad-index");
+        Directory.CreateDirectory(Path.Combine(bad, "sei"));
+        File.WriteAllText(Path.Combine(bad, "index.json"), "{\"schemaVersion\":2,\"sei\":[\"bad\"]}");
+        File.WriteAllText(Path.Combine(bad, "sei", "bad.json"), "{");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}, "
+            + $"{{ id = \"bad\", index = \"{bad.Replace('\\', '/')}/index.json\" }} ]\n"
+            + "rid = \"win-x64\"\nsei = [ { name = \"a\", version = \"[1.0.0]\" }, { name = \"ok\" } ]\n");
+        // The priming run fails too — that is the first call this is about.
+        Assert.Throws<SeikoException>(() => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var config = ConfigLoader.Load(fixture.Root);
+        var resolver = new Resolver(
+            LoadSourcesForTest(config, fixture),
+            null,
+            "win-x64",
+            allowPrerelease: false,
+            allowCritical: false);
+
+        // First call meets the broken rival and fails on its error...
+        var first = Assert.Throws<SeikoException>(() => resolver.Resolve(config.Sei));
+        Assert.Equal("source", first.Code);
+
+        // ...the second, unrelated call must not rethrow it.
+        var second = resolver.Resolve([new() { Name = "ok" }]);
+
+        Assert.Contains(second, sei => sei.Name == "ok");
+    }
+
+    private static IReadOnlyList<ISeiSource> LoadSourcesForTest(SeikoConfig config, Fixture fixture)
+        => [
+            .. config.Sources.Select(source => source.Index.StartsWith("http", StringComparison.Ordinal)
+                ? (ISeiSource)new HttpSource(source, fixture.StoreDirectory)
+                : new LocalSource(source, fixture.Root)),
+        ];
+
+    [Fact]
+    public void OfflinePrecheck_ReportsAHitLimitInsteadOfAcceptingTheAnswer()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // a has two tied artifacts; the second drags a chain deeper than the
+        // search limit. Its probe cannot finish, so the tie is undecided and
+        // the pre-check must refuse rather than accept a0 silently.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture(),
+                new ArtifactFixture { Dependencies = [new DepFixture("n0", null)] },
+            ],
+        });
+        for (var i = 0; i < MaxDepthNodes; i++)
+        {
+            var next = i + 1 < MaxDepthNodes ? $"n{i + 1}" : null;
+            fixture.AddSei($"n{i}", new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = next is null ? [] : [new DepFixture(next, null)],
+                Artifacts = [new ArtifactFixture()],
+            });
+        }
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one");
+        WriteOriginConfig(fixture, "hello", "dist/hello.sei", "selectors = [ { rid = \"*\" } ]");
+        fixture.AddSei("hello", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        var config = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            config,
+            File.ReadAllText(config).Replace("sei = [", "sei = [ { name = \"a\" }, ", StringComparison.Ordinal));
+        // Online the chain resolves; the pre-check is what has to hit the
+        // limit, so the metadata is cached first.
+        Assert.Throws<SeikoException>(() => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root, Rel(fixture, "dist/hello.sei"), storeRoot: fixture.StoreDirectory, offline: true));
+
+        // The chain is cached, so the only thing that can fail is the depth
+        // limit itself — and it must not be mistaken for an unsolvable rival.
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("depth budget", error.Message);
+    }
+
+    private const int MaxDepthNodes = 600;
 
     [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
