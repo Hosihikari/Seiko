@@ -33,10 +33,20 @@ internal static class OriginPaths
     // committed lock survives a move to another machine or clone directory.
     public static string Normalize(string specification, string root, string workingDirectory)
     {
+        // A leading `./` is a spelling, not a location: `./C:\x` is still the
+        // absolute path C:\x, and combining it blindly would bury the drive
+        // inside a relative path. Strip the prefixes before judging the shape.
+        var trimmed = specification;
+        while (trimmed.StartsWith("./", StringComparison.Ordinal)
+            || trimmed.StartsWith(".\\", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
         // An absolute path or a file: URL is rejected, not converted: the
         // relative form is the one contract and input keeps the same shape
         // (ADR-0044).
-        if (!IsStoredForm(specification))
+        if (!IsStoredForm(trimmed))
         {
             throw new SeikoException(
                 $"{specification} must be relative to the install root, "
@@ -44,7 +54,7 @@ internal static class OriginPaths
                 "usage");
         }
 
-        var full = Path.GetFullPath(Path.Combine(workingDirectory, specification));
+        var full = Path.GetFullPath(Path.Combine(workingDirectory, trimmed));
 
         var relative = Path.GetRelativePath(root, full);
         if (Path.IsPathRooted(relative))
