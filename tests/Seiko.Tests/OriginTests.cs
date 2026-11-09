@@ -3923,21 +3923,32 @@ public sealed class OriginTests
         // The priming run fails too — that is the first call this is about.
         Assert.Throws<SeikoException>(() => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
         var config = ConfigLoader.Load(fixture.Root);
-        var resolver = new Resolver(
-            LoadSourcesForTest(config, fixture),
-            null,
-            "win-x64",
-            allowPrerelease: false,
-            allowCritical: false);
+        var sources = LoadSourcesForTest(config, fixture);
+        try
+        {
+            var resolver = new Resolver(
+                sources,
+                null,
+                "win-x64",
+                allowPrerelease: false,
+                allowCritical: false);
 
-        // First call meets the broken rival and fails on its error...
-        var first = Assert.Throws<SeikoException>(() => resolver.Resolve(config.Sei));
-        Assert.Equal("source", first.Code);
+            // First call meets the broken rival and fails on its error...
+            var first = Assert.Throws<SeikoException>(() => resolver.Resolve(config.Sei));
+            Assert.Equal("source", first.Code);
 
-        // ...the second, unrelated call must not rethrow it.
-        var second = resolver.Resolve([new() { Name = "ok" }]);
+            // ...the second, unrelated call must not rethrow it.
+            var second = resolver.Resolve([new() { Name = "ok" }]);
 
-        Assert.Contains(second, sei => sei.Name == "ok");
+            Assert.Contains(second, sei => sei.Name == "ok");
+        }
+        finally
+        {
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+        }
     }
 
     private static IReadOnlyList<ISeiSource> LoadSourcesForTest(SeikoConfig config, Fixture fixture)
