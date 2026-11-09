@@ -33,7 +33,6 @@ public sealed class R4ProbeTests
 
         Assert.NotNull(r);
         var text = File.ReadAllText(audit);
-        System.Console.WriteLine("LEN=" + text.Length);
         Assert.DoesNotContain("SECRET_SENTINEL", text);
         Assert.DoesNotContain("QUERY_SENTINEL", text);
     }

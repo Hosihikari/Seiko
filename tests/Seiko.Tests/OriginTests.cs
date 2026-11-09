@@ -2772,7 +2772,7 @@ public sealed class OriginTests
     }
 
     [Fact]
-    public void OfflinePrecheck_DoesNotFailTheWholeRunOnAProbedArtifactsChecksum()
+    public void OfflinePrecheck_ReportsAProbedArtifactsChecksumFailure()
     {
         using var fixture = new Fixture();
         using var first = new TestHttpServer(fixture.SourceDirectory);
@@ -2780,7 +2780,7 @@ public sealed class OriginTests
         using var secondServer = new TestHttpServer(second.SourceDirectory);
         // Everything cached. a0 is more specific and is what the run picks;
         // only the mirror disagrees on a1, which the ambiguity probe visits.
-        // That must not turn a success into a failure.
+        // The probe cannot finish a1's check, so the run reports it.
         fixture.AddSei("p", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["p.txt"] = "p" } }] });
         fixture.AddSei("a", new VersionFixture
         {
@@ -3040,19 +3040,19 @@ public sealed class OriginTests
             Gaps(error.Message));
     }
 
-    // The two artifacts are equally specific, so the run reports an ambiguity
-    // either way; this case guards the state the backtrack leaves behind.
+    // The two artifacts are equally specific, so the run is ambiguous either
+    // way; the failed probe must also be reported, not only the ambiguity.
     [Fact]
-    public void OfflinePrecheck_DoesNotCallAFailedArtifactSolvable()
+    public void OfflinePrecheck_ReportsTheChecksumAFailedProbeMet()
     {
         using var fixture = new Fixture();
         using var first = new TestHttpServer(fixture.SourceDirectory);
         var second = new Fixture();
         using var secondServer = new TestHttpServer(second.SourceDirectory);
         // Two artifacts with different prerequisites, both specificity 1. Only
-        // a1 disagrees with the mirror, so the run takes a0 and succeeds; a
-        // probe that swallows the checksum would call a1 solvable and report
-        // a false ambiguity.
+        // a1 disagrees with the mirror; the probe of a1 meets that checksum
+        // and its failure is reported, not swallowed into a solvable verdict
+        // (which would show only the ambiguity and no checksum error).
         fixture.AddSei("p", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["p.txt"] = "p" } }] });
         fixture.AddSei("q", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["q.txt"] = "q" } }] });
         fixture.AddSei("a", new VersionFixture
@@ -3097,9 +3097,8 @@ public sealed class OriginTests
         File.Delete(MetadataCache.PathFor(
             fixture.StoreDirectory, secondServer.BaseUrl.TrimEnd('/') + "/sei/a.json"));
 
-        // The run itself reports the ambiguity; only the probe's own dry
-        // resolution must not — a failed probe verdict would surface first as
-        // `resolve` without the gaps.
+        // The run itself reports the ambiguity; the probe's own checksum
+        // failure must reach the caller too, as its own `checksum` error.
         // Every metadata read is a cache hit now, so no gap can rescue the
         // probe: if it swallowed the checksum it would call both artifacts
         // solvable and report an ambiguity (the mirror's a is refilled by a
