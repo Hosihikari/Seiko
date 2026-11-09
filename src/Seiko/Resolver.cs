@@ -149,6 +149,10 @@ public sealed class Resolver
         // fallback removes them, and the next call must not inherit the dead
         // ones.
         _forced.Clear();
+        // The skipped-critical report belongs to the graph of this call;
+        // Warnings() reads it after the call, so it is cleared here, not read
+        // from the previous answer.
+        _skippedCritical.Clear();
         try
         {
             return ResolveWithPreference(specs);

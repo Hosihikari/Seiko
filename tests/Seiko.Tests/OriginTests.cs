@@ -4347,6 +4347,61 @@ public sealed class OriginTests
     }
 
     [Fact]
+    public void Resolve_DoesNotCarrySkippedCriticalWarningsIntoTheNextCall()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // x has a critical 2.0.0 that is skipped; y has none. The warning
+        // belongs to the first graph and must not describe an absent name
+        // after the second call.
+        fixture.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei(
+            "x",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture()],
+                Advisory = new AdvisoryInfo { Severity = "critical", Url = "https://example.com/advisories/1" },
+            });
+        fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        var configPath = Path.Combine(fixture.Root, "seiko.conf");
+        File.WriteAllText(
+            configPath,
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
+            + "rid = \"win-x64\"\n"
+            + "sei = [ { name = \"x\" }, { name = \"y\" } ]\n");
+        try
+        {
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        var config = ConfigLoader.Load(fixture.Root);
+        var sources = LoadSourcesForTest(config, fixture);
+        try
+        {
+            var resolver = new Resolver(sources, null, "win-x64", allowPrerelease: false, allowCritical: false);
+
+            Assert.Contains(resolver.Resolve([new() { Name = "x" }]), sei => sei.Name == "x");
+            Assert.Contains(resolver.Warnings(), warning => warning.Contains("skipped critical version(s) of x"));
+
+            Assert.Contains(resolver.Resolve([new() { Name = "y" }]), sei => sei.Name == "y");
+            Assert.DoesNotContain(resolver.Warnings(), warning => warning.Contains("of x"));
+        }
+        finally
+        {
+            foreach (var source in sources)
+            {
+                (source as IDisposable)?.Dispose();
+            }
+        }
+    }
+
+    [Fact]
     public void SameFile_FoldsCaseOnlyWhereTheVolumeDoes()
     {
         using var fixture = new Fixture();
