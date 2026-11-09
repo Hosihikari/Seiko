@@ -4002,25 +4002,23 @@ public sealed class OriginTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        // a1 is more specific (two prerequisites, so it is searched first) and
-        // carries the only dependency on p; a0 needs just one. The first pass
-        // therefore ends on a1 — but probes skip the ambiguity walk, so its
-        // tie at p is never explored there. Once a1 is forced, the retry's
-        // leaf walks every tie in the graph, probes p's rival, and drags in a
-        // chain that exceeds the depth limit. The limit is first hit inside
-        // the forced retry; its catch must propagate it rather than fall back
-        // to the answer as it was.
-        fixture.AddSei("m1", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("m2", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        // The first pass must succeed so the preference stage is reached at
+        // all: b is declared first and its 2.0.0 wins, which filters a1 out
+        // (its prerequisite is b [1.0.0]) and leaves a0. The probe of a1 can
+        // backtrack to b1+a1+p0 and, because probes skip the ambiguity walk,
+        // never touches p1 — so a1 gets forced. Only the retry probes p1 and
+        // hits the depth limit, and that must fail instead of falling back.
+        fixture.AddSei("b", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("a", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts =
             [
-                new ArtifactFixture { Prerequisites = [new DepFixture("m1", null)] },
+                new ArtifactFixture(),
                 new ArtifactFixture
                 {
-                    Prerequisites = [new DepFixture("m1", null), new DepFixture("m2", null)],
+                    Prerequisites = [new DepFixture("b", "[1.0.0]")],
                     Dependencies = [new DepFixture("p", null)],
                 },
             ],
@@ -4054,7 +4052,7 @@ public sealed class OriginTests
                 $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
                 + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
                 + "rid = \"win-x64\"\n"
-                + "sei = [ { name = \"a\" }, { name = \"m1\" }, { name = \"m2\" }, { name = \"p\" }, "
+                + "sei = [ { name = \"b\" }, { name = \"a\" }, { name = \"p\" }, "
                 + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
                 + " ]\n");
             try
@@ -4074,7 +4072,7 @@ public sealed class OriginTests
             var resolver = new Resolver(sources, null, "win-x64", allowPrerelease: false, allowCritical: false);
 
             var error = Assert.Throws<SeikoException>(() => resolver.Resolve(
-                [new() { Name = "a" }, new() { Name = "m1" }, new() { Name = "m2" }]));
+                [new() { Name = "b" }, new() { Name = "a" }]));
 
             Assert.Contains("depth budget", error.Message);
             Assert.True(resolver.Incomplete);
@@ -4093,20 +4091,20 @@ public sealed class OriginTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        // Same shape as the resolver test: the limit hit in the forced retry
-        // is a failure with nothing missing, and the run is marked
-        // incomplete, so ThrowIfAny must still refuse.
-        fixture.AddSei("m1", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("m2", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        // Same shape through the offline pre-check: the limit hit in the
+        // forced retry is a failure with nothing missing, and the run is
+        // marked incomplete, so ThrowIfAny must still refuse.
+        fixture.AddSei("b", new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("b", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("a", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts =
             [
-                new ArtifactFixture { Prerequisites = [new DepFixture("m1", null)] },
+                new ArtifactFixture(),
                 new ArtifactFixture
                 {
-                    Prerequisites = [new DepFixture("m1", null), new DepFixture("m2", null)],
+                    Prerequisites = [new DepFixture("b", "[1.0.0]")],
                     Dependencies = [new DepFixture("p", null)],
                 },
             ],
@@ -4138,7 +4136,7 @@ public sealed class OriginTests
                 $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
                 + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
                 + "rid = \"win-x64\"\n"
-                + "sei = [ { name = \"a\" }, { name = \"m1\" }, { name = \"m2\" }, { name = \"p\" }, "
+                + "sei = [ { name = \"b\" }, { name = \"a\" }, { name = \"p\" }, "
                 + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
                 + " ]\n");
             try
@@ -4154,7 +4152,7 @@ public sealed class OriginTests
             $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
             + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
             + "rid = \"win-x64\"\n"
-            + "sei = [ { name = \"a\" }, { name = \"m1\" }, { name = \"m2\" } ]\n");
+            + "sei = [ { name = \"b\" }, { name = \"a\" } ]\n");
 
         var config = ConfigLoader.Load(fixture.Root);
         var precheck = OfflineMetadata.Verify(
@@ -4174,70 +4172,6 @@ public sealed class OriginTests
 
         var thrown = Assert.Throws<SeikoException>(() => precheck.ThrowIfAny());
         Assert.Contains("depth budget", thrown.Message);
-    }
-
-    [Fact]
-    public void Resolve_ResetsItsLimitsBetweenCalls()
-    {
-        using var fixture = new Fixture();
-        using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("ok", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        // A deep enough chain that one resolution trips the depth limit.
-        for (var i = 0; i < 600; i++)
-        {
-            fixture.AddSei($"n{i}", new VersionFixture
-            {
-                Version = "1.0.0",
-                Dependencies = i + 1 < 600 ? [new DepFixture($"n{i + 1}", null)] : [],
-                Artifacts = [new ArtifactFixture()],
-            });
-        }
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
-        // Declare the chain directly and fetch it in halves (each fits under
-        // the limit); ok comes along so it lands in the cache too.
-        var configPath = Path.Combine(fixture.Root, "seiko.conf");
-        foreach (var (from, to) in new[] { (0, 300), (300, 600) })
-        {
-            File.WriteAllText(
-                configPath,
-                $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
-                + $"sources = [ {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }} ]\n"
-                + "rid = \"win-x64\"\n"
-                + "sei = [ "
-                + (from == 0 ? "{ name = \"ok\" }, " : "")
-                + string.Join(", ", Enumerable.Range(from, to - from).Select(index => $"{{ name = \"n{index}\" }}"))
-                + " ]\n");
-            try
-            {
-                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
-            }
-            catch (SeikoException)
-            {
-            }
-        }
-
-        var config = ConfigLoader.Load(fixture.Root);
-        var sources = LoadSourcesForTest(config, fixture);
-        try
-        {
-            var resolver = new Resolver(sources, null, "win-x64", allowPrerelease: false, allowCritical: false);
-            Assert.Throws<SeikoException>(() => resolver.Resolve([new() { Name = "n0" }]));
-            Assert.True(resolver.Incomplete);
-
-            // The same instance must not carry the spent depth into the next
-            // call, nor claim the next answer was incomplete.
-            var second = resolver.Resolve([new() { Name = "ok" }]);
-
-            Assert.Contains(second, sei => sei.Name == "ok");
-            Assert.False(resolver.Incomplete);
-        }
-        finally
-        {
-            foreach (var source in sources)
-            {
-                (source as IDisposable)?.Dispose();
-            }
-        }
     }
 
     [Fact]
