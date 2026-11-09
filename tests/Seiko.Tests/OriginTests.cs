@@ -15,6 +15,7 @@ public sealed class OriginTests
         new SeikoClient().Add(fixture.Root, Rel(fixture, path), storeRoot: fixture.StoreDirectory);
 
         Assert.Equal("hi", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+        File.AppendAllText("/tmp/pe.txt", "CONF=" + File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")) + "\n");
         var config = ConfigLoader.Load(fixture.Root);
         var origin = Assert.Single(config.Origin);
         Assert.Equal("./dist/hello.sei".TrimStart('.').TrimStart('/').Replace('/', '/'), Normalize(origin.Paths[0]));
@@ -198,6 +199,7 @@ public sealed class OriginTests
 
         client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
 
+        File.AppendAllText("/tmp/pe.txt", "CONF=" + File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")) + "\n");
         var config = ConfigLoader.Load(fixture.Root);
         Assert.Empty(config.Origin);
         Assert.Empty(config.Sei);
@@ -3694,20 +3696,27 @@ public sealed class OriginTests
         }
 
         // Only the first source's cold goes cold; the mirror keeps answering.
+        // The mirror's copy is proven present here, or the case would silently
+        // degrade into a plain placeholder test.
         var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
         var firstIndex = new Uri(first.BaseUrl.TrimEnd('/') + "/index.json");
+        var secondIndex = new Uri(secondServer.BaseUrl.TrimEnd('/') + "/index.json");
         var cold = MetadataCache.PathFor(
             fixture.StoreDirectory, new Uri(firstIndex, "sei/cold.json").AbsoluteUri);
+        var mirrored = MetadataCache.PathFor(
+            fixture.StoreDirectory, new Uri(secondIndex, "sei/cold.json").AbsoluteUri);
+        Assert.True(File.Exists(mirrored));
+        Assert.NotNull(MetadataCache.TryRead(mirrored, SeikoJsonContext.Default.SeiIndex));
         File.Delete(cold);
         File.Delete(cold + ".404");
-        Assert.True(Directory.Exists(cache));
 
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
         Assert.Equal("source", error.Code);
         Assert.DoesNotContain("ambiguous", error.Message);
-        Assert.Contains("sei/cold.json from source 'first'", error.Message);
+        // Only the first source is a gap; the mirror answered.
+        Assert.Equal(["sei/cold.json from source 'first'"], Gaps(error.Message));
     }
 
     [Fact]
@@ -3803,6 +3812,61 @@ public sealed class OriginTests
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("ambiguous artifact", error.Message);
+    }
+
+    [Fact]
+    public void OfflinePrecheck_ASourceErrorOnARivalDoesNotCountAsUnsolvable()
+    {
+        using var fixture = new Fixture();
+        using var server = new TestHttpServer(fixture.SourceDirectory);
+        // Two proven, tied candidates and a third whose metadata cannot be
+        // parsed. The read failure says nothing about the artifact, so the
+        // pre-check must not rule it out and must not call the pair settled.
+        fixture.AddSei("a", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                new ArtifactFixture { Files = { ["b.txt"] = "b" } },
+                new ArtifactFixture { Dependencies = [new DepFixture("bad", null)] },
+            ],
+        });
+        fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
+        fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("a", null)]);
+        WriteOriginConfig(fixture, "hello", "dist/hello.sei", "selectors = [ { rid = \"*\" } ]");
+        try
+        {
+            // Online `bad` is unknown, so the tie is a plain ambiguity; the
+            // metadata of a is cached before that verdict.
+            new SeikoClient().Add(fixture.Root, Rel(fixture, "dist/hello.sei"), storeRoot: fixture.StoreDirectory);
+        }
+        catch (SeikoException)
+        {
+        }
+
+        // The rival's name comes from a local source whose file is broken.
+        var bad = Path.Combine(fixture.Root, "bad-index");
+        Directory.CreateDirectory(Path.Combine(bad, "sei"));
+        File.WriteAllText(Path.Combine(bad, "index.json"), "{\"schemaVersion\":2,\"sei\":[]}");
+        File.WriteAllText(Path.Combine(bad, "sei", "bad.json"), "{");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")).Replace(
+                " }\n]\nrid",
+                $" }},\n  {{ id = \"bad\", index = \"{bad.Replace('\\', '/')}/index.json\" }}\n]\nrid",
+                StringComparison.Ordinal));
+
+        var config = ConfigLoader.Load(fixture.Root);
+        var precheck = OfflineMetadata.Verify(
+            config,
+            fixture.StoreDirectory,
+            fixture.Root,
+            config.Sei);
+
+        Assert.NotNull(precheck.Failure);
+        Assert.Contains("invalid sei index for bad", precheck.Failure!.Message);
+        Assert.False(precheck.Incomplete);
     }
 
     [Fact]

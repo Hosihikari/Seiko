@@ -202,6 +202,7 @@ internal static class OfflineMetadata
                         // A source that will not open fails the real run, but
                         // the rest of the graph can still be walked; the
                         // failure is kept and reported with the gaps.
+                        File.AppendAllText("/tmp/pe.txt", $"SRCFAIL {source.Id} {ex.GetType().Name}: {ex.Message}\n");
                         SourceFailures.Add(ex as SeikoException
                             ?? new SeikoException($"source '{source.Id}': invalid index ({ex.Message})", "source", ex));
                     }

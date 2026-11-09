@@ -48,6 +48,7 @@ public sealed class Resolver
     private readonly HashSet<string> _shadowed = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private bool _hintsGrew;
+    private bool _exhausted;
     private List<IReadOnlyList<ResolvedSei>>? _collected;
 
     public Resolver(
@@ -151,7 +152,7 @@ public sealed class Resolver
 
     private IReadOnlyList<ResolvedSei> ResolveWithPreference(IReadOnlyList<SeiSpec> specs)
     {
-        var result = ResolveOnce(specs);
+        var result = AcceptAfterProbeErrors(ResolveOnce(specs));
         if (!_checkAmbiguity)
         {
             return result;
@@ -166,7 +167,7 @@ public sealed class Resolver
             var added = PreferMoreSpecificArtifact(result);
             if (added.Count == 0)
             {
-                return result;
+                return AcceptAfterProbeErrors(result);
             }
 
             try
@@ -182,8 +183,21 @@ public sealed class Resolver
                     _forced.Remove(name);
                 }
 
-                return ResolveOnce(specs);
+                return AcceptAfterProbeErrors(ResolveOnce(specs));
             }
+        }
+
+        return AcceptAfterProbeErrors(result);
+    }
+
+    // A probe error met while judging an artifact does not settle that
+    // artifact; if the answer is accepted anyway, the error has to reach the
+    // caller rather than be dropped with the probe.
+    private IReadOnlyList<ResolvedSei> AcceptAfterProbeErrors(IReadOnlyList<ResolvedSei> result)
+    {
+        if (_probeError is not null)
+        {
+            throw _probeError;
         }
 
         return result;
@@ -250,6 +264,7 @@ public sealed class Resolver
             _assigned.Clear();
             _lastConflict = null;
             _hintsGrew = false;
+            _exhausted = false;
 
             foreach (var spec in specs)
             {
@@ -276,6 +291,10 @@ public sealed class Resolver
 
             if (!_hintsGrew)
             {
+                // The whole search finished without a solution; any error that
+                // leaves earlier (a source read, an index check, a listener)
+                // is not this answer.
+                _exhausted = true;
                 var failure = _lastConflict ?? Fail("no version satisfies the declared ranges");
                 var skipped = SkippedWarnings();
                 if (skipped.Count > 0)
@@ -1203,6 +1222,17 @@ public sealed class Resolver
                 continue;
             }
 
+            // An error met while probing says the tie was judged on partial
+            // evidence; it is raised beside the ambiguity.
+            if (_probeError is not null)
+            {
+                throw new SeikoException(
+                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}; "
+                    + $"also: {_probeError.Message}",
+                    "resolve",
+                    _probeError);
+            }
+
             throw Fail(
                 $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}");
         }
@@ -1255,18 +1285,39 @@ public sealed class Resolver
 
             // A graph holding placeholders or shadowed answers was reached by
             // guessing; the real fill-in run may land elsewhere.
-            return probe._assigned.Values.Any(sei => Uncertain(sei.Name))
+            return probe._assigned.Values.Any(sei => probe.Uncertain(sei.Name))
                 ? SolveVerdict.Maybe
                 : SolveVerdict.Solvable;
         }
-        catch (SeikoException) when (!_budget.Exhausted && !_budget.DepthSpent)
+        catch (SeikoException ex)
         {
-            // The search ran out of candidates: nothing proved, but nothing
-            // unknown either. A spent budget or depth limit only proves the
-            // answer is unknown, so those propagate.
-            return SolveVerdict.Unsolvable;
+            // Only a search that ran to completion proves the artifact dead.
+            // A source read, an index check or the leaf listener can fail
+            // without saying anything about this artifact; such an error is
+            // kept so the caller can surface it instead of calling the
+            // question settled. A spent budget or depth limit is a maybe.
+            // A digest disagreement is about this artifact's own bytes: the
+            // mirror could not confirm them, so it is not a usable choice.
+            if (ex.Code == "checksum")
+            {
+                return SolveVerdict.Unsolvable;
+            }
+
+            // Anything else is about the cache, not the artifact: keep the
+            // error so the caller can surface it, and leave the question open.
+            if (!probe._exhausted && !(_budget.Exhausted || _budget.DepthSpent))
+            {
+                _probeError = ex;
+            }
+
+            return probe._exhausted ? SolveVerdict.Unsolvable : SolveVerdict.Maybe;
         }
     }
+
+    // The first real error a probe met, if any. It says nothing about the
+    // artifact, so it has to reach the caller rather than be reported as a
+    // verdict.
+    private SeikoException? _probeError;
 
     private enum SolveVerdict
     {
