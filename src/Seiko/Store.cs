@@ -262,9 +262,21 @@ public sealed class Store
                 "checksum");
         }
 
-        var manifest = JsonSerializer.Deserialize(
+        SeiManifest? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize(
                 File.ReadAllBytes(manifestPath),
-                SeikoJsonContext.Default.SeiManifest)
+                SeikoJsonContext.Default.SeiManifest);
+        }
+        catch (JsonException ex)
+        {
+            // A remote manifest is data, so a bad field name is an artifact
+            // problem, not an internal failure.
+            throw new SeikoException($"invalid sei.json in {directory} ({ex.Message})", "io", ex);
+        }
+
+        var manifest = parsed
             ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
         if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
         {

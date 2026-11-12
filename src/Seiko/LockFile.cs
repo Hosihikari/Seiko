@@ -12,7 +12,17 @@ public static class LockFile
             return null;
         }
 
-        var value = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeikoLock)
+        SeikoLock? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeikoLock);
+        }
+        catch (JsonException ex)
+        {
+            throw new SeikoException($"invalid lock file: {path} ({ex.Message})", "lock", ex);
+        }
+
+        var value = parsed
             ?? throw new SeikoException($"invalid lock file: {path}", "lock");
 
         // Older locks are not migrated in v0; ADR-0031 maps that to `io`,
