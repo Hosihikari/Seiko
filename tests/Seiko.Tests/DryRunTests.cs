@@ -33,6 +33,24 @@ public sealed class DryRunTests
     }
 
     [Fact]
+    public void DryRun_SyncLeavesNoFilesBehind()
+    {
+        using var fixture = new Fixture();
+        fixture.WriteConfig("win-x64");
+
+        var result = new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            dryRun: true);
+
+        Assert.NotNull(result.Preview);
+        // A preview registers nothing and takes no lock: both leave files that
+        // would outlive the command (ADR-0029).
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, ".seiko")));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(fixture.StoreDirectory));
+    }
+
+    [Fact]
     public void DryRun_PreviewCarriesWarningsAndEveryRelationKind()
     {
         using var fixture = new Fixture();

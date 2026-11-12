@@ -82,10 +82,12 @@ public sealed class SeikoClient
         }
 
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        RootRegistry.Register(storePath, root);
-        using var rootLock = ProcessLock.Acquire(
-            Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+        // A preview reads; it does not take the root lock or register the root
+        // for cache cleanup, because both leave files behind and the preview
+        // promises none (ADR-0029). `rollback --dry-run` already does the same.
+        using var rootLock = dryRun
+            ? null
+            : EnterRoot(storePath, root);
         return SyncLocked(
             root,
             storePath,
@@ -337,9 +339,12 @@ public sealed class SeikoClient
         session.TotalBytes = totalBytes;
         progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
 
-        var store = new Store(storePath);
+        // A plain preview never touches the store, and constructing one would
+        // create its directory before the run has decided anything.
+        Store? store = null;
         if (offline)
         {
+            store = new Store(storePath);
             OfflineMetadata.EnsureArtifacts(store, resolved);
         }
 
@@ -359,6 +364,7 @@ public sealed class SeikoClient
 
         // Report conflicts before downloading anything; a later deploy still
         // re-checks against the on-disk state.
+        store ??= new Store(storePath);
         var stored = DownloadAll(store, resolved, session, downloadCts);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -822,10 +828,9 @@ public sealed class SeikoClient
         RequireOnline(offline, dryRun, "add", additions);
 
         cancellationToken.ThrowIfCancellationRequested();
-        RootRegistry.Register(storePath, root);
-        using var rootLock = ProcessLock.Acquire(
-            Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+        using var rootLock = dryRun
+            ? null
+            : EnterRoot(storePath, root);
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
@@ -1115,6 +1120,17 @@ public sealed class SeikoClient
     // A preview must not recover a pending transaction (ADR-0029); a real
     // mutation must, before it reads the config (ADR-0019). Every mutation
     // entry uses this so a change to the policy stays in one place.
+    // Registering the root and holding its lock are both persistent effects:
+    // the registry file is how `cache clean` learns the root exists, and the
+    // lock file is never deleted. A mutation wants both; a preview does not.
+    private static ProcessLock? EnterRoot(string storePath, string root)
+    {
+        RootRegistry.Register(storePath, root);
+        return ProcessLock.Acquire(
+            Path.Combine(root, ".seiko", "install.lock"),
+            $"install root {root}");
+    }
+
     private static void RecoverUnlessPreview(string root, bool dryRun)
     {
         if (!dryRun)
@@ -1435,10 +1451,9 @@ public sealed class SeikoClient
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        RootRegistry.Register(storePath, root);
-        using var rootLock = ProcessLock.Acquire(
-            Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+        using var rootLock = dryRun
+            ? null
+            : EnterRoot(storePath, root);
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
@@ -1584,10 +1599,9 @@ public sealed class SeikoClient
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        RootRegistry.Register(storePath, root);
-        using var rootLock = ProcessLock.Acquire(
-            Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+        using var rootLock = dryRun
+            ? null
+            : EnterRoot(storePath, root);
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
