@@ -1365,9 +1365,28 @@ public static class IndexVerifier
 
             if (manifest.Artifact?.Modes is not null)
             {
+                // A mode names a deployed file; a key that nothing deploys is
+                // a typo that would otherwise be applied to nothing and never
+                // reported. sei.json is skipped by deployment, so it counts as
+                // undeployed here as well.
+                var deployed = new HashSet<string>(
+                    seenNames.Where(name => name != "sei.json"),
+                    StringComparer.Ordinal);
+                deployed.UnionWith((manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path));
+                deployed.UnionWith((manifest.Artifact.ExternalArchives ?? [])
+                    .SelectMany(archive => archive.Members)
+                    .Select(member => member.Path));
+
                 foreach (var (file, text) in manifest.Artifact.Modes)
                 {
-                    if (text is null || !FileModes.TryParse(text, out var value))
+                    if (file is null || !deployed.Contains(file))
+                    {
+                        context.Error(
+                            "manifest-mode",
+                            $"{prefix}: mode names '{file}', which the artifact does not deploy",
+                            reference.Path);
+                    }
+                    else if (text is null || !FileModes.TryParse(text, out var value))
                     {
                         context.Error(
                             "manifest-mode",
