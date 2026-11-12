@@ -32,8 +32,23 @@ public sealed class ArtifactManifest
     // existing file wins over the artifact's copy, and the path is never
     // recorded as managed. Schema 4 only.
     public List<string>? Preserve { get; set; }
+
+    // Mutually exclusive candidate relation sets (ADR-0045). At most one is
+    // expanded for the selected artifact; the artifact-level relations above
+    // are common constraints shared by every group.
+    public List<DependencyGroup>? DependencyGroups { get; set; }
     public List<ExternalFile>? ExternalFiles { get; set; }
     public List<ExternalArchive>? ExternalArchives { get; set; }
+}
+
+// One candidate relation set inside an artifact. Same four kinds, no own
+// rid, modes, preserve or external payload (ADR-0045).
+public sealed class DependencyGroup
+{
+    public List<SeiDependency> Dependencies { get; set; } = [];
+    public List<SeiDependency> Prerequisites { get; set; } = [];
+    public List<SeiDependency> OptionalPeers { get; set; } = [];
+    public List<SeiDependency> Conflicts { get; set; } = [];
 }
 
 // A single upstream byte source mapped to one path inside the package. The
@@ -174,6 +189,7 @@ public sealed class ArtifactEntry
 
     // Mirrored from the manifest for previews, which do not open artifacts.
     public List<string>? Preserve { get; set; }
+    public List<DependencyGroup>? DependencyGroups { get; set; }
     public List<ExternalFile>? ExternalFiles { get; set; }
     public List<ExternalArchive>? ExternalArchives { get; set; }
 
@@ -278,6 +294,11 @@ public sealed class LockedArtifact
 {
     public string Sha256 { get; set; } = "";
     public string? Rid { get; set; }
+
+    // The selected dependency group, by position in the artifact's list; null
+    // when the artifact declares none. The relation lists below already hold
+    // the merged result, so replay needs no merging (ADR-0045).
+    public int? Group { get; set; }
     public List<SeiDependency> Dependencies { get; set; } = [];
     public List<SeiDependency> Prerequisites { get; set; } = [];
     public List<SeiDependency> OptionalPeers { get; set; } = [];

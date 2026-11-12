@@ -728,6 +728,56 @@ public static class IndexVerifier
         ValidateRelations(context, path, name, entry.Version, "artifact optional peer", artifact.OptionalPeers);
         ValidateRelations(context, path, name, entry.Version, "artifact conflict", artifact.Conflicts);
 
+        if (artifact.DependencyGroups is { } groups)
+        {
+            var seen = new List<DependencyGroup>();
+            for (var index = 0; index < groups.Count; index++)
+            {
+                var group = groups[index];
+                if (group is null)
+                {
+                    context.Error(
+                        "artifact-group",
+                        $"sei '{name}' {entry.Version} has a null dependency group",
+                        path);
+                    ok = false;
+                    continue;
+                }
+
+                var kind = $"group {index}";
+                ValidateRelations(context, path, name, entry.Version, $"{kind} dependency", group.Dependencies);
+                ValidateRelations(context, path, name, entry.Version, $"{kind} prerequisite", group.Prerequisites);
+                ValidateRelations(context, path, name, entry.Version, $"{kind} optional peer", group.OptionalPeers);
+                ValidateRelations(context, path, name, entry.Version, $"{kind} conflict", group.Conflicts);
+
+                // Two groups that apply under identical conditions but
+                // install different relations cannot be told apart by the
+                // resolver; which one wins would depend on source drift and
+                // environment. Reject that at packaging time (ADR-0045).
+                // Unconditional groups are allowed: a single one is a
+                // fallback, and two unconditional groups with identical
+                // relations are exact duplicates, not a silent choice.
+                if (seen.Any(existing =>
+                    string.Equals(
+                        DependencyGroups.ConditionKey(existing),
+                        DependencyGroups.ConditionKey(group),
+                        StringComparison.Ordinal)
+                    && !string.Equals(
+                        DependencyGroups.ResultKey(existing),
+                        DependencyGroups.ResultKey(group),
+                        StringComparison.Ordinal)))
+                {
+                    context.Error(
+                        "artifact-group-ambiguous",
+                        $"sei '{name}' {entry.Version} has dependency groups with the same conditions but different relations",
+                        path);
+                    ok = false;
+                }
+
+                seen.Add(group);
+            }
+        }
+
         if (artifact.Layout is not null && artifact.Layout != "root")
         {
             context.Error(
@@ -1322,6 +1372,16 @@ public static class IndexVerifier
                     $"{prefix}: sei.json preserve does not match the index artifact",
                     reference.Path);
             }
+            else if (manifest.SchemaVersion >= 4
+                && !DependencyGroups.Equal(
+                    manifest.Artifact.DependencyGroups,
+                    reference.Artifact.DependencyGroups))
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json dependencyGroups do not match the index artifact",
+                    reference.Path);
+            }
 
             // A 3 manifest may carry external payload; validate it here so CI
             // catches bad URLs, paths and digests without fetching the bytes.
@@ -1399,6 +1459,15 @@ public static class IndexVerifier
                             reference.Path);
                     }
                 }
+            }
+
+            if (manifest.Artifact?.DependencyGroups is { Count: > 0 }
+                && manifest.SchemaVersion < 4)
+            {
+                context.Error(
+                    "manifest-group",
+                    $"{prefix}: dependencyGroups requires sei.json schemaVersion 4",
+                    reference.Path);
             }
 
             if (manifest.Artifact?.Preserve is { Count: > 0 } preserve)

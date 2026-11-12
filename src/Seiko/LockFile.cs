@@ -65,6 +65,11 @@ public static class LockFile
                 OriginPaths.EnsureStored(entry.OriginPath, $"{entry.Name} originPath");
             }
 
+            if (entry.Artifact.Group is < 0)
+            {
+                throw new SeikoException($"invalid lock file: {path}", "lock");
+            }
+
             // Relation elements are read directly by replay; a JSON `null`
             // would otherwise surface as an internal NRE.
             if (entry.Dependencies.Concat(entry.Prerequisites)
@@ -114,10 +119,13 @@ public static class LockFile
                     {
                         Sha256 = (p.Artifact.Source.Sha256 ?? "").ToLowerInvariant(),
                         Rid = p.Artifact.Rid,
-                        Dependencies = SortRelations(p.Artifact.Dependencies),
-                        Prerequisites = SortRelations(p.Artifact.Prerequisites),
-                        OptionalPeers = SortRelations(p.Artifact.OptionalPeers),
-                        Conflicts = SortRelations(p.Artifact.Conflicts),
+                        // The artifact scope records what actually applied:
+                        // the common relations merged with the selected group.
+                        Group = p.GroupIndex,
+                        Dependencies = SortRelations(DependencyGroups.Dependencies(p.Artifact, p.GroupIndex)),
+                        Prerequisites = SortRelations(DependencyGroups.Prerequisites(p.Artifact, p.GroupIndex)),
+                        OptionalPeers = SortRelations(DependencyGroups.OptionalPeers(p.Artifact, p.GroupIndex)),
+                        Conflicts = SortRelations(DependencyGroups.Conflicts(p.Artifact, p.GroupIndex)),
                     },
                     Dependencies = SortRelations(p.Entry.Dependencies),
                     Prerequisites = SortRelations(p.Entry.Prerequisites),

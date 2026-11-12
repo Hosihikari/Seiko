@@ -489,6 +489,14 @@ public sealed class SeikoClient
             "artifact",
             $"selected {sei.Artifact.Source.Sha256} from source '{sei.Source.Id}' (rid {rid}){origin}"));
 
+        if (sei.GroupIndex is { } groupIndex)
+        {
+            diagnostics.Add(new PreviewDiagnostic(
+                sei.Name,
+                "artifact-group",
+                $"selected dependency group #{groupIndex}"));
+        }
+
         foreach (var dependency in sei.Entry.Dependencies)
         {
             diagnostics.Add(new PreviewDiagnostic(
@@ -551,6 +559,41 @@ public sealed class SeikoClient
                 sei.Name,
                 "artifact-conflict",
                 $"excludes {conflict.Name} {conflict.Version ?? "*"} for this artifact"));
+        }
+
+        if (DependencyGroups.At(sei.Artifact, sei.GroupIndex) is { } group)
+        {
+            foreach (var dependency in group.Dependencies ?? [])
+            {
+                diagnostics.Add(new PreviewDiagnostic(
+                    sei.Name,
+                    "group-dependency",
+                    $"requires {dependency.Name} {dependency.Version ?? "*"} (group scope)"));
+            }
+
+            foreach (var prerequisite in group.Prerequisites ?? [])
+            {
+                diagnostics.Add(new PreviewDiagnostic(
+                    sei.Name,
+                    "group-prerequisite",
+                    $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this group"));
+            }
+
+            foreach (var peer in group.OptionalPeers ?? [])
+            {
+                diagnostics.Add(new PreviewDiagnostic(
+                    sei.Name,
+                    "group-optional-peer",
+                    $"constrains {peer.Name} {peer.Version ?? "*"} when present (group scope)"));
+            }
+
+            foreach (var conflict in group.Conflicts ?? [])
+            {
+                diagnostics.Add(new PreviewDiagnostic(
+                    sei.Name,
+                    "group-conflict",
+                    $"excludes {conflict.Name} {conflict.Version ?? "*"} for this group"));
+            }
         }
     }
 

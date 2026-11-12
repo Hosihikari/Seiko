@@ -173,6 +173,15 @@ internal sealed class OriginSource : ISeiSource
         var path = LockedFile(spec.Name, locked.Path, locked.Digest);
         var manifest = ReadManifest(path, spec.Name);
         var artifact = manifest.Artifact!;
+
+        // The lock records the merged artifact scope. Rebuild the entry's
+        // artifact-level relations by removing the selected group's share, so
+        // the resolver merges exactly the same lists again (ADR-0045).
+        var selected = locked.Artifact.Group is { } groupIndex
+            && artifact.DependencyGroups is { } groups
+            && groupIndex < groups.Count
+                ? groups[groupIndex]
+                : null;
         return new SeiIndex
         {
             Name = manifest.Name,
@@ -192,13 +201,14 @@ internal sealed class OriginSource : ISeiSource
                         new ArtifactEntry
                         {
                             Rid = locked.Artifact.Rid,
-                            Prerequisites = locked.Artifact.Prerequisites,
-                            Dependencies = locked.Artifact.Dependencies,
-                            OptionalPeers = locked.Artifact.OptionalPeers,
-                            Conflicts = locked.Artifact.Conflicts,
+                            Prerequisites = Without(locked.Artifact.Prerequisites, selected?.Prerequisites),
+                            Dependencies = Without(locked.Artifact.Dependencies, selected?.Dependencies),
+                            OptionalPeers = Without(locked.Artifact.OptionalPeers, selected?.OptionalPeers),
+                            Conflicts = Without(locked.Artifact.Conflicts, selected?.Conflicts),
                             Layout = artifact.Layout,
                             Modes = artifact.Modes,
                             Preserve = artifact.Preserve,
+                            DependencyGroups = artifact.DependencyGroups,
                             Source = new ArtifactLocation
                             {
                                 Url = path,
@@ -309,6 +319,7 @@ internal sealed class OriginSource : ISeiSource
                 Layout = artifact.Layout,
                 Modes = artifact.Modes,
                 Preserve = artifact.Preserve,
+                DependencyGroups = artifact.DependencyGroups,
                 Source = new ArtifactLocation
                 {
                     Url = path,
@@ -342,6 +353,29 @@ internal sealed class OriginSource : ISeiSource
     // Both sets must hold for the file to apply, so the artifact carries the
     // union and the resolver evaluates it like any other condition. A name in
     // both keeps both ranges: dropping one would silently widen the condition.
+    // Multiset subtraction: each group relation removes one matching entry
+    // from the merged lock lists, leaving the artifact-level share.
+    private static List<SeiDependency> Without(
+        List<SeiDependency> merged,
+        List<SeiDependency>? scoped)
+    {
+        var result = merged
+            .Select(item => new SeiDependency { Name = item.Name, Version = item.Version })
+            .ToList();
+        foreach (var relation in scoped ?? [])
+        {
+            var index = result.FindIndex(candidate =>
+                string.Equals(candidate.Name, relation.Name, StringComparison.Ordinal)
+                && string.Equals(candidate.Version, relation.Version, StringComparison.Ordinal));
+            if (index >= 0)
+            {
+                result.RemoveAt(index);
+            }
+        }
+
+        return result;
+    }
+
     private static List<SeiDependency> Merge(
         List<SeiDependency> intrinsic,
         List<SeiDependency> fromSelector)
@@ -411,10 +445,12 @@ internal sealed class OriginSource : ISeiSource
                 "io");
         }
 
-        if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is { Count: > 0 })
+        if (manifest.SchemaVersion < 4
+            && (manifest.Artifact?.Preserve is { Count: > 0 }
+                || manifest.Artifact?.DependencyGroups is { Count: > 0 }))
         {
             throw new SeikoException(
-                $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve",
+                $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve or dependencyGroups",
                 "io");
         }
 

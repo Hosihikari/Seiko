@@ -294,13 +294,20 @@ public sealed class Store
                 "io");
         }
 
-        // `preserve` is a 4 field. A lower manifest that carries it is a
-        // version declaration error, not a package to install with the field
-        // guessed at.
+        // `preserve` and `dependencyGroups` are 4 fields. A lower manifest
+        // that carries them is a version declaration error, not a package to
+        // install with the fields guessed at.
         if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is { Count: > 0 })
         {
             throw new SeikoException(
                 $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve",
+                "io");
+        }
+
+        if (manifest.SchemaVersion < 4 && manifest.Artifact?.DependencyGroups is { Count: > 0 })
+        {
+            throw new SeikoException(
+                $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare dependencyGroups",
                 "io");
         }
 
@@ -616,6 +623,14 @@ public sealed class Store
         if (!ModesEqual(manifest.Artifact.Modes, sei.Artifact.Modes))
         {
             throw new SeikoException($"{sei.Name}: sei.json modes do not match the index artifact", "io");
+        }
+
+        // The index entry selects the group, so the manifest's whole list must
+        // agree; a mismatch would resolve against relations installation never
+        // sees (ADR-0045).
+        if (!DependencyGroups.Equal(manifest.Artifact.DependencyGroups, sei.Artifact.DependencyGroups))
+        {
+            throw new SeikoException($"{sei.Name}: sei.json dependency groups do not match the index artifact", "io");
         }
     }
 

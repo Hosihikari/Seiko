@@ -14,12 +14,19 @@ internal sealed record ExternalMemberFixture(string Member, string Path);
 
 internal sealed record ExternalArchiveFixture(string Url, string Format, byte[] Content, params ExternalMemberFixture[] Members);
 
+internal sealed record GroupFixture(
+    DepFixture[]? Dependencies = null,
+    DepFixture[]? Prerequisites = null,
+    DepFixture[]? OptionalPeers = null,
+    DepFixture[]? Conflicts = null);
+
 internal sealed class ArtifactFixture
 {
     public string? Rid { get; init; }
     public Dictionary<string, string> Files { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, string>? Modes { get; init; }
     public List<string> Preserve { get; init; } = [];
+    public List<GroupFixture> DependencyGroups { get; init; } = [];
     public List<DepFixture> Dependencies { get; init; } = [];
     public List<DepFixture> Prerequisites { get; init; } = [];
     public List<DepFixture> OptionalPeers { get; init; } = [];
@@ -166,7 +173,8 @@ internal sealed class Fixture : IDisposable
         (string Name, string? Version)[]? manifestPrerequisites = null,
         string? fileName = null,
         string? dependencyLevel = null,
-        (string Name, string? Version)[]? artifactPrerequisites = null)
+        (string Name, string? Version)[]? artifactPrerequisites = null,
+        List<GroupFixture>? groups = null)
     {
         var directory = Path.Combine(Root, "dist");
         Directory.CreateDirectory(directory);
@@ -196,6 +204,7 @@ internal sealed class Fixture : IDisposable
                 Dependencies = string.Equals(dependencyLevel, "artifact", StringComparison.Ordinal)
                     ? ToDependencies((dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version)))
                     : [],
+                DependencyGroups = ToGroups(groups ?? []),
             },
         };
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
@@ -246,6 +255,7 @@ internal sealed class Fixture : IDisposable
                         Layout = "root",
                         Modes = artifact.Modes,
                         Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
+                        DependencyGroups = ToGroups(artifact.DependencyGroups),
                         ExternalFiles = artifact.ExternalFiles
                             .Select(file => new ExternalFile
                             {
@@ -294,6 +304,7 @@ internal sealed class Fixture : IDisposable
                     Layout = "root",
                     Modes = artifact.Modes,
                     Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
+                    DependencyGroups = ToGroups(artifact.DependencyGroups),
                     ExternalFiles = artifact.ExternalFiles
                         .Select(file => new ExternalFile
                         {
@@ -485,6 +496,17 @@ internal sealed class Fixture : IDisposable
                 CatalogFile.Build(_indexes.Values),
                 SeikoJsonContext.Default.SeiCatalog));
     }
+
+    private static List<DependencyGroup>? ToGroups(List<GroupFixture> groups)
+        => groups.Count == 0
+            ? null
+            : groups.Select(group => new DependencyGroup
+            {
+                Dependencies = ToDependencies(group.Dependencies ?? []),
+                Prerequisites = ToDependencies(group.Prerequisites ?? []),
+                OptionalPeers = ToDependencies(group.OptionalPeers ?? []),
+                Conflicts = ToDependencies(group.Conflicts ?? []),
+            }).ToList();
 
     private static List<SeiDependency> ToDependencies(IEnumerable<DepFixture> dependencies)
         => dependencies

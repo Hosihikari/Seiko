@@ -111,6 +111,43 @@ internal static class SourceValidation
                     EnsureNotSelf(name, relation, sourceId, entry.Version, code);
                 }
 
+                if (artifact.DependencyGroups is { } groups)
+                {
+                    foreach (var group in groups)
+                    {
+                        if (group is null
+                            || group.Dependencies is null
+                            || group.Prerequisites is null
+                            || group.OptionalPeers is null
+                            || group.Conflicts is null)
+                        {
+                            throw Fail(
+                                $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid dependency group",
+                                code);
+                        }
+
+                        var groupRelations = group.Dependencies
+                            .Concat(group.Prerequisites)
+                            .Concat(group.OptionalPeers)
+                            .Concat(group.Conflicts)
+                            .ToList();
+                        foreach (var relation in groupRelations)
+                        {
+                            if (relation is null)
+                            {
+                                throw Fail(
+                                    $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid relation in a dependency group",
+                                    code);
+                            }
+                        }
+
+                        foreach (var relation in groupRelations)
+                        {
+                            EnsureNotSelf(name, relation, sourceId, entry.Version, code);
+                        }
+                    }
+                }
+
                 if (artifact.Rid is not null && string.IsNullOrWhiteSpace(artifact.Rid))
                 {
                     throw Fail(

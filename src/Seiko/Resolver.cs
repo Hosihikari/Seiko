@@ -10,6 +10,10 @@ public sealed class ResolvedSei
     public required ISeiSource Source { get; init; }
     public bool Direct { get; set; }
     public ArtifactEntry Artifact { get; set; } = null!;
+
+    // Selected position in Artifact.DependencyGroups; null when the artifact
+    // declares no groups or the lock predates them.
+    public int? GroupIndex { get; set; }
     public string? PackageDeprecated { get; init; }
     public string Version => ParsedVersion.ToNormalizedString();
 }
@@ -234,30 +238,32 @@ public sealed class Resolver
                 continue;
             }
 
-            var ridArtifacts = resolved.Entry.Artifacts
+            var units = resolved.Entry.Artifacts
                 .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
                     || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(UnitsOf)
                 .ToList();
-            if (ridArtifacts.Count < 2)
+            if (units.Count < 2)
             {
                 continue;
             }
 
-            var solvable = ridArtifacts
-                .Where(artifact => ReferenceEquals(artifact, resolved.Artifact)
-                    || CanSolveWith(artifact, resolved))
+            var solvable = units
+                .Where(unit => (ReferenceEquals(unit.Artifact, resolved.Artifact)
+                        && unit.Group == resolved.GroupIndex)
+                    || CanSolveWith(unit, resolved))
                 .ToList();
-            var top = solvable.Max(artifact => artifact.Prerequisites?.Count ?? 0);
+            var top = solvable.Max(unit => DependencyGroups.Score(unit.Artifact, unit.Group));
             var best = solvable
-                .Where(artifact => (artifact.Prerequisites?.Count ?? 0) == top)
+                .Where(unit => DependencyGroups.Score(unit.Artifact, unit.Group) == top)
                 .ToList();
             if (best.Count != 1
-                || (resolved.Artifact.Prerequisites?.Count ?? 0) >= top)
+                || DependencyGroups.Score(resolved.Artifact, resolved.GroupIndex) >= top)
             {
                 continue;
             }
 
-            _forced[resolved.Name] = new ForcedPick(resolved.Version, best[0]);
+            _forced[resolved.Name] = new ForcedPick(resolved.Version, best[0].Artifact, best[0].Group);
             added.Add(resolved.Name);
         }
 
@@ -344,6 +350,7 @@ public sealed class Resolver
                 Source = sei.Source,
                 Direct = _directNames.Contains(sei.Name),
                 Artifact = sei.Artifact,
+                GroupIndex = sei.GroupIndex,
                 PackageDeprecated = sei.PackageDeprecated,
             })
             .ToList();
@@ -538,16 +545,16 @@ public sealed class Resolver
     // in hand, so its dependencies never join the search. Prerequisite, peer
     // and conflict ranges all narrow the same names, so the whole set is
     // applied at once instead of one range at a time.
-    private bool CannotMatch(ArtifactEntry artifact)
+    private bool CannotMatch(ArtifactCandidate candidate)
     {
         var requirements = new List<(string Name, VersionRange Range, bool Keep)>();
-        foreach (var relation in (artifact.Prerequisites ?? [])
-            .Concat(artifact.OptionalPeers ?? []))
+        foreach (var relation in candidate.Prerequisites
+            .Concat(candidate.OptionalPeers))
         {
             requirements.Add((relation.Name, ParseRange(relation.Version, relation.Name), true));
         }
 
-        foreach (var relation in artifact.Conflicts ?? [])
+        foreach (var relation in candidate.Conflicts)
         {
             requirements.Add((relation.Name, ParseRange(relation.Version, relation.Name), false));
         }
@@ -755,11 +762,12 @@ public sealed class Resolver
             }
 
             var artifactCandidates = ridArtifacts
-                .Where(artifact => CanStillMatch(artifact, resolved))
+                .SelectMany(UnitsOf)
+                .Where(candidate => CanStillMatch(candidate, resolved))
                 // An artifact already proven dead against a placeholder is
                 // dropped before its dependencies join the search, exactly
                 // where the real run drops it once the version is in hand.
-                .Where(artifact => !CannotMatch(artifact))
+                .Where(candidate => !CannotMatch(candidate))
                 .ToList();
 
             // A probe pins the sibling it is testing, so the search must not
@@ -768,7 +776,7 @@ public sealed class Resolver
             if (_forced.TryGetValue(requirement.Name, out var forced))
             {
                 artifactCandidates = artifactCandidates
-                    .Where(artifact => SameArtifact(artifact, forced)
+                    .Where(candidate => SameCandidate(candidate, forced)
                         && string.Equals(
                             version.ToNormalizedString(),
                             forced.Version,
@@ -786,17 +794,18 @@ public sealed class Resolver
             }
 
             var found = false;
-            foreach (var artifact in OrderArtifacts(requirement.Name, artifactCandidates))
+            foreach (var candidate in OrderCandidates(requirement.Name, artifactCandidates))
             {
                 if (!_budget.TryConsume())
                 {
                     throw Fail("dependency resolution exceeded the work budget");
                 }
 
-                resolved.Artifact = artifact;
+                resolved.Artifact = candidate.Artifact;
+                resolved.GroupIndex = candidate.Group;
                 var pendingBeforeArtifact = _pending.Count;
                 AddDependencies(
-                    artifact.Dependencies,
+                    candidate.Dependencies,
                     requirement.Name,
                     $"{requirement.Name} (artifact)");
                 if (Search(index + 1))
@@ -858,9 +867,9 @@ public sealed class Resolver
         }
     }
 
-    private bool CanStillMatch(ArtifactEntry artifact, ResolvedSei owner)
+    private bool CanStillMatch(ArtifactCandidate candidate, ResolvedSei owner)
     {
-        foreach (var prerequisite in artifact.Prerequisites ?? [])
+        foreach (var prerequisite in candidate.Prerequisites)
         {
             if (_assigned.TryGetValue(prerequisite.Name, out var target)
                 && !Uncertain(prerequisite.Name)
@@ -871,7 +880,7 @@ public sealed class Resolver
             }
         }
 
-        foreach (var peer in artifact.OptionalPeers ?? [])
+        foreach (var peer in candidate.OptionalPeers)
         {
             if (_assigned.TryGetValue(peer.Name, out var target)
                 && !Uncertain(peer.Name)
@@ -881,7 +890,7 @@ public sealed class Resolver
             }
         }
 
-        foreach (var conflict in artifact.Conflicts ?? [])
+        foreach (var conflict in candidate.Conflicts)
         {
             if (_assigned.TryGetValue(conflict.Name, out var target)
                 && !Uncertain(conflict.Name)
@@ -894,22 +903,56 @@ public sealed class Resolver
         return true;
     }
 
-    private List<ArtifactEntry> OrderArtifacts(
+    // Specificity first (ADR-0045 counts distinct prerequisite names and at
+    // most one group point), then the locked artifact and group, then the
+    // index order. Only the search order; the ambiguity verdict is separate.
+    private List<ArtifactCandidate> OrderCandidates(
         string name,
-        List<ArtifactEntry> artifacts)
+        List<ArtifactCandidate> candidates)
     {
-        var lockedSha = GetLockedArtifactSha(name);
-        return artifacts
-            .Select((artifact, index) => (Artifact: artifact, Index: index))
-            .OrderByDescending(candidate => candidate.Artifact.Prerequisites?.Count ?? 0)
-            .ThenByDescending(candidate => lockedSha is not null
+        var locked = GetLockedArtifact(name);
+        return candidates
+            .Select((candidate, index) => (Candidate: candidate, Index: index))
+            .OrderByDescending(item => DependencyGroups.Score(
+                item.Candidate.Artifact,
+                item.Candidate.Group))
+            .ThenByDescending(item => locked is { } preference
                 && string.Equals(
-                    candidate.Artifact.Source.Sha256,
-                    lockedSha,
-                    StringComparison.OrdinalIgnoreCase))
-            .ThenBy(candidate => candidate.Index)
-            .Select(candidate => candidate.Artifact)
+                    item.Candidate.Artifact.Source?.Sha256,
+                    preference.Sha256,
+                    StringComparison.OrdinalIgnoreCase)
+                && item.Candidate.Group == preference.Group)
+            .ThenBy(item => item.Index)
+            .Select(item => item.Candidate)
             .ToList();
+    }
+
+    // One candidate per (artifact, group). An artifact without groups is a
+    // single candidate with no group scope (ADR-0045).
+    private static IEnumerable<ArtifactCandidate> UnitsOf(ArtifactEntry artifact)
+    {
+        if (artifact.DependencyGroups is not { Count: > 0 })
+        {
+            yield return new ArtifactCandidate(
+                artifact,
+                null,
+                artifact.Dependencies ?? [],
+                artifact.Prerequisites ?? [],
+                artifact.OptionalPeers ?? [],
+                artifact.Conflicts ?? []);
+            yield break;
+        }
+
+        for (var index = 0; index < artifact.DependencyGroups.Count; index++)
+        {
+            yield return new ArtifactCandidate(
+                artifact,
+                index,
+                DependencyGroups.Dependencies(artifact, index),
+                DependencyGroups.Prerequisites(artifact, index),
+                DependencyGroups.OptionalPeers(artifact, index),
+                DependencyGroups.Conflicts(artifact, index));
+        }
     }
 
     private string NoArtifactMessage(ResolvedSei resolved)
@@ -1058,16 +1101,16 @@ public sealed class Resolver
         return NuGetVersion.TryParse(locked.Version, out var version) ? version : null;
     }
 
-    private string? GetLockedArtifactSha(string name)
+    private (string Sha256, int? Group)? GetLockedArtifact(string name)
     {
         if (_updateNames?.Contains(name) == true)
         {
             return null;
         }
 
-        return _lock?.Sei
-            .FirstOrDefault(sei => string.Equals(sei.Name, name, StringComparison.Ordinal))
-            ?.Artifact.Sha256;
+        var locked = _lock?.Sei
+            .FirstOrDefault(sei => string.Equals(sei.Name, name, StringComparison.Ordinal));
+        return locked is null ? null : (locked.Artifact.Sha256, locked.Artifact.Group);
     }
 
     private Requirement CreateRequirement(string name, string? version, string? from)
@@ -1143,10 +1186,12 @@ public sealed class Resolver
                 return false;
             }
 
+            // The selected group's relations are part of the artifact scope;
+            // checking the merged lists validates both layers at once.
             if (!ValidateRelations(
                 name,
                 resolved,
-                resolved.Artifact.Prerequisites,
+                DependencyGroups.Prerequisites(resolved.Artifact, resolved.GroupIndex),
                 requirePresent: true,
                 "artifact prerequisite"))
             {
@@ -1156,7 +1201,7 @@ public sealed class Resolver
             if (!ValidateRelations(
                 name,
                 resolved,
-                resolved.Artifact.OptionalPeers,
+                DependencyGroups.OptionalPeers(resolved.Artifact, resolved.GroupIndex),
                 requirePresent: false,
                 "artifact optional peer"))
             {
@@ -1166,7 +1211,7 @@ public sealed class Resolver
             if (!ValidateConflicts(
                 name,
                 resolved,
-                resolved.Artifact.Conflicts,
+                DependencyGroups.Conflicts(resolved.Artifact, resolved.GroupIndex),
                 "artifact conflict"))
             {
                 return false;
@@ -1189,11 +1234,12 @@ public sealed class Resolver
 
         foreach (var resolved in _assigned.Values)
         {
-            var ridArtifacts = resolved.Entry.Artifacts
+            var units = resolved.Entry.Artifacts
                 .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
                     || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(UnitsOf)
                 .ToList();
-            if (ridArtifacts.Count < 2)
+            if (units.Count < 2)
             {
                 continue;
             }
@@ -1202,21 +1248,38 @@ public sealed class Resolver
             // prerequisite that only holds under a different dependency
             // version is still a real alternative, so it must not be filtered
             // out against the current assignment first.
-            var verdicts = ridArtifacts
-                .Select(artifact => ReferenceEquals(artifact, resolved.Artifact)
-                    ? (Artifact: artifact, Verdict: SolveVerdict.Solvable)
-                    : (Artifact: artifact, Verdict: TrySolveWith(artifact, resolved)))
+            var verdicts = units
+                .Select(unit => ReferenceEquals(unit.Artifact, resolved.Artifact)
+                        && unit.Group == resolved.GroupIndex
+                    ? (Unit: unit, Verdict: SolveVerdict.Solvable)
+                    : (Unit: unit, Verdict: TrySolveWith(unit, resolved)))
                 .Where(item => item.Verdict != SolveVerdict.Unsolvable)
                 .ToList();
-            var solvable = verdicts.Select(item => item.Artifact).ToList();
+            var solvable = verdicts.Select(item => item.Unit).ToList();
             if (solvable.Count < 2)
             {
                 continue;
             }
 
-            var top = solvable.Max(artifact => artifact.Prerequisites?.Count ?? 0);
-            var tied = solvable.Count(artifact => (artifact.Prerequisites?.Count ?? 0) == top);
+            var top = solvable.Max(unit => DependencyGroups.Score(unit.Artifact, unit.Group));
+            var tied = solvable.Count(unit =>
+                DependencyGroups.Score(unit.Artifact, unit.Group) == top);
             if (tied < 2)
+            {
+                continue;
+            }
+
+            // A lock already decided between equally specific groups: the
+            // recorded group keeps winning instead of re-reporting ambiguity
+            // on every run. Artifact-only ties keep the old rule.
+            var locked = GetLockedArtifact(resolved.Name);
+            if (resolved.GroupIndex is { } selectedGroup
+                && locked is { } preference
+                && string.Equals(
+                    resolved.Artifact.Source?.Sha256,
+                    preference.Sha256,
+                    StringComparison.OrdinalIgnoreCase)
+                && selectedGroup == preference.Group)
             {
                 continue;
             }
@@ -1235,7 +1298,7 @@ public sealed class Resolver
             // Only the tied top layer decides the verdict; a lower, unknown
             // candidate cannot change whether the top is ambiguous.
             if (verdicts.Any(item =>
-                (item.Artifact.Prerequisites?.Count ?? 0) == top
+                DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
                 && item.Verdict == SolveVerdict.Maybe))
             {
                 continue;
@@ -1246,14 +1309,14 @@ public sealed class Resolver
             if (_probeError is not null)
             {
                 throw new SeikoException(
-                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}; "
+                    $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} candidates match at specificity {top}; "
                     + $"also: {_probeError.Message}",
                     "resolve",
                     _probeError);
             }
 
             throw Fail(
-                $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} artifacts match at specificity {top}");
+                $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} candidates match at specificity {top}");
         }
     }
 
@@ -1261,16 +1324,16 @@ public sealed class Resolver
     // solution. A local existence check is not enough: the alternative can
     // introduce its own conflicts, missing transitive targets or an
     // unsatisfiable prerequisite, and it must not create a false ambiguity.
-    private bool CanSolveWith(ArtifactEntry artifact, ResolvedSei owner)
-        => TrySolveWith(artifact, owner) == SolveVerdict.Solvable;
+    private bool CanSolveWith(ArtifactCandidate candidate, ResolvedSei owner)
+        => TrySolveWith(candidate, owner) == SolveVerdict.Solvable;
 
     // Solvable only when the artifact's own graph is proven: a probe that
     // had to guess is a maybe, not an answer.
-    private SolveVerdict TrySolveWith(ArtifactEntry artifact, ResolvedSei owner)
+    private SolveVerdict TrySolveWith(ArtifactCandidate candidate, ResolvedSei owner)
     {
         var forced = new Dictionary<string, ForcedPick>(_forced, StringComparer.Ordinal)
         {
-            [owner.Name] = new ForcedPick(owner.Version, artifact),
+            [owner.Name] = new ForcedPick(owner.Version, candidate.Artifact, candidate.Group),
         };
         // The child explores alternative artifacts; its reads are real reads
         // of the same sources, so it reports gaps to the same listener and
@@ -1347,17 +1410,27 @@ public sealed class Resolver
         Solvable,
     }
 
-    // Sources return a fresh object graph per read, so a forced artifact is
-    // identified by its content-addressed digest and its place among equals.
-    private static bool SameArtifact(ArtifactEntry candidate, ForcedPick forced)
+    // Sources return a fresh object graph per read, so a forced candidate is
+    // identified by its content-addressed digest, its group position and the
+    // merged relations that position produces.
+    private static bool SameCandidate(ArtifactCandidate candidate, ForcedPick forced)
         => string.Equals(
-                candidate.Source?.Sha256,
+                candidate.Artifact.Source?.Sha256,
                 forced.Artifact.Source?.Sha256,
                 StringComparison.OrdinalIgnoreCase)
-            && SameRelations(candidate.Dependencies, forced.Artifact.Dependencies)
-            && SameRelations(candidate.Prerequisites, forced.Artifact.Prerequisites)
-            && SameRelations(candidate.OptionalPeers, forced.Artifact.OptionalPeers)
-            && SameRelations(candidate.Conflicts, forced.Artifact.Conflicts);
+            && candidate.Group == forced.Group
+            && SameRelations(
+                candidate.Dependencies,
+                DependencyGroups.Dependencies(forced.Artifact, forced.Group))
+            && SameRelations(
+                candidate.Prerequisites,
+                DependencyGroups.Prerequisites(forced.Artifact, forced.Group))
+            && SameRelations(
+                candidate.OptionalPeers,
+                DependencyGroups.OptionalPeers(forced.Artifact, forced.Group))
+            && SameRelations(
+                candidate.Conflicts,
+                DependencyGroups.Conflicts(forced.Artifact, forced.Group));
 
     private static bool SameRelations(List<SeiDependency>? left, List<SeiDependency>? right)
         => (left ?? []).Count == (right ?? []).Count
@@ -1559,7 +1632,18 @@ public sealed class Resolver
         private long _used;
     }
 
-    private sealed record ForcedPick(string Version, ArtifactEntry Artifact);
+    private sealed record ForcedPick(string Version, ArtifactEntry Artifact, int? Group);
+
+    // One (artifact, group) resolution unit. Group is the position in the
+    // artifact's DependencyGroups, or null when it declares none. The four
+    // lists are the artifact's common relations merged with the group's.
+    private sealed record ArtifactCandidate(
+        ArtifactEntry Artifact,
+        int? Group,
+        List<SeiDependency> Dependencies,
+        List<SeiDependency> Prerequisites,
+        List<SeiDependency> OptionalPeers,
+        List<SeiDependency> Conflicts);
 
     private sealed record Requirement(
         string Name,

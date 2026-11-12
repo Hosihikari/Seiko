@@ -93,9 +93,21 @@ public static class LockReplay
 
             var entry = matches[0];
 
-            var artifact = MatchArtifact(entry, locked)
-                ?? throw Fail(
+            var sameDigest = entry.Artifacts
+                .Where(artifact => string.Equals(
+                    artifact.Source?.Sha256,
+                    locked.Artifact.Sha256,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (sameDigest.Count == 0)
+            {
+                throw Fail(
                     $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'");
+            }
+
+            var match = MatchArtifact(sameDigest, locked)
+                ?? throw Fail(
+                    $"--frozen: artifact metadata of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
 
             if (!DependenciesEqual(entry.Dependencies, locked.Dependencies)
                 || !DependenciesEqual(entry.Prerequisites, locked.Prerequisites)
@@ -105,15 +117,6 @@ public static class LockReplay
                 throw Fail($"--frozen: relations of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
             }
 
-            if (!string.Equals(artifact.Rid, locked.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
-                || !DependenciesEqual(artifact.Dependencies, locked.Artifact.Dependencies)
-                || !DependenciesEqual(artifact.Prerequisites, locked.Artifact.Prerequisites)
-                || !DependenciesEqual(artifact.OptionalPeers, locked.Artifact.OptionalPeers)
-                || !DependenciesEqual(artifact.Conflicts, locked.Artifact.Conflicts))
-            {
-                throw Fail($"--frozen: artifact metadata of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
-            }
-
             result.Add(new ResolvedSei
             {
                 Name = locked.Name,
@@ -121,7 +124,8 @@ public static class LockReplay
                 Entry = entry,
                 Source = source,
                 Direct = locked.Direct,
-                Artifact = artifact,
+                Artifact = match.Artifact,
+                GroupIndex = match.Group,
                 PackageDeprecated = index.Deprecated,
             });
         }
@@ -130,25 +134,45 @@ public static class LockReplay
         return result;
     }
 
-    private static ArtifactEntry? MatchArtifact(SeiVersionEntry entry, LockedSei locked)
+    // The lock records the merged artifact scope, so the recorded group
+    // position is what identifies the candidate; a reordered group list is a
+    // metadata change even if some other group merges to the same relations.
+    private static (ArtifactEntry Artifact, int? Group)? MatchArtifact(
+        IEnumerable<ArtifactEntry> candidates,
+        LockedSei locked)
     {
-        var candidates = entry.Artifacts
+        var matches = candidates
+            .Where(artifact => string.Equals(
+                artifact.Rid,
+                locked.Artifact.Rid,
+                StringComparison.OrdinalIgnoreCase))
             .Where(artifact =>
-                string.Equals(artifact.Source.Sha256, locked.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(artifact.Rid, locked.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
-                && DependenciesEqual(artifact.Dependencies, locked.Artifact.Dependencies)
-                && DependenciesEqual(artifact.Prerequisites, locked.Artifact.Prerequisites)
-                && DependenciesEqual(artifact.OptionalPeers, locked.Artifact.OptionalPeers)
-                && DependenciesEqual(artifact.Conflicts, locked.Artifact.Conflicts))
+                (artifact.DependencyGroups is { Count: > 0 }) == (locked.Artifact.Group is not null))
+            .Where(artifact => locked.Artifact.Group is not { } group
+                || group < (artifact.DependencyGroups?.Count ?? 0))
+            .Where(artifact =>
+                DependenciesEqual(
+                    DependencyGroups.Dependencies(artifact, locked.Artifact.Group),
+                    locked.Artifact.Dependencies)
+                && DependenciesEqual(
+                    DependencyGroups.Prerequisites(artifact, locked.Artifact.Group),
+                    locked.Artifact.Prerequisites)
+                && DependenciesEqual(
+                    DependencyGroups.OptionalPeers(artifact, locked.Artifact.Group),
+                    locked.Artifact.OptionalPeers)
+                && DependenciesEqual(
+                    DependencyGroups.Conflicts(artifact, locked.Artifact.Group),
+                    locked.Artifact.Conflicts))
+            .Select(artifact => (Artifact: artifact, Group: locked.Artifact.Group))
             .ToList();
 
-        if (candidates.Count > 1)
+        if (matches.Count > 1)
         {
             throw Fail(
                 $"--frozen: artifact for {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'");
         }
 
-        return candidates.Count == 1 ? candidates[0] : null;
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private static void ValidateGraph(SeikoLock lockFile)
@@ -319,6 +343,7 @@ public static class LockReplay
                 || a.Direct != b.Direct
                 || !string.Equals(a.Artifact.Sha256, b.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(a.Artifact.Rid, b.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
+                || a.Artifact.Group != b.Artifact.Group
                 || !DependenciesEqual(a.Dependencies, b.Dependencies)
                 || !DependenciesEqual(a.Prerequisites, b.Prerequisites)
                 || !DependenciesEqual(a.OptionalPeers, b.OptionalPeers)
