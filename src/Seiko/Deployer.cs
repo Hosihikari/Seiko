@@ -32,7 +32,9 @@ public static class Deployer
         byte[]? restoreConfig = null,
         bool adopt = false,
         bool force = false,
-        IReadOnlyDictionary<string, string>? adoptedSnapshots = null)
+        IReadOnlyDictionary<string, string>? adoptedSnapshots = null,
+        bool resetPreserved = false,
+        IReadOnlySet<string>? preservedManaged = null)
         => DeployCore(
             root,
             sei,
@@ -44,7 +46,9 @@ public static class Deployer
             transaction: null,
             adopt,
             force,
-            adoptedSnapshots);
+            adoptedSnapshots,
+            resetPreserved,
+            preservedManaged);
 
     internal static DeployResult DeployInTransaction(
         string root,
@@ -57,7 +61,8 @@ public static class Deployer
         byte[]? restoreConfig = null,
         bool adopt = false,
         bool force = false,
-        IReadOnlyDictionary<string, string>? adoptedSnapshots = null)
+        IReadOnlyDictionary<string, string>? adoptedSnapshots = null,
+        bool resetPreserved = false)
         => DeployCore(
             root,
             sei,
@@ -69,7 +74,9 @@ public static class Deployer
             transaction,
             adopt,
             force,
-            adoptedSnapshots);
+            adoptedSnapshots,
+            resetPreserved,
+            preservedManaged: null);
 
     private static DeployResult DeployCore(
         string root,
@@ -82,7 +89,9 @@ public static class Deployer
         DeploymentTransaction? transaction,
         bool adopt,
         bool force,
-        IReadOnlyDictionary<string, string>? adoptedSnapshots)
+        IReadOnlyDictionary<string, string>? adoptedSnapshots,
+        bool resetPreserved,
+        IReadOnlySet<string>? preservedManaged)
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
@@ -169,6 +178,15 @@ public static class Deployer
         }
 
         var managed = new HashSet<string>(state.Files.Keys, StringComparer.Ordinal);
+
+        // A rollback reproduces the target generation, so that generation's
+        // state decides which preserve paths had already been opted back in;
+        // a normal run continues from the current state.
+        var managedBefore = preservedManaged ?? managed;
+        var preservedPaths = new HashSet<string>(
+            sei.SelectMany(item => item.Manifest.Artifact?.Preserve ?? []),
+            StringComparer.Ordinal);
+        var preservedHere = new HashSet<string>(StringComparer.Ordinal);
         var replaceable = ValidateDesiredTree(root, desired, managed, force);
         var adoptedHashes = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -216,11 +234,35 @@ public static class Deployer
             var destination = Native(root, relative);
             var exists = File.Exists(destination);
             var managedHere = state.Files.TryGetValue(relative, out var previous);
+
+            // A preserve path is the user's from the moment it first lands:
+            // existing content wins over the artifact's copy and the path is
+            // left out of the state, so no later run rewrites or deletes it.
+            // A path that is already managed stays managed — a package cannot
+            // silently abandon a file it installed; --reset-preserved is how
+            // management is taken back up.
+            if (preservedPaths.Contains(relative)
+                && !managedBefore.Contains(relative)
+                && !resetPreserved)
+            {
+                preservedHere.Add(relative);
+                if (!exists)
+                {
+                    mutations.Add(new Mutation(relative, file, CreatedHere: true));
+                }
+
+                continue;
+            }
+
+            // --reset-preserved turns the declared paths back into ordinary
+            // desired files, so an existing copy is replaced without asking
+            // for --force as well. Every other collision keeps the usual rule.
+            var reset = resetPreserved && preservedPaths.Contains(relative);
             var unchanged = false;
             if (exists)
             {
                 var actual = Hashing.Sha256File(destination);
-                if (!managedHere && !adopt && !force)
+                if (!managedHere && !adopt && !force && !reset)
                 {
                     throw new SeikoException(
                         $"deployment conflict: unmanaged path {relative} is in the way; pass --adopt to keep it or --force to overwrite it",
@@ -230,7 +272,7 @@ public static class Deployer
                 var modified = managedHere
                     && !previous!.Adopted
                     && !string.Equals(actual, previous.Sha256, StringComparison.Ordinal);
-                if (modified && !adopt && !force)
+                if (modified && !adopt && !force && !reset)
                 {
                     throw new SeikoException(
                         $"deployment conflict: managed file {relative} was modified; pass --force to overwrite it or --adopt to keep it",
@@ -241,6 +283,7 @@ public static class Deployer
                 // it recorded as adopted is served from its snapshot, every
                 // other desired file is restored from the store.
                 var keepExisting = !force
+                    && !reset
                     && adoptedSnapshots is null
                     && (adopt || (managedHere && previous!.Adopted));
                 if (keepExisting)
@@ -289,17 +332,19 @@ public static class Deployer
         var newState = new LocalState
         {
             Generation = generationOverride ?? state.Generation + 1,
-            Files = desired.ToDictionary(
-                pair => pair.Key,
-                pair => new DeployedFile
-                {
-                    Owners = pair.Value.Owners.Distinct(StringComparer.Ordinal).OrderBy(o => o, StringComparer.Ordinal).ToList(),
-                    Sha256 = adoptedHashes.TryGetValue(pair.Key, out var kept)
-                        ? kept
-                        : pair.Value.Sha256,
-                    Adopted = adoptedHashes.ContainsKey(pair.Key) || adoptedFrom.ContainsKey(pair.Key),
-                },
-                StringComparer.Ordinal),
+            Files = desired
+                .Where(pair => !preservedHere.Contains(pair.Key))
+                .ToDictionary(
+                    pair => pair.Key,
+                    pair => new DeployedFile
+                    {
+                        Owners = pair.Value.Owners.Distinct(StringComparer.Ordinal).OrderBy(o => o, StringComparer.Ordinal).ToList(),
+                        Sha256 = adoptedHashes.TryGetValue(pair.Key, out var kept)
+                            ? kept
+                            : pair.Value.Sha256,
+                        Adopted = adoptedHashes.ContainsKey(pair.Key) || adoptedFrom.ContainsKey(pair.Key),
+                    },
+                    StringComparer.Ordinal),
         };
         var generationDirectory = Path.Combine(stateDirectory, "generations", newState.Generation.ToString());
         var adoptedSources = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -426,6 +471,14 @@ public static class Deployer
                     && transaction.SnapshotLateCreation(mutation.RelativePath);
                 if (raced)
                 {
+                    // A preserve target that appears in the window wins: the
+                    // same rule applies as if it had been there when the plan
+                    // was made.
+                    if (preservedHere.Contains(mutation.RelativePath))
+                    {
+                        continue;
+                    }
+
                     if (!adopt && !force)
                     {
                         throw new SeikoException(
@@ -458,14 +511,25 @@ public static class Deployer
                 var temp = Native(root, temporaryPaths[mutation.RelativePath]);
                 try
                 {
+                    // A preserve file becomes the user's: a hardlink would let
+                    // an in-place edit write through to the store.
                     FileLink.Create(
                         mutation.File.SourcePath,
                         temp,
                         allowHardlink: !mutation.File.SnapshotSource
-                            && !modes.ContainsKey(mutation.RelativePath));
+                            && !modes.ContainsKey(mutation.RelativePath)
+                            && !preservedHere.Contains(mutation.RelativePath));
                     if (mutation.CreatedHere && !raced)
                     {
-                        PublishCreated(temp, destination, mutation.RelativePath, transaction, adopt, force, lateAdoptions);
+                        PublishCreated(
+                            temp,
+                            destination,
+                            mutation.RelativePath,
+                            transaction,
+                            adopt,
+                            force,
+                            lateAdoptions,
+                            preserve: preservedHere.Contains(mutation.RelativePath));
                     }
                     else
                     {
@@ -545,7 +609,8 @@ public static class Deployer
         DeploymentTransaction transaction,
         bool adopt,
         bool force,
-        List<string> lateAdoptions)
+        List<string> lateAdoptions,
+        bool preserve)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -581,6 +646,13 @@ public static class Deployer
                 // Gone while it was being backed up; the next attempt decides
                 // again instead of assuming the path is free.
                 continue;
+            }
+
+            if (preserve)
+            {
+                // Free when the plan was made; the content that appeared in
+                // the window wins, exactly as it would have at plan time.
+                return;
             }
 
             if (!adopt && !force)

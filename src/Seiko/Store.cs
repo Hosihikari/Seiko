@@ -278,7 +278,7 @@ public sealed class Store
 
         var manifest = parsed
             ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
-        if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
+        if (manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion)
         {
             throw new SeikoException(
                 $"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}",
@@ -287,10 +287,20 @@ public sealed class Store
 
         // Only a 3 manifest may carry external declarations; 2 is the
         // pre-external format and must stay free of them.
-        if (manifest.SchemaVersion == 2 && ExternalFiles.Count(manifest.Artifact) > 0)
+        if (manifest.SchemaVersion < 3 && ExternalFiles.Count(manifest.Artifact) > 0)
         {
             throw new SeikoException(
-                $"{directory}: sei.json schemaVersion 2 cannot declare external files",
+                $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare external files",
+                "io");
+        }
+
+        // `preserve` is a 4 field. A lower manifest that carries it is a
+        // version declaration error, not a package to install with the field
+        // guessed at.
+        if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is { Count: > 0 })
+        {
+            throw new SeikoException(
+                $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve",
                 "io");
         }
 
@@ -520,7 +530,7 @@ public sealed class Store
 
     private static void Validate(ResolvedSei sei, SeiManifest manifest)
     {
-        if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
+        if (manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion)
         {
             throw new SeikoException($"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}", "io");
         }

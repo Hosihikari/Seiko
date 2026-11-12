@@ -1216,7 +1216,7 @@ public static class IndexVerifier
             }
 
             var prefix = $"sei '{reference.Sei}' {reference.Version}";
-            if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
+            if (manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion)
             {
                 context.Error(
                     "manifest-mismatch",
@@ -1314,6 +1314,14 @@ public static class IndexVerifier
                     $"{prefix}: sei.json modes do not match the index artifact",
                     reference.Path);
             }
+            else if (manifest.SchemaVersion >= 4
+                && !PreserveEqual(manifest.Artifact.Preserve, reference.Artifact.Preserve))
+            {
+                context.Error(
+                    "manifest-mismatch",
+                    $"{prefix}: sei.json preserve does not match the index artifact",
+                    reference.Path);
+            }
 
             // A 3 manifest may carry external payload; validate it here so CI
             // catches bad URLs, paths and digests without fetching the bytes.
@@ -1366,18 +1374,7 @@ public static class IndexVerifier
 
             if (manifest.Artifact?.Modes is not null)
             {
-                // A mode names a deployed file; a key that nothing deploys is
-                // a typo that would otherwise be applied to nothing and never
-                // reported. sei.json is skipped by deployment, so it counts as
-                // undeployed here as well.
-                var deployed = new HashSet<string>(
-                    seenNames.Where(name => name != "sei.json"),
-                    StringComparer.Ordinal);
-                deployed.UnionWith((manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path));
-                deployed.UnionWith((manifest.Artifact.ExternalArchives ?? [])
-                    .SelectMany(archive => archive.Members)
-                    .Select(member => member.Path));
-
+                var deployed = DeployedPaths(manifest, seenNames);
                 foreach (var (file, text) in manifest.Artifact.Modes)
                 {
                     if (file is null || !deployed.Contains(file))
@@ -1403,7 +1400,46 @@ public static class IndexVerifier
                     }
                 }
             }
+
+            if (manifest.Artifact?.Preserve is { Count: > 0 } preserve)
+            {
+                if (manifest.SchemaVersion < 4)
+                {
+                    context.Error(
+                        "manifest-preserve",
+                        $"{prefix}: preserve requires sei.json schemaVersion 4",
+                        reference.Path);
+                }
+
+                var deployed = DeployedPaths(manifest, seenNames);
+                foreach (var file in preserve)
+                {
+                    if (string.IsNullOrEmpty(file) || !deployed.Contains(file))
+                    {
+                        context.Error(
+                            "manifest-preserve",
+                            $"{prefix}: preserve names '{file}', which the artifact does not deploy",
+                            reference.Path);
+                    }
+                }
+            }
         }
+    }
+
+    // A mode or preserve entry names a deployed file; an entry that nothing
+    // deploys is a typo that would otherwise be applied to nothing and never
+    // reported. sei.json is skipped by deployment, so it counts as undeployed
+    // here as well.
+    private static HashSet<string> DeployedPaths(SeiManifest manifest, IEnumerable<string> seenNames)
+    {
+        var deployed = new HashSet<string>(
+            seenNames.Where(name => name != "sei.json"),
+            StringComparer.Ordinal);
+        deployed.UnionWith((manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path));
+        deployed.UnionWith((manifest.Artifact.ExternalArchives ?? [])
+            .SelectMany(archive => archive.Members)
+            .Select(member => member.Path));
+        return deployed;
     }
 
     private static string artifactCollision(ArtifactRef reference, PathCollision collision)
@@ -1441,6 +1477,19 @@ public static class IndexVerifier
             && a.All(pair =>
                 b.TryGetValue(pair.Key, out var value)
                 && string.Equals(pair.Value, value, StringComparison.Ordinal));
+    }
+
+    // Preserve order carries no meaning; duplicates stay visible because the
+    // counts must match.
+    private static bool PreserveEqual(List<string>? left, List<string>? right)
+    {
+        var a = left ?? [];
+        var b = right ?? [];
+        return a.Count == b.Count
+            && a.OrderBy(path => path, StringComparer.Ordinal)
+                .SequenceEqual(
+                    b.OrderBy(path => path, StringComparer.Ordinal),
+                    StringComparer.Ordinal);
     }
 
     private static string? NormalizeLayout(string? layout)

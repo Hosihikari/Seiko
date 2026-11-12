@@ -198,6 +198,7 @@ internal sealed class OriginSource : ISeiSource
                             Conflicts = locked.Artifact.Conflicts,
                             Layout = artifact.Layout,
                             Modes = artifact.Modes,
+                            Preserve = artifact.Preserve,
                             Source = new ArtifactLocation
                             {
                                 Url = path,
@@ -307,6 +308,7 @@ internal sealed class OriginSource : ISeiSource
                 Conflicts = artifact.Conflicts,
                 Layout = artifact.Layout,
                 Modes = artifact.Modes,
+                Preserve = artifact.Preserve,
                 Source = new ArtifactLocation
                 {
                     Url = path,
@@ -402,10 +404,17 @@ internal sealed class OriginSource : ISeiSource
 
         // 1 predates the artifact object; there is no migration layer for
         // local files (ADR-0044, ADR-0031).
-        if (manifest.SchemaVersion is not (2 or SeiManifest.CurrentSchemaVersion))
+        if (manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion)
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: unsupported sei.json schemaVersion {manifest.SchemaVersion}",
+                "io");
+        }
+
+        if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is { Count: > 0 })
+        {
+            throw new SeikoException(
+                $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve",
                 "io");
         }
 

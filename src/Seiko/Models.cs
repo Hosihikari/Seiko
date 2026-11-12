@@ -2,10 +2,11 @@ namespace Seiko;
 
 public sealed class SeiManifest
 {
-    // 3 adds the external file/archive declarations. A manifest without them
-    // stays at 2; 0.3 clients reject 3 at their exact-version check instead of
-    // silently installing a metadata-only zip as an empty package.
-    public const int CurrentSchemaVersion = 3;
+    // 3 adds the external file/archive declarations; 4 adds `preserve`. A
+    // manifest without them stays at the older version; clients that predate
+    // a version reject it at their exact-version check instead of silently
+    // installing a metadata-only zip as an empty package.
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string Name { get; set; } = "";
@@ -26,6 +27,11 @@ public sealed class ArtifactManifest
     public List<SeiDependency> Conflicts { get; set; } = [];
     public string? Layout { get; set; }
     public Dictionary<string, string>? Modes { get; set; }
+
+    // Exact paths this artifact deploys but does not own afterwards: an
+    // existing file wins over the artifact's copy, and the path is never
+    // recorded as managed. Schema 4 only.
+    public List<string>? Preserve { get; set; }
     public List<ExternalFile>? ExternalFiles { get; set; }
     public List<ExternalArchive>? ExternalArchives { get; set; }
 }
@@ -165,6 +171,9 @@ public sealed class ArtifactEntry
     public List<SeiDependency> Conflicts { get; set; } = [];
     public string? Layout { get; set; }
     public Dictionary<string, string>? Modes { get; set; }
+
+    // Mirrored from the manifest for previews, which do not open artifacts.
+    public List<string>? Preserve { get; set; }
     public List<ExternalFile>? ExternalFiles { get; set; }
     public List<ExternalArchive>? ExternalArchives { get; set; }
 

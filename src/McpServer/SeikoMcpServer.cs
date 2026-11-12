@@ -796,7 +796,8 @@ public sealed class SeikoMcpServer
             dryRun: dryRun,
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
-            offline: Bool(arguments, "offline"));
+            offline: Bool(arguments, "offline"),
+            resetPreserved: Bool(arguments, "resetPreserved"));
         return MutationResult(result, dryRun);
     }
 
@@ -817,7 +818,8 @@ public sealed class SeikoMcpServer
             purge: Bool(arguments, "purge"),
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
-            offline: Bool(arguments, "offline"));
+            offline: Bool(arguments, "offline"),
+            resetPreserved: Bool(arguments, "resetPreserved"));
         return MutationResult(result, dryRun);
     }
 
@@ -838,7 +840,8 @@ public sealed class SeikoMcpServer
             dryRun: dryRun,
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
-            offline: Bool(arguments, "offline"));
+            offline: Bool(arguments, "offline"),
+            resetPreserved: Bool(arguments, "resetPreserved"));
         return MutationResult(result, dryRun);
     }
 
@@ -959,7 +962,8 @@ public sealed class SeikoMcpServer
             dryRun: dryRun,
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
-            offline: Bool(arguments, "offline"));
+            offline: Bool(arguments, "offline"),
+            resetPreserved: Bool(arguments, "resetPreserved"));
         if (dryRun)
         {
             return MutationResult(result, dryRun: true);
@@ -1445,6 +1449,7 @@ public sealed class SeikoMcpServer
                 ["dryRun"] = new JsonObject { ["type"] = "boolean" },
                 ["adopt"] = new JsonObject { ["type"] = "boolean" },
                 ["force"] = new JsonObject { ["type"] = "boolean" },
+                ["resetPreserved"] = new JsonObject { ["type"] = "boolean" },
                 ["offline"] = new JsonObject { ["type"] = "boolean" },
                 ["diagnostics"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
@@ -1592,6 +1597,7 @@ public sealed class SeikoMcpServer
                 ["dryRun"] = new JsonObject { ["type"] = "boolean" },
                 ["adopt"] = new JsonObject { ["type"] = "boolean" },
                 ["force"] = new JsonObject { ["type"] = "boolean" },
+                ["resetPreserved"] = new JsonObject { ["type"] = "boolean" },
                 ["offline"] = new JsonObject { ["type"] = "boolean" },
                 ["dryRun"] = new JsonObject { ["type"] = "boolean" },
             },
@@ -1617,6 +1623,7 @@ public sealed class SeikoMcpServer
                 ["dryRun"] = new JsonObject { ["type"] = "boolean" },
                 ["adopt"] = new JsonObject { ["type"] = "boolean" },
                 ["force"] = new JsonObject { ["type"] = "boolean" },
+                ["resetPreserved"] = new JsonObject { ["type"] = "boolean" },
                 ["offline"] = new JsonObject { ["type"] = "boolean" },
                 ["jobs"] = new JsonObject { ["type"] = "integer" },
                 ["proxy"] = new JsonObject { ["type"] = "string" },
@@ -1644,6 +1651,7 @@ public sealed class SeikoMcpServer
         properties["dryRun"] = new JsonObject { ["type"] = "boolean" };
         properties["adopt"] = new JsonObject { ["type"] = "boolean" };
         properties["force"] = new JsonObject { ["type"] = "boolean" };
+        properties["resetPreserved"] = new JsonObject { ["type"] = "boolean" };
         properties["offline"] = new JsonObject { ["type"] = "boolean" };
         if (!requireSpec)
         {

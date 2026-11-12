@@ -72,7 +72,8 @@ public sealed class SeikoClient
         bool dryRun = false,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        bool resetPreserved = false)
     {
         root = Path.GetFullPath(root);
         cancellationToken.ThrowIfCancellationRequested();
@@ -104,7 +105,8 @@ public sealed class SeikoClient
             dryRun: dryRun,
             adopt: adopt,
             force: force,
-            offline: offline);
+            offline: offline,
+            resetPreserved: resetPreserved);
     }
 
     private SyncResult SyncLocked(
@@ -128,6 +130,7 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
+        bool resetPreserved = false,
         SourceScope? preloaded = null)
     {
         // `add <path>` resolves from a local file, so a normal resolution is
@@ -179,6 +182,7 @@ public sealed class SeikoClient
                 adopt,
                 force,
                 offline,
+                resetPreserved,
                 preloaded);
         }
         finally
@@ -212,6 +216,7 @@ public sealed class SeikoClient
         bool adopt,
         bool force,
         bool offline,
+        bool resetPreserved,
         SourceScope? preloaded)
     {
         var pendingTransaction = false;
@@ -400,7 +405,8 @@ public sealed class SeikoClient
                 lockFile,
                 writeLock: mode == SyncMode.Normal,
                 adopt: adopt,
-                force: force)
+                force: force,
+                resetPreserved: resetPreserved)
             : Deployer.DeployInTransaction(
                 root,
                 deployedSei,
@@ -409,7 +415,8 @@ public sealed class SeikoClient
                 transaction,
                 writeLock: mode == SyncMode.Normal,
                 adopt: adopt,
-                force: force);
+                force: force,
+                resetPreserved: resetPreserved);
 
         var described = new List<PreviewDiagnostic>();
         foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
@@ -620,6 +627,15 @@ public sealed class SeikoClient
             Describe(sei, diagnostics);
         }
 
+        // Preserve paths are mirrored by the index, so the plan can name them
+        // without opening an artifact. This list is human-readable output
+        // only; changes[] keeps its per-sei shape (ADR-0016).
+        var preserved = resolved
+            .OrderBy(sei => sei.Name, StringComparer.Ordinal)
+            .SelectMany(sei => (IndexArtifactFor(sei).Preserve ?? [])
+                .Select(path => new PreviewPreserve(sei.Name, path)))
+            .ToList();
+
         // External payload comes from index summaries when present, or from
         // the entry's own declarations; nothing is downloaded for the plan.
         // With neither, the index cannot tell us and zero would be a lie.
@@ -673,6 +689,7 @@ public sealed class SeikoClient
             Blocked = blocked,
             Diagnostics = diagnostics,
             Warnings = warnings,
+            Preserved = preserved,
             ExternalItems = externalItems,
             ExternalBytes = externalBytes,
             ExternalHosts = externalHosts.ToList(),
@@ -770,7 +787,8 @@ public sealed class SeikoClient
         bool dryRun = false,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        bool resetPreserved = false)
         => AddMany(
             root,
             [specification],
@@ -787,7 +805,8 @@ public sealed class SeikoClient
             dryRun,
             adopt,
             force,
-            offline);
+            offline,
+            resetPreserved);
 
     public SyncResult AddMany(
         string root,
@@ -805,7 +824,8 @@ public sealed class SeikoClient
         bool dryRun = false,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        bool resetPreserved = false)
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -1074,6 +1094,7 @@ public sealed class SeikoClient
                     adopt,
                     force,
                     offline,
+                    resetPreserved,
                     preloaded,
                     config.Origin);
             }
@@ -1099,6 +1120,7 @@ public sealed class SeikoClient
                     adopt: adopt,
                     force: force,
                     offline: offline,
+                    resetPreserved: resetPreserved,
                     preloaded: preloaded,
                     originsOverrideAllowed: true));
         }
@@ -1156,6 +1178,7 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
+        bool resetPreserved = false,
         SourceScope? preloaded = null,
         IReadOnlyList<OriginSpec>? origins = null)
         => SyncLocked(
@@ -1179,6 +1202,7 @@ public sealed class SeikoClient
             adopt,
             force,
             offline,
+            resetPreserved,
             preloaded);
 
     private static SyncResult WriteSpecsAndSync(
@@ -1439,7 +1463,8 @@ public sealed class SeikoClient
         bool purge = false,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        bool resetPreserved = false)
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
@@ -1516,6 +1541,7 @@ public sealed class SeikoClient
                     adopt,
                     force,
                     offline,
+                    resetPreserved,
                     preloaded,
                     config.Origin);
             }
@@ -1541,6 +1567,7 @@ public sealed class SeikoClient
                     adopt: adopt,
                     force: force,
                     offline: offline,
+                    resetPreserved: resetPreserved,
                     preloaded: preloaded),
                 purge
                     ? transaction =>
@@ -1587,7 +1614,8 @@ public sealed class SeikoClient
         bool dryRun = false,
         bool adopt = false,
         bool force = false,
-        bool offline = false)
+        bool offline = false,
+        bool resetPreserved = false)
     {
         root = Path.GetFullPath(root);
         if (latest && latestInstallable)
@@ -1670,6 +1698,7 @@ public sealed class SeikoClient
                 adopt: adopt,
                 force: force,
                 offline: offline,
+                resetPreserved: resetPreserved,
                 preloaded: preloaded);
 
             if (dryRun)
@@ -1691,6 +1720,7 @@ public sealed class SeikoClient
                     adopt,
                     force,
                     offline,
+                    resetPreserved,
                     preloaded);
             }
 
@@ -2026,7 +2056,9 @@ public sealed class SeikoClient
                 var manifest = JsonSerializer.Deserialize(
                     File.ReadAllBytes(manifestPath),
                     SeikoJsonContext.Default.SeiManifest);
-                if (manifest is null || manifest.SchemaVersion != SeiManifest.CurrentSchemaVersion || string.IsNullOrWhiteSpace(manifest.Name))
+                if (manifest is null
+                    || manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion
+                    || string.IsNullOrWhiteSpace(manifest.Name))
                 {
                     findings.Add(new CacheFinding("error", "cache-manifest", "invalid sei.json", directory));
                 }
@@ -2543,7 +2575,11 @@ public sealed class SeikoClient
             generationOverride: target,
             writeLock: true,
             restoreConfig: snapshotConfig,
-            adoptedSnapshots: adoptedSnapshots);
+            adoptedSnapshots: adoptedSnapshots,
+            // The rollback reproduces the target generation: a preserve path
+            // it recorded as managed (--reset-preserved there) is restored as
+            // managed, every other preserve path is left alone.
+            preservedManaged: snapshotState.Files.Keys.ToHashSet(StringComparer.Ordinal));
 
         return new RollbackResult
         {

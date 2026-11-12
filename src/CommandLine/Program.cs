@@ -92,6 +92,7 @@ var syncAllowCritical = new Option<bool>("--allow-critical")
 var syncDryRun = DryRunOption();
 var syncAdopt = AdoptOption();
 var syncForce = ForceOption();
+var syncResetPreserved = ResetPreservedOption();
 sync.Add(syncRoot);
 sync.Add(syncStore);
 sync.Add(syncPre);
@@ -104,6 +105,7 @@ sync.Add(syncAllowCritical);
 sync.Add(syncDryRun);
 sync.Add(syncAdopt);
 sync.Add(syncForce);
+sync.Add(syncResetPreserved);
 sync.SetAction(parseResult => Run(
     "sync",
     parseResult.GetValue(colorOption) ?? "auto",
@@ -121,6 +123,7 @@ sync.SetAction(parseResult => Run(
         parseResult.GetValue(syncDryRun),
         parseResult.GetValue(syncAdopt),
         parseResult.GetValue(syncForce),
+        parseResult.GetValue(syncResetPreserved),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
@@ -139,6 +142,7 @@ var addProxy = ProxyOption();
 var addDryRun = DryRunOption();
 var addAdopt = AdoptOption();
 var addForce = ForceOption();
+var addResetPreserved = ResetPreservedOption();
 var addLatestInstallable = new Option<bool>("--latest-installable")
 {
     Description = Loc.Get("opt.latest-installable"),
@@ -169,6 +173,7 @@ add.Add(addAllowCritical);
 add.Add(addDryRun);
 add.Add(addAdopt);
 add.Add(addForce);
+add.Add(addResetPreserved);
 add.SetAction(parseResult => Run(
     "add",
     parseResult.GetValue(colorOption) ?? "auto",
@@ -186,6 +191,7 @@ add.SetAction(parseResult => Run(
         parseResult.GetValue(addDryRun),
         parseResult.GetValue(addAdopt),
         parseResult.GetValue(addForce),
+        parseResult.GetValue(addResetPreserved),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
@@ -202,6 +208,7 @@ var removeProxy = ProxyOption();
 var removeDryRun = DryRunOption();
 var removeAdopt = AdoptOption();
 var removeForce = ForceOption();
+var removeResetPreserved = ResetPreservedOption();
 var removePurge = new Option<bool>("--purge")
 {
     Description = Loc.Get("opt.purge"),
@@ -222,6 +229,7 @@ remove.Add(removeDryRun);
 remove.Add(removePurge);
 remove.Add(removeAdopt);
 remove.Add(removeForce);
+remove.Add(removeResetPreserved);
 remove.SetAction(parseResult => Run(
     "remove",
     parseResult.GetValue(colorOption) ?? "auto",
@@ -238,6 +246,7 @@ remove.SetAction(parseResult => Run(
         parseResult.GetValue(removePurge),
         parseResult.GetValue(removeAdopt),
         parseResult.GetValue(removeForce),
+        parseResult.GetValue(removeResetPreserved),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
@@ -255,6 +264,7 @@ var updateProxy = ProxyOption();
 var updateDryRun = DryRunOption();
 var updateAdopt = AdoptOption();
 var updateForce = ForceOption();
+var updateResetPreserved = ResetPreservedOption();
 var updateLatest = new Option<bool>("--latest") { Description = Loc.Get("opt.latest") };
 var updateLatestInstallable = new Option<bool>("--latest-installable")
 {
@@ -281,6 +291,7 @@ update.Add(updateAllowCritical);
 update.Add(updateDryRun);
 update.Add(updateAdopt);
 update.Add(updateForce);
+update.Add(updateResetPreserved);
 update.SetAction(parseResult => Run(
     "update",
     parseResult.GetValue(colorOption) ?? "auto",
@@ -298,6 +309,7 @@ update.SetAction(parseResult => Run(
         parseResult.GetValue(updateDryRun),
         parseResult.GetValue(updateAdopt),
         parseResult.GetValue(updateForce),
+        parseResult.GetValue(updateResetPreserved),
         IsOffline(parseResult),
         IsDiagnostics(parseResult),
         IsJson(parseResult))));
@@ -920,6 +932,9 @@ static Option<bool> AdoptOption()
 static Option<bool> ForceOption()
     => new("--force") { Description = Loc.Get("opt.force") };
 
+static Option<bool> ResetPreservedOption()
+    => new("--reset-preserved") { Description = Loc.Get("opt.reset-preserved") };
+
 static int Sync(
     string? rootOption,
     string? store,
@@ -933,6 +948,7 @@ static int Sync(
     bool dryRun,
     bool adopt,
     bool force,
+    bool resetPreserved,
     bool offline,
     bool diagnostics,
     bool json)
@@ -963,7 +979,8 @@ static int Sync(
             dryRun: dryRun,
             adopt: adopt,
             force: force,
-            offline: offline);
+            offline: offline,
+            resetPreserved: resetPreserved);
     }
     else
     {
@@ -980,7 +997,8 @@ static int Sync(
             dryRun: dryRun,
             adopt: adopt,
             force: force,
-            offline: offline);
+            offline: offline,
+            resetPreserved: resetPreserved);
     }
 
     if (dryRun)
@@ -1050,6 +1068,12 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
         Console.WriteLine($"{change.Action}\t{change.Name}{from}{to}\t{detail}".TrimEnd());
     }
 
+    // A preserve path is not a change: the file may not be touched at all.
+    foreach (var preserved in preview.Preserved)
+    {
+        Console.WriteLine(Loc.Get("preview-preserve", preserved.Path, preserved.Name));
+    }
+
     foreach (var warning in preview.Warnings)
     {
         Console.WriteLine($"warning\t{warning}");
@@ -1097,6 +1121,7 @@ static int Add(
     bool dryRun,
     bool adopt,
     bool force,
+    bool resetPreserved,
     bool offline,
     bool diagnostics,
     bool json)
@@ -1120,7 +1145,8 @@ static int Add(
             dryRun: dryRun,
             adopt: adopt,
             force: force,
-            offline: offline));
+            offline: offline,
+            resetPreserved: resetPreserved));
 
 static int Remove(
     string? rootOption,
@@ -1134,6 +1160,7 @@ static int Remove(
     bool purge,
     bool adopt,
     bool force,
+    bool resetPreserved,
     bool offline,
     bool diagnostics,
     bool json)
@@ -1156,7 +1183,8 @@ static int Remove(
             purge: purge,
             adopt: adopt,
             force: force,
-            offline: offline));
+            offline: offline,
+            resetPreserved: resetPreserved));
 
 static int Update(
     string? rootOption,
@@ -1171,6 +1199,7 @@ static int Update(
     bool dryRun,
     bool adopt,
     bool force,
+    bool resetPreserved,
     bool offline,
     bool diagnostics,
     bool json)
@@ -1194,7 +1223,8 @@ static int Update(
             dryRun: dryRun,
             adopt: adopt,
             force: force,
-            offline: offline));
+            offline: offline,
+            resetPreserved: resetPreserved));
 
 static int Why(string? rootOption, string name, bool json)
 {

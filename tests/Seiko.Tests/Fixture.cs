@@ -19,6 +19,7 @@ internal sealed class ArtifactFixture
     public string? Rid { get; init; }
     public Dictionary<string, string> Files { get; init; } = new(StringComparer.Ordinal);
     public Dictionary<string, string>? Modes { get; init; }
+    public List<string> Preserve { get; init; } = [];
     public List<DepFixture> Dependencies { get; init; } = [];
     public List<DepFixture> Prerequisites { get; init; } = [];
     public List<DepFixture> OptionalPeers { get; init; } = [];
@@ -244,6 +245,7 @@ internal sealed class Fixture : IDisposable
                         Conflicts = ToDependencies(artifact.Conflicts),
                         Layout = "root",
                         Modes = artifact.Modes,
+                        Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
                         ExternalFiles = artifact.ExternalFiles
                             .Select(file => new ExternalFile
                             {
@@ -291,6 +293,7 @@ internal sealed class Fixture : IDisposable
                     Conflicts = ToDependencies(artifact.Conflicts),
                     Layout = "root",
                     Modes = artifact.Modes,
+                    Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
                     ExternalFiles = artifact.ExternalFiles
                         .Select(file => new ExternalFile
                         {
