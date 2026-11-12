@@ -528,10 +528,24 @@ public sealed class HttpSource : ISeiSource, IDisposable
         }
 
         request.Headers.Range = new RangeHeaderValue(start + have, end);
-        var validator = state.ETag ?? state.LastModified;
-        if (have > 0 && validator is not null)
+        if (have > 0)
         {
-            request.Headers.IfRange = new RangeConditionHeaderValue(validator);
+            // If-Range takes either an entity tag or an HTTP date; the string
+            // overload parses only the former, so a server that sent just
+            // Last-Modified threw before the request left.
+            if (state.ETag is { Length: > 0 } etag)
+            {
+                request.Headers.IfRange = new RangeConditionHeaderValue(etag);
+            }
+            else if (state.LastModified is { Length: > 0 } modified
+                && DateTimeOffset.TryParse(
+                    modified,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal,
+                    out var date))
+            {
+                request.Headers.IfRange = new RangeConditionHeaderValue(date);
+            }
         }
 
         return request;

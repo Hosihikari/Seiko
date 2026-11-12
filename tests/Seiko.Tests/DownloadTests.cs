@@ -208,6 +208,61 @@ public sealed class DownloadTests
     }
 
     [Fact]
+    public async Task HttpSource_ResumesFromALastModifiedValidator()
+    {
+        using var fixture = new Fixture();
+        var data = new byte[5000];
+        Random.Shared.NextBytes(data);
+        var artifactDirectory = Path.Combine(fixture.SourceDirectory, "artifacts");
+        Directory.CreateDirectory(artifactDirectory);
+        await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), data);
+        await File.WriteAllTextAsync(
+            Path.Combine(fixture.SourceDirectory, "index.json"),
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+
+        // A plain static server sends Last-Modified and no ETag; If-Range must
+        // then be an HTTP date, not an entity tag.
+        using var server = new TestHttpServer(fixture.SourceDirectory)
+        {
+            LastModifiedOnlyPath = "artifacts",
+        };
+        using var session = new DownloadSession(4, CancellationToken.None, chunkThreshold: 1024);
+        using var source = new HttpSource(
+            new SourceConfig { Id = "test", Index = server.BaseUrl + "index.json" },
+            proxy: null,
+            session);
+        var downloadDirectory = Path.Combine(fixture.Root, "download");
+        Directory.CreateDirectory(downloadDirectory);
+        var state = new PartialArtifactState
+        {
+            UrlHash = Hashing.Sha256Bytes(
+                System.Text.Encoding.UTF8.GetBytes(server.BaseUrl + "artifacts/blob.bin")),
+            Size = data.Length,
+            LastModified = File.GetLastWriteTimeUtc(Path.Combine(artifactDirectory, "blob.bin")).ToString("R"),
+            SegmentCount = 4,
+            SegmentSize = (data.Length + 3) / 4,
+        };
+        await File.WriteAllBytesAsync(
+            Path.Combine(downloadDirectory, "meta.json"),
+            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.PartialArtifactState));
+        await File.WriteAllBytesAsync(Path.Combine(downloadDirectory, "seg-0"), data[..600]);
+
+        await source.DownloadAsync(
+            "hello",
+            new ArtifactLocation
+            {
+                Url = "artifacts/blob.bin",
+                Sha256 = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant(),
+                Size = data.Length,
+            },
+            downloadDirectory,
+            session,
+            CancellationToken.None);
+
+        Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(downloadDirectory, "artifact")));
+    }
+
+    [Fact]
     public async Task HttpSource_DoesNotResumeUnknownLengthArtifact()
     {
         using var fixture = new Fixture();

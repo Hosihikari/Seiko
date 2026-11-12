@@ -38,6 +38,10 @@ internal sealed class TestHttpServer : IDisposable
 
     public string UnknownLengthPath { get; set; } = "";
 
+    // When set, matching responses carry Last-Modified instead of ETag, the
+    // way a plain static file server answers.
+    public string LastModifiedOnlyPath { get; set; } = "";
+
     public IReadOnlyList<string?> Authorizations
     {
         get
@@ -139,8 +143,16 @@ internal sealed class TestHttpServer : IDisposable
             var extra = new Dictionary<string, string>
             {
                 ["Accept-Ranges"] = "bytes",
-                ["ETag"] = etag,
             };
+            if (LastModifiedOnlyPath.Length > 0
+                && relative.Replace('\\', '/').Contains(LastModifiedOnlyPath, StringComparison.Ordinal))
+            {
+                extra["Last-Modified"] = File.GetLastWriteTimeUtc(file).ToString("R");
+            }
+            else
+            {
+                extra["ETag"] = etag;
+            }
 
             if (method == "HEAD")
             {
