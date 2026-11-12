@@ -51,6 +51,13 @@ internal sealed class Fixture : IDisposable
     // Tests that omit --store must not write the developer's real cache. Only
     // those tests depend on the variable, so they set it themselves; everything
     // else passes --store explicitly.
+    public static IDisposable UseUserAgent(string? agent)
+    {
+        var prior = Environment.GetEnvironmentVariable(SeikoHttp.UserAgentVariable);
+        Environment.SetEnvironmentVariable(SeikoHttp.UserAgentVariable, agent);
+        return new Restore(() => Environment.SetEnvironmentVariable(SeikoHttp.UserAgentVariable, prior));
+    }
+
     public static IDisposable UseDefaultStore(string directory)
     {
         var prior = Environment.GetEnvironmentVariable("SEIKO_STORE");

@@ -983,6 +983,7 @@ public static class IndexVerifier
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("User-Agent", SeikoHttp.UserAgent);
         using var response = client
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .GetAwaiter()

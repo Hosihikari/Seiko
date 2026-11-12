@@ -12,6 +12,7 @@ internal sealed class TestHttpServer : IDisposable
     private readonly Task _loop;
     private readonly string _root;
     private readonly List<string?> _authorizations = [];
+    private readonly List<string?> _userAgents = [];
     private readonly List<(string Method, string Path)> _requests = [];
 
     public TestHttpServer(string root)
@@ -41,6 +42,17 @@ internal sealed class TestHttpServer : IDisposable
     // When set, matching responses carry Last-Modified instead of ETag, the
     // way a plain static file server answers.
     public string LastModifiedOnlyPath { get; set; } = "";
+
+    public IReadOnlyList<string?> UserAgents
+    {
+        get
+        {
+            lock (_userAgents)
+            {
+                return _userAgents.ToList();
+            }
+        }
+    }
 
     public IReadOnlyList<string?> Authorizations
     {
@@ -102,6 +114,12 @@ internal sealed class TestHttpServer : IDisposable
                 {
                     headers[line[..separator].Trim()] = line[(separator + 1)..].Trim();
                 }
+            }
+
+            lock (_userAgents)
+            {
+                _userAgents.Add(
+                    headers.TryGetValue("User-Agent", out var agent) ? agent : null);
             }
 
             lock (_authorizations)

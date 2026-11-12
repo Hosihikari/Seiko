@@ -789,6 +789,7 @@ public sealed class HttpSource : ISeiSource, IDisposable
     private HttpRequestMessage NewRequest(HttpMethod method, Uri uri)
     {
         var request = new HttpRequestMessage(method, uri);
+        request.Headers.TryAddWithoutValidation("User-Agent", SeikoHttp.UserAgent);
         var token = TokenFor(uri);
         if (token is not null)
         {
