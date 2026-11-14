@@ -2691,6 +2691,17 @@ public sealed class SeikoClient
 
         var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
             ?? throw new SeikoException("invalid local state", "lock");
+
+        // Same gate as the real rollback: a preview that passes an old state
+        // the run would reject is greener than the operation it describes
+        // (ADR-0040).
+        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            throw new SeikoException(
+                $"unsupported deployment state schemaVersion {state.SchemaVersion}",
+                "io");
+        }
+
         var target = toGeneration ?? state.Generation - 1;
         if (target < 1)
         {

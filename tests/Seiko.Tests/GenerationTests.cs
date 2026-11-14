@@ -147,6 +147,26 @@ public sealed class GenerationTests
     }
 
     [Fact]
+    public void Preview_FailsOnAnUnsupportedCurrentStateSchema()
+    {
+        using var fixture = Installed();
+        Upgrade(fixture);
+
+        // The live state, not the target snapshot: the real rollback reads it
+        // first, so a preview that skipped the gate would report a plan the
+        // run can never execute.
+        var path = Path.Combine(fixture.Root, ".seiko", "state.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["schemaVersion"] = 999;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("io", error.Code);
+    }
+
+    [Fact]
     public void Preview_FailsOnAnIncompleteTarget()
     {
         using var fixture = Installed();
