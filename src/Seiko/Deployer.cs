@@ -19,6 +19,11 @@ public static class Deployer
 {
     internal static AsyncLocal<Action<int>?> AppliedForTests { get; } = new();
 
+    // Runs once, immediately before the first non-overwriting publish move.
+    // The window between the plan and that move is otherwise only reachable
+    // by a second process.
+    internal static AsyncLocal<Action?> BeforeFirstPublishForTests { get; } = new();
+
     public static void Recover(string root, string stateDirectory)
         => DeploymentTransaction.Recover(root, stateDirectory);
 
@@ -585,15 +590,23 @@ public static class Deployer
                             && !preservedHere.Contains(mutation.RelativePath));
                     if (mutation.CreatedHere && !raced)
                     {
-                        PublishCreated(
-                            temp,
-                            destination,
-                            mutation.RelativePath,
-                            transaction,
-                            adopt,
-                            force,
-                            lateAdoptions,
-                            preserve: preservedHere.Contains(mutation.RelativePath));
+                        if (PublishCreated(
+                                temp,
+                                destination,
+                                mutation.RelativePath,
+                                transaction,
+                                adopt,
+                                force,
+                                lateAdoptions,
+                                preserve: preservedHere.Contains(mutation.RelativePath))
+                            && preservedHere.Contains(mutation.RelativePath))
+                        {
+                            // A preserve copy landed in the second window too;
+                            // it is the user's now, so its permissions stay as
+                            // they are and any share it arrived with is cut.
+                            retained.Add(mutation.RelativePath);
+                            modes.Remove(mutation.RelativePath);
+                        }
                     }
                     else
                     {
@@ -671,7 +684,10 @@ public static class Deployer
     // the rename itself is the conflict check. A failure only means somebody
     // created the path; if it vanished again since, the same non-overwriting
     // move is retried instead of switching to an overwriting one.
-    private static void PublishCreated(
+    // Publishes a path the plan saw as free. Returns true when a preserve
+    // target appeared in the window and its copy was kept instead, so the
+    // caller can retract the write and its modes as well.
+    private static bool PublishCreated(
         string temp,
         string destination,
         string relative,
@@ -683,10 +699,16 @@ public static class Deployer
     {
         for (var attempt = 0; ; attempt++)
         {
+            if (BeforeFirstPublishForTests.Value is { } beforePublish)
+            {
+                BeforeFirstPublishForTests.Value = null;
+                beforePublish();
+            }
+
             try
             {
                 File.Move(temp, destination);
-                return;
+                return false;
             }
             catch (IOException) when (attempt < 8 && !File.Exists(destination))
             {
@@ -707,7 +729,7 @@ public static class Deployer
                 }
 
                 File.Move(temp, destination);
-                return;
+                return false;
             }
 
             if (!transaction.SnapshotLateCreation(relative))
@@ -721,7 +743,7 @@ public static class Deployer
             {
                 // Free when the plan was made; the content that appeared in
                 // the window wins, exactly as it would have at plan time.
-                return;
+                return true;
             }
 
             if (!adopt && !force)
@@ -734,11 +756,11 @@ public static class Deployer
             if (adopt)
             {
                 lateAdoptions.Add(relative);
-                return;
+                return true;
             }
 
             File.Move(temp, destination, overwrite: true);
-            return;
+            return false;
         }
     }
 

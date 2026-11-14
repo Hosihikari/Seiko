@@ -691,6 +691,56 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void Sync_DoesNotChmodAFileThatArrivesInThePublishWindow()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    Preserve = [ConfigPath],
+                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var target = Path.Combine(fixture.Root, ConfigPath);
+
+        // Between the per-path check and the publish move, which is the last
+        // window a second process can still hit.
+        Deployer.BeforeFirstPublishForTests.Value = () =>
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllText(target, "user");
+            File.SetUnixFileMode(target, (UnixFileMode)Convert.ToInt32("600", 8));
+        };
+
+        try
+        {
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        finally
+        {
+            Deployer.BeforeFirstPublishForTests.Value = null;
+        }
+
+        Assert.Equal("user", File.ReadAllText(target));
+        Assert.Equal(
+            (UnixFileMode)Convert.ToInt32("600", 8),
+            File.GetUnixFileMode(target));
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+    }
+
+    [Fact]
     public void DryRun_ListsPreservePathsWithoutAddingChangeEntries()
     {
         using var fixture = PreservingFixture();
