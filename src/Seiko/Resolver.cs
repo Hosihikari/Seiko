@@ -1365,6 +1365,21 @@ public sealed class Resolver
                 return SolveVerdict.Maybe;
             }
 
+            // A backtack upstream can drop the package that required this
+            // candidate; the returned graph is then a complete solution that
+            // does not contain the candidate at all, so it proves nothing.
+            // The candidate only counts as proven when the answer still holds
+            // it (ADR-0027's "its own complete graph").
+            if (!probe._assigned.TryGetValue(owner.Name, out var kept)
+                || kept.GroupIndex != candidate.Group
+                || !string.Equals(
+                    kept.Artifact.Source?.Sha256,
+                    candidate.Artifact.Source?.Sha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return SolveVerdict.Unsolvable;
+            }
+
             // A graph holding placeholders or shadowed answers was reached by
             // guessing; the real fill-in run may land elsewhere.
             return probe._assigned.Values.Any(sei => probe.Uncertain(sei.Name))

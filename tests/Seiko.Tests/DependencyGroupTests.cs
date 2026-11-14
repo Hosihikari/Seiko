@@ -253,6 +253,69 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Sync_DoesNotCallAGroupSolvableWhenItDropsOutOfTheGraph()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "host", "y" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // app's high group pulls x; its low group does not. x's first group
+        // depends on a missing package, the second on y. Only the second can
+        // hold while app stays on its high group.
+        fixture.AddSei("x", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["x.txt"] = "x" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("missing", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("y", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("x", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("host", "[1.0.0]"));
+
+        // Probing x's dead group may fall back to app's low group, which makes
+        // x disappear; the probe must not read that as "this group works".
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.True(File.Exists(FileOf(fixture, "x")));
+        Assert.True(File.Exists(FileOf(fixture, "y")));
+    }
+
+    [Fact]
     public void Sync_RejectsATieOnFirstInstall()
     {
         using var fixture = new Fixture();
