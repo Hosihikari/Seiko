@@ -218,6 +218,50 @@ public sealed class McpTests
     }
 
     [Fact]
+    public void InfoTool_ListsDependencyGroups()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("bridge", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["bridge.txt"] = "bridge" } }],
+        });
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(Dependencies: [new DepFixture("bridge", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+        var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
+
+        var result = CallTool(
+            server,
+            "info",
+            new JsonObject
+            {
+                ["root"] = fixture.Root,
+                ["name"] = "hello",
+                ["store"] = fixture.StoreDirectory,
+            });
+
+        var text = ToolText(result);
+        var details = JsonNode.Parse(text)!["versions"]![0]!["artifactDetails"]![0]!;
+        var groups = details["dependencyGroups"]!.AsArray();
+        Assert.Single(groups);
+        Assert.Equal("bridge", groups[0]!["dependencies"]![0]!["name"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void AuditLog_RedactsUrlSecrets()
     {
         using var fixture = new Fixture();

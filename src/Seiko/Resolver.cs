@@ -1107,24 +1107,36 @@ public sealed class Resolver
 
         // A group that lost every candidate is worth naming: without it the
         // error only says "the artifact", and the artifact is often the one
-        // thing that did not change (ADR-0045's group diagnoses).
+        // thing that did not change (ADR-0045's group diagnoses). The gates
+        // are two different tests — a prerequisite has to match, a conflict
+        // has to be absent — so a positive and a negative condition that
+        // share the same text cannot be judged by the same check.
         var blocked = new List<string>();
         foreach (var artifact in resolved.Entry.Artifacts)
         {
             for (var index = 0; index < (artifact?.DependencyGroups?.Count ?? 0); index++)
             {
-                var conditions = artifact!.DependencyGroups![index].Prerequisites
-                    .Select(prerequisite => $"{prerequisite.Name} {prerequisite.Version ?? "*"}")
-                    .Concat(artifact.DependencyGroups[index].Conflicts
-                        .Select(conflict => $"not {conflict.Name} {conflict.Version ?? "*"}"))
-                    .ToList();
-                if (conditions.Count > 0
-                    && !conditions.All(condition =>
-                        ConditionHolds(condition.StartsWith("not ", StringComparison.Ordinal)
-                            ? condition[4..]
-                            : condition)))
+                var group = artifact!.DependencyGroups![index];
+                var unmet = new List<string>();
+                foreach (var prerequisite in group.Prerequisites)
                 {
-                    blocked.Add($"#{index} ({string.Join(", ", conditions)})");
+                    if (AssignedAndFails(prerequisite))
+                    {
+                        unmet.Add($"{prerequisite.Name} {prerequisite.Version ?? "*"}");
+                    }
+                }
+
+                foreach (var conflict in group.Conflicts)
+                {
+                    if (AssignedAndMatches(conflict))
+                    {
+                        unmet.Add($"not {conflict.Name} {conflict.Version ?? "*"}");
+                    }
+                }
+
+                if (unmet.Count > 0)
+                {
+                    blocked.Add($"#{index} ({string.Join(", ", unmet)})");
                 }
             }
         }
@@ -1134,20 +1146,18 @@ public sealed class Resolver
             : message + $"; unmatched group(s): {string.Join("; ", blocked)}";
     }
 
-    // "name range" as written in the message: true while the name is not yet
-    // assigned (it may still arrive) or the assigned version still fits.
-    private bool ConditionHolds(string text)
-    {
-        var space = text.LastIndexOf(' ');
-        var name = space < 0 ? text : text[..space];
-        if (!_assigned.TryGetValue(name, out var target) || Uncertain(name))
-        {
-            return true;
-        }
+    // True once the name is assigned, certain, and the version no longer fits.
+    private bool AssignedAndFails(SeiDependency relation)
+        => _assigned.TryGetValue(relation.Name, out var target)
+            && !Uncertain(relation.Name)
+            && !ParseRange(relation.Version, relation.Name).Satisfies(target.ParsedVersion);
 
-        return space < 0
-            || ParseRange(text[(space + 1)..], name).Satisfies(target.ParsedVersion);
-    }
+    // True once the name is assigned, certain, and the version does fit — the
+    // conflict excludes the group.
+    private bool AssignedAndMatches(SeiDependency relation)
+        => _assigned.TryGetValue(relation.Name, out var target)
+            && !Uncertain(relation.Name)
+            && ParseRange(relation.Version, relation.Name).Satisfies(target.ParsedVersion);
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
         string name,

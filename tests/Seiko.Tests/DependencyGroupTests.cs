@@ -214,6 +214,49 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Sync_NamesAGroupThatOnlyAConflictExcludes()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "bridge");
+        AddPackage(fixture, "alpha");
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    // Only artifact is for another rid, so no artifact can be
+                    // picked and the diagnosis has to explain why.
+                    Rid = "linux-x64",
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("bridge", "*")],
+                            Conflicts: [new DepFixture("alpha", "*")]),
+                    ],
+                },
+            ],
+        });
+        // alpha sorts before app, so it is already assigned when app is
+        // reached and the conflict is decidable.
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("alpha", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        // The conflict matches (alpha is installed and excluded), so the
+        // group is unavailable. Judging "not alpha" as a positive condition
+        // makes it look satisfied and the group disappears from the report.
+        Assert.Contains("#0", error.Message);
+        Assert.Contains("not alpha", error.Message);
+    }
+
+    [Fact]
     public void Info_ListsDependencyGroups()
     {
         using var fixture = new Fixture();

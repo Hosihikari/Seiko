@@ -1368,14 +1368,36 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var artifact in artifacts)
         {
-            array.Add((JsonNode)new JsonObject
+            var node = new JsonObject
             {
                 ["rid"] = artifact.Rid,
                 ["dependencies"] = DependenciesNode(artifact.Dependencies),
                 ["prerequisites"] = DependenciesNode(artifact.Prerequisites),
                 ["optionalPeers"] = DependenciesNode(artifact.OptionalPeers),
                 ["conflicts"] = DependenciesNode(artifact.Conflicts),
-            });
+            };
+
+            // The group index is part of the artifact's identity to the
+            // resolver and the lock, so an answer that hides the groups
+            // describes a different artifact than the one `sk info` prints.
+            if (artifact.DependencyGroups is { } groups)
+            {
+                var groupsNode = new JsonArray();
+                foreach (var group in groups)
+                {
+                    groupsNode.Add((JsonNode)new JsonObject
+                    {
+                        ["dependencies"] = DependenciesNode(group.Dependencies),
+                        ["prerequisites"] = DependenciesNode(group.Prerequisites),
+                        ["optionalPeers"] = DependenciesNode(group.OptionalPeers),
+                        ["conflicts"] = DependenciesNode(group.Conflicts),
+                    });
+                }
+
+                node["dependencyGroups"] = groupsNode;
+            }
+
+            array.Add(node);
         }
 
         return array;
