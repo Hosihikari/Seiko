@@ -415,6 +415,94 @@ public sealed class DependencyGroupTests
         Assert.Contains("ambiguous artifact for app 1.0.0", error.Message);
     }
 
+    private static Fixture OrderedRoots()
+    {
+        var fixture = new Fixture();
+        AddPackage(fixture, "host");
+
+        // Two common versions so each root's high group can hold, but the two
+        // groups want different ones.
+        fixture.AddSei(
+            "common",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["one.txt"] = "one" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["two.txt"] = "two" } }],
+            });
+
+        fixture.AddSei("aa", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["aa.txt"] = "aa" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("common", "[1.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.AddSei("bb", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["bb.txt"] = "bb" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("common", "[2.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+        return fixture;
+    }
+
+    private static List<(string Name, int? Group)> Roots(Fixture fixture, SeikoClient client)
+        => client.ReadLock(fixture.Root)!.Sei
+            .Where(sei => sei.Name is "aa" or "bb")
+            .Select(sei => (sei.Name, sei.Artifact.Group))
+            .ToList();
+
+    [Fact]
+    public void Sync_DoesNotDependOnRootDeclarationOrder()
+    {
+        using var first = OrderedRoots();
+        first.WriteConfig(
+            "win-x64",
+            new SpecFixture("aa", "[1.0.0]"),
+            new SpecFixture("bb", "[1.0.0]"),
+            new SpecFixture("host", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(first.Root, first.StoreDirectory);
+
+        using var second = OrderedRoots();
+        second.WriteConfig(
+            "win-x64",
+            new SpecFixture("host", "[1.0.0]"),
+            new SpecFixture("bb", "[1.0.0]"),
+            new SpecFixture("aa", "[1.0.0]"));
+        client.Sync(second.Root, second.StoreDirectory);
+
+        Assert.Equal(Roots(first, client), Roots(second, client));
+    }
+
     [Fact]
     public void Sync_RejectsATieOnFirstInstall()
     {

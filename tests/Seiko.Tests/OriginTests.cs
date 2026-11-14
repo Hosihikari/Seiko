@@ -1545,15 +1545,15 @@ public sealed class OriginTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("ax", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
-        // `hello` is intact and depends on x and gone. x is unknown (a gap);
+        // `hello` is intact and depends on ax and gone. ax is unknown (a gap);
         // gone is an origin declaration whose file and snapshot are both
-        // absent, so reading it fails with checksum. The x gap is read first
-        // and must survive that later failure.
+        // absent, so reading it fails with checksum. Roots are read by name,
+        // so the ax gap is read first and must survive that later failure.
         fixture.WriteOrigin("hello", "1.0.0", "hello.txt", "one", dependencies: [("gone", null)]);
         fixture.WriteOrigin("gone", "1.0.0", "gone.txt", "gone");
-        // x is declared first, so it is read (and recorded) before gone fails.
+        // Roots are read in a fixed order regardless of declaration order.
         var config = Path.Combine(fixture.Root, "seiko.conf");
         File.WriteAllText(
             config,
@@ -1563,7 +1563,7 @@ public sealed class OriginTests
             + "origin = [\n"
             + "  { name = \"hello\", paths = [\"dist/hello.sei\"], selectors = [ { rid = \"*\" } ] },\n"
             + "  { name = \"gone\", paths = [\"dist/gone.sei\"], selectors = [ { rid = \"*\" } ] } ]\n"
-            + "sei = [ { name = \"x\", version = \"[1.0.0]\" }, { name = \"gone\", version = \"[1.0.0]\" }, { name = \"hello\" } ]\n");
+            + "sei = [ { name = \"ax\", version = \"[1.0.0]\" }, { name = \"gone\", version = \"[1.0.0]\" }, { name = \"hello\" } ]\n");
         File.Delete(Path.Combine(fixture.Root, "dist", "gone.sei"));
 
         var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
@@ -1573,7 +1573,7 @@ public sealed class OriginTests
         // is part of the message instead of being thrown away.
         Assert.Equal("checksum", error.Code);
         Assert.Contains("gone", error.Message);
-        Assert.Contains("sei/x.json from source 'http'", error.Message);
+        Assert.Contains("sei/ax.json from source 'http'", error.Message);
     }
 
     [Fact]

@@ -291,7 +291,14 @@ public sealed class Resolver
             _hintsGrew = false;
             _exhausted = false;
 
-            foreach (var spec in specs)
+            // Roots enter in a fixed order, not declaration order: with an
+            // artifact that matches only when some other root is still on its
+            // fallback group, the order decides which group wins. A pinned
+            // root is fully determined, so assigning it first prunes the most;
+            // ties fall back to the name.
+            foreach (var spec in specs
+                .OrderByDescending(spec => spec.Version is not null)
+                .ThenBy(spec => spec.Name, StringComparer.Ordinal))
             {
                 _pending.Add(CreateRequirement(spec.Name, spec.Version, null));
             }
