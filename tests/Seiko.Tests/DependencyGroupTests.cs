@@ -1288,6 +1288,49 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Verify_TreatsReorderedGroupsAsTheSameConditions()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "host-a", "host-b" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // Same two gates in the other order: the environments that pick
+        // either artifact are identical, so the pair is ambiguous.
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(Prerequisites: [new DepFixture("host-a", "*")]),
+                        new GroupFixture(Prerequisites: [new DepFixture("host-b", "*")]),
+                    ],
+                },
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(Prerequisites: [new DepFixture("host-b", "*")]),
+                        new GroupFixture(Prerequisites: [new DepFixture("host-a", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-ambiguous");
+    }
+
+    [Fact]
     public void Verify_AllowsArtifactsWhoseGroupsAreMutuallyExclusive()
     {
         using var fixture = new Fixture();

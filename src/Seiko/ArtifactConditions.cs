@@ -17,15 +17,19 @@ internal static class ArtifactConditions
 
     // A group set can carry conditions the artifact-level part does not; two
     // artifacts whose groups sit under different gates are distinguishable
-    // even when the artifact-level keys match. Order is part of the identity
-    // because the lock records the group position.
+    // even when the artifact-level keys match. The lock records the group
+    // position, but applicability does not depend on it, so the conditions
+    // are sorted: reordering the groups must not make two artifacts that
+    // apply in exactly the same environments compare unequal (the cross-source
+    // digest check and the same-index equivalence check both rely on this).
     internal static string GroupConditions(ArtifactEntry artifact)
         => string.Join(
             "\n#\n",
             (artifact.DependencyGroups ?? [])
                 .Select(group => group is null
                     ? "?"
-                    : DependencyGroups.ConditionKey(group)));
+                    : DependencyGroups.ConditionKey(group))
+                .OrderBy(text => text, StringComparer.Ordinal));
 
     // Origin selectors carry the same shape as artifact conditions, so the
     // ambiguity test there uses this too (ADR-0044).
