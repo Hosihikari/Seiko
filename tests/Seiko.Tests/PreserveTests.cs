@@ -716,6 +716,35 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void DryRun_FailsOnATruncatedStateAndSurvivesANullRecord()
+    {
+        using var fixture = PreservingFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var statePath = Path.Combine(fixture.Root, ".seiko", "state.json");
+        var saved = File.ReadAllBytes(statePath);
+
+        // Truncated JSON: the real run fails, so the plan must not pass it off
+        // as an empty deployment.
+        File.WriteAllText(statePath, "{ \"schemaVersion\": 3, \"generation\":");
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
+        Assert.Equal("io", error.Code);
+
+        // A null record is valid JSON; reading a mark off it used to throw.
+        File.WriteAllText(
+            statePath,
+            $$$"""
+            {"schemaVersion":{{{LocalState.CurrentSchemaVersion}}},"generation":1,
+             "files":{"{{{ConfigPath}}}":null}}
+            """);
+        var result = client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
+
+        var preserved = Assert.Single(result.Preview!.Preserved);
+        Assert.Equal(ConfigPath, preserved.Path);
+    }
+
+    [Fact]
     public void DryRunPrintsPreservePathsInHumanOutput()
     {
         using var fixture = PreservingFixture();

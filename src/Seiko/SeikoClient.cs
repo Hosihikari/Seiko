@@ -694,11 +694,13 @@ public sealed class SeikoClient
         // managed even without the flag. A path that is in the state without
         // the mark was managed by an older version and is about to leave
         // management; it is already a change, but the line still explains it.
+        // A state record may itself be null (the deployment reports that as a
+        // missing record), so the mark is read defensively.
         var preserved = resolved
             .OrderBy(sei => sei.Name, StringComparer.Ordinal)
             .SelectMany(sei => (IndexArtifactFor(sei).Preserve ?? [])
                 .Where(path => !resetPreserved
-                    && !(state.TryGetValue(path, out var record) && record.Preserved))
+                    && !(state.TryGetValue(path, out var record) && record is { Preserved: true }))
                 .Select(path => new PreviewPreserve(sei.Name, path)))
             .ToList();
 
@@ -773,8 +775,9 @@ public sealed class SeikoClient
             ?? sei.Artifact;
 
     // The deployed records a preview needs to describe the plan honestly. A
-    // missing or unreadable state means "nothing was deployed yet"; the real
-    // run reports the same thing as its own error.
+    // missing state means "nothing was deployed yet". A present but unreadable
+    // one is an error rather than an empty set: the real run fails on the same
+    // bytes, and silence would make the plan claim a clean slate.
     private static IReadOnlyDictionary<string, DeployedFile> ReadStateRecords(string root)
     {
         var path = Path.Combine(root, ".seiko", "state.json");
@@ -800,9 +803,9 @@ public sealed class SeikoClient
 
             return state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+            throw new SeikoException($"invalid deployment state ({ex.Message})", "io", ex);
         }
     }
 
