@@ -983,7 +983,11 @@ public sealed class Resolver
         string owner,
         string description)
     {
-        foreach (var dependency in dependencies ?? [])
+        // Same reason as the root order: the queue decides which ambiguous
+        // name is resolved first, so the declaration order of the list must
+        // not reach it.
+        foreach (var dependency in (dependencies ?? [])
+            .OrderBy(dependency => dependency?.Name ?? "", StringComparer.Ordinal))
         {
             if (!SeiName.IsValid(dependency.Name))
             {

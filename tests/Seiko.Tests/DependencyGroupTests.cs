@@ -782,6 +782,91 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Sync_DoesNotDependOnDependencyDeclarationOrder()
+    {
+        static Fixture Build()
+        {
+            var fixture = new Fixture();
+            foreach (var name in new[] { "host", "common" })
+            {
+                AddPackage(fixture, name);
+            }
+
+            fixture.AddSei(
+                "common",
+                new VersionFixture
+                {
+                    Version = "2.0.0",
+                    Artifacts = [new ArtifactFixture { Files = { ["c2.txt"] = "c2" } }],
+                });
+
+            foreach (var name in new[] { "aa", "bb" })
+            {
+                fixture.AddSei(name, new VersionFixture
+                {
+                    Version = "1.0.0",
+                    Artifacts =
+                    [
+                        new ArtifactFixture
+                        {
+                            Files = { [name + ".txt"] = name },
+                            DependencyGroups =
+                            [
+                                new GroupFixture(),
+                                new GroupFixture(
+                                    Dependencies:
+                                    [
+                                        new DepFixture(
+                                            "common",
+                                            name == "aa" ? "[1.0.0]" : "[2.0.0]"),
+                                    ],
+                                    Prerequisites: [new DepFixture("host", "*")]),
+                            ],
+                        },
+                    ],
+                });
+            }
+
+            return fixture;
+        }
+
+        static List<(string Name, int? Group)> Run(bool reverse)
+        {
+            using var fixture = Build();
+            var root = reverse
+                ? fixture.WriteOrigin(
+                    "root",
+                    "1.0.0",
+                    "root.txt",
+                    "root",
+                    dependencies: [("bb", null), ("aa", null)],
+                    dependencyLevel: "artifact")
+                : fixture.WriteOrigin(
+                    "root",
+                    "1.0.0",
+                    "root.txt",
+                    "root",
+                    dependencies: [("aa", null), ("bb", null)],
+                    dependencyLevel: "artifact");
+            fixture.WriteConfig("win-x64", new SpecFixture("host", "[1.0.0]"));
+            var client = new SeikoClient();
+            client.Add(
+                fixture.Root,
+                Path.GetRelativePath(
+                    Directory.GetCurrentDirectory(),
+                    Path.Combine(fixture.Root, root)),
+                storeRoot: fixture.StoreDirectory);
+            return client.ReadLock(fixture.Root)!.Sei
+                .Where(sei => sei.Name is "aa" or "bb")
+                .OrderBy(sei => sei.Name, StringComparer.Ordinal)
+                .Select(sei => (sei.Name, sei.Artifact.Group))
+                .ToList();
+        }
+
+        Assert.Equal(Run(reverse: false), Run(reverse: true));
+    }
+
+    [Fact]
     public void Sync_RejectsATieOnFirstInstall()
     {
         using var fixture = new Fixture();

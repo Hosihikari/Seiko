@@ -2165,7 +2165,7 @@ public sealed class OriginTests
                 [
                     new ArtifactFixture
                     {
-                        Conflicts = [new DepFixture("x", "*")],
+                        Conflicts = [new DepFixture("ax", "*")],
                         Dependencies = [new DepFixture("y", null)],
                     },
                 ],
@@ -2176,14 +2176,14 @@ public sealed class OriginTests
                 Artifacts = [new ArtifactFixture()],
             });
         fixture.AddSei(
-            "x",
+            "ax",
             new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
         // x is unknown; b 2.0's only artifact conflicts with any x, so the
         // real run drops it as soon as x is assigned and never reads y.
         var origin = fixture.WriteOrigin(
-            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", null), ("b", null)]);
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("ax", null), ("b", null)]);
         new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory);
         var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
         var index = new Uri(server.BaseUrl.TrimEnd('/') + "/index.json");
@@ -2201,7 +2201,7 @@ public sealed class OriginTests
 
         // x is the only gap: y belongs to the artifact that was pruned.
         Assert.Equal("source", error.Code);
-        Assert.Equal(["sei/x.json from source 'http'"], Gaps(error.Message));
+        Assert.Equal(["sei/ax.json from source 'http'"], Gaps(error.Message));
     }
 
     [Fact]
@@ -2483,24 +2483,24 @@ public sealed class OriginTests
             [
                 new ArtifactFixture
                 {
-                    Prerequisites = [new DepFixture("x", "[2.0.0,3.0.0)")],
+                    Prerequisites = [new DepFixture("ax", "[2.0.0,3.0.0)")],
                     Dependencies = [new DepFixture("y", null)],
                 },
             ],
         });
-        fixture.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei("ax", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.AddSei("y", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
         // x is pinned below 2, so the artifact's prerequisite can never hold;
         // y must not become a requirement.
         var origin = fixture.WriteOrigin(
-            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,2.0.0)"), ("b", null)]);
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("ax", "[1.0.0,2.0.0)"), ("b", null)]);
         // Online the graph is already unsolvable; only the caches matter here.
         Assert.Throws<SeikoException>(
             () => new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory));
         var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
         var index = new Uri(server.BaseUrl.TrimEnd('/') + "/index.json");
-        var keep = new[] { "b", "x" }
+        var keep = new[] { "b", "ax" }
             .Select(name => MetadataCache.PathFor(fixture.StoreDirectory, new Uri(index, $"sei/{name}.json").AbsoluteUri))
             .ToDictionary(path => path, File.ReadAllBytes);
         var root = MetadataCache.PathFor(fixture.StoreDirectory, index.AbsoluteUri);
@@ -2731,7 +2731,7 @@ public sealed class OriginTests
         // pins x below 2, and a's artifact needs x at 2 or above. Both known
         // ranges already contradict, so the artifact is dead and y must not
         // be read. Only the initial range saved makes that visible.
-        fixture.AddSei("a", new VersionFixture
+        fixture.AddSei("zz", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts =
@@ -2747,7 +2747,7 @@ public sealed class OriginTests
         second.AddSei("x", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
         WriteTwoSourceConfig(fixture, first.BaseUrl, second, secondServer.BaseUrl);
         var origin = fixture.WriteOrigin(
-            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,2.0.0)"), ("a", null)]);
+            "hello", "1.0.0", "hello.txt", "one", dependencies: [("x", "[1.0.0,2.0.0)"), ("zz", null)]);
         Assert.Throws<SeikoException>(
             () => new SeikoClient().Add(fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory));
         var cache = Path.Combine(fixture.StoreDirectory, ".metadata");
@@ -2756,7 +2756,7 @@ public sealed class OriginTests
         var keep = new[]
         {
             MetadataCache.PathFor(fixture.StoreDirectory, firstIndex.AbsoluteUri),
-            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/a.json").AbsoluteUri),
+            MetadataCache.PathFor(fixture.StoreDirectory, new Uri(firstIndex, "sei/zz.json").AbsoluteUri),
             MetadataCache.PathFor(fixture.StoreDirectory, secondIndex.AbsoluteUri),
             MetadataCache.PathFor(fixture.StoreDirectory, new Uri(secondIndex, "sei/x.json").AbsoluteUri),
         }.ToDictionary(path => path, File.ReadAllBytes);
@@ -2846,9 +2846,9 @@ public sealed class OriginTests
         using var first = new TestHttpServer(fixture.SourceDirectory);
         var second = new Fixture();
         using var secondServer = new TestHttpServer(second.SourceDirectory);
-        // Root order z, a. The run checks z first, hits the mirror's mismatch
-        // there and never reads the mirror's a. Sorted order would read a
-        // first and turn it into a gap.
+        // Dependency list order z, a, resolved by name: a is checked first
+        // and its cold mirror entry becomes a gap; z's mirror mismatch is hit
+        // after that.
         fixture.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["z.txt"] = "z" } }] });
         fixture.AddSei("a", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }] });
         second.AddSei("z", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["z.txt"] = "z" } }] });
@@ -2872,7 +2872,7 @@ public sealed class OriginTests
             fixture.Root, Rel(fixture, origin), storeRoot: fixture.StoreDirectory, offline: true));
 
         Assert.Equal("checksum", error.Code);
-        Assert.DoesNotContain("sei/a.json from source 'second'", error.Message);
+        Assert.Contains("sei/a.json from source 'second'", error.Message);
     }
 
     [Fact]
