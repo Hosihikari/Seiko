@@ -15,6 +15,46 @@ public sealed class DependencyGroupTests
     private static string FileOf(Fixture fixture, string name)
         => Path.Combine(fixture.Root, name + ".txt");
 
+    // Rewrites the stored manifest and re-points the index at the new bytes,
+    // so an artifact-level field can be changed without breaking the rest.
+    private static void RewriteArtifact(
+        Fixture fixture,
+        string name,
+        Action<System.Text.Json.Nodes.JsonObject> mutate)
+    {
+        var zip = Directory.EnumerateFiles(
+            Path.Combine(fixture.SourceDirectory, "artifacts"),
+            $"{name}-1.0.0-*.zip").Single();
+        using (var archive = System.IO.Compression.ZipFile.Open(
+            zip,
+            System.IO.Compression.ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("sei.json")!;
+            string text;
+            using (var stream = entry.Open())
+            using (var reader = new StreamReader(stream))
+            {
+                text = reader.ReadToEnd();
+            }
+
+            entry.Delete();
+            using var output = archive.CreateEntry("sei.json").Open();
+            using var writer = new StreamWriter(output);
+            var node = System.Text.Json.Nodes.JsonNode.Parse(text)!.AsObject();
+            mutate(node);
+            writer.Write(node.ToJsonString());
+        }
+
+        var indexPath = Path.Combine(fixture.SourceDirectory, "sei", $"{name}.json");
+        var sei = JsonSerializer.Deserialize(
+            File.ReadAllBytes(indexPath),
+            SeikoJsonContext.Default.SeiIndex)!;
+        sei.Versions[0].Artifacts[0].Source.Sha256 = Hashing.Sha256File(zip);
+        sei.Versions[0].Artifacts[0].Source.Size = new FileInfo(zip).Length;
+        File.WriteAllBytes(indexPath, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        fixture.RefreshCatalog();
+    }
+
     private static void AddTwoGroupApp(Fixture fixture)
     {
         fixture.AddSei("app", new VersionFixture
@@ -1033,6 +1073,68 @@ public sealed class DependencyGroupTests
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
         Assert.Contains("schemaVersion 3 cannot declare dependencyGroups", error.Message);
+    }
+
+    [Fact]
+    public void Sync_RejectsAnExplicitNullDependencyGroupsOnAPreV4Manifest()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "marker");
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    ManifestSchemaVersion = 3,
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("marker", "[1.0.0]"));
+        RewriteArtifact(
+            fixture,
+            "app",
+            node => node["artifact"]!["dependencyGroups"] = null);
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("schemaVersion 3 cannot declare dependencyGroups", error.Message);
+    }
+
+    [Fact]
+    public void Verify_RejectsAnExplicitNullDependencyGroupsOnAPreV4Manifest()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "marker");
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    ManifestSchemaVersion = 3,
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+        RewriteArtifact(
+            fixture,
+            "app",
+            node => node["artifact"]!["dependencyGroups"] = null);
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Code == "manifest-group"
+            && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal));
     }
 
     [Fact]

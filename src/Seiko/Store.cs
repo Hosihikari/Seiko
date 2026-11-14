@@ -262,11 +262,12 @@ public sealed class Store
                 "checksum");
         }
 
+        var bytes = File.ReadAllBytes(manifestPath);
         SeiManifest? parsed;
         try
         {
             parsed = JsonSerializer.Deserialize(
-                File.ReadAllBytes(manifestPath),
+                bytes,
                 SeikoJsonContext.Default.SeiManifest);
         }
         catch (JsonException ex)
@@ -296,18 +297,13 @@ public sealed class Store
 
         // `preserve` and `dependencyGroups` are 4 fields. A lower manifest
         // that carries them is a version declaration error, not a package to
-        // install with the fields guessed at.
-        if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is not null)
+        // install with the fields guessed at. Presence decides, not value: an
+        // explicit `null` still declared the field.
+        var (preserve, groups) = ManifestFields.Gated(bytes);
+        if (manifest.SchemaVersion < 4 && (preserve || groups))
         {
             throw new SeikoException(
-                $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve",
-                "io");
-        }
-
-        if (manifest.SchemaVersion < 4 && manifest.Artifact?.DependencyGroups is not null)
-        {
-            throw new SeikoException(
-                $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare dependencyGroups",
+                $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare {ManifestFields.GatedText(preserve, groups)}",
                 "io");
         }
 

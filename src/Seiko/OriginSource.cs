@@ -64,7 +64,8 @@ internal sealed class OriginSource : ISeiSource
             path = SnapshotByStem(storePath, path) ?? path;
         }
 
-        var manifest = ReadManifestHeader(path);
+        var header = ReadManifestHeader(path);
+        var manifest = header?.Manifest;
         if (manifest is null || string.IsNullOrWhiteSpace(manifest.Name))
         {
             throw new SeikoException($"{Path.GetFileName(path)}: sei.json has no name", "io");
@@ -499,10 +500,16 @@ internal sealed class OriginSource : ISeiSource
 
     private sealed record LockedOrigin(string Path, string Digest, LockedArtifact Artifact);
 
+    // Whether the 4-only fields were written at all. The deserialized object
+    // cannot say: an explicit null reads back like an omitted field, but a 3
+    // manifest that wrote it still declared it (ADR-0045).
+    private sealed record ManifestHeader(SeiManifest? Manifest, bool Preserve, bool DependencyGroups);
+
     private SeiManifest ReadManifest(string path, string name)
     {
-        var manifest = ReadManifestHeader(path)
+        var header = ReadManifestHeader(path)
             ?? throw new SeikoException($"{Path.GetFileName(path)}: sei.json is empty", "io");
+        var manifest = header.Manifest;
 
         // 1 predates the artifact object; there is no migration layer for
         // local files (ADR-0044, ADR-0031).
@@ -514,11 +521,10 @@ internal sealed class OriginSource : ISeiSource
         }
 
         if (manifest.SchemaVersion < 4
-            && (manifest.Artifact?.Preserve is not null
-                || manifest.Artifact?.DependencyGroups is not null))
+            && (header.Preserve || header.DependencyGroups))
         {
             throw new SeikoException(
-                $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve or dependencyGroups",
+                $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare {ManifestFields.GatedText(header.Preserve, header.DependencyGroups)}",
                 "io");
         }
 
@@ -573,7 +579,7 @@ internal sealed class OriginSource : ISeiSource
             SeiManifest? manifest;
             try
             {
-                manifest = ReadManifestHeader(candidate);
+                manifest = ReadManifestHeader(candidate)?.Manifest;
             }
             catch (SeikoException)
             {
@@ -603,7 +609,7 @@ internal sealed class OriginSource : ISeiSource
         var names = matches
             .ToDictionary(
                 candidate => candidate,
-                candidate => ReadManifestHeader(candidate)!.Name,
+                candidate => ReadManifestHeader(candidate)!.Manifest!.Name,
                 StringComparer.Ordinal);
         var distinct = names.Values.Distinct(StringComparer.Ordinal).OrderBy(
             value => value,
@@ -625,7 +631,7 @@ internal sealed class OriginSource : ISeiSource
 
     // Reads the root manifest entry only. The size limit applies to that entry,
     // not to the package (ADR-0024 limits the manifest read on its own).
-    private static SeiManifest? ReadManifestHeader(string path)
+    private static ManifestHeader? ReadManifestHeader(string path)
     {
         System.IO.Compression.ZipArchive archive;
         try
@@ -659,7 +665,17 @@ internal sealed class OriginSource : ISeiSource
             try
             {
                 using var stream = manifests[0].Open();
-                return JsonSerializer.Deserialize(stream, SeikoJsonContext.Default.SeiManifest);
+                using var buffer = new MemoryStream();
+                stream.CopyTo(buffer);
+                var bytes = buffer.ToArray();
+                var manifest = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiManifest);
+                if (manifest is null)
+                {
+                    return null;
+                }
+
+                var (preserve, groups) = ManifestFields.Gated(bytes);
+                return new ManifestHeader(manifest, preserve, groups);
             }
             catch (JsonException ex)
             {

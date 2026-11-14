@@ -1230,10 +1230,14 @@ public static class IndexVerifier
             }
 
             SeiManifest? manifest;
+            byte[] manifestBytes;
             try
             {
                 using var stream = manifests[0].Open();
-                manifest = JsonSerializer.Deserialize(stream, SeikoJsonContext.Default.SeiManifest);
+                using var buffer = new MemoryStream();
+                stream.CopyTo(buffer);
+                manifestBytes = buffer.ToArray();
+                manifest = JsonSerializer.Deserialize(manifestBytes, SeikoJsonContext.Default.SeiManifest);
             }
             catch (JsonException ex)
             {
@@ -1449,8 +1453,19 @@ public static class IndexVerifier
                 }
             }
 
-            if (manifest.Artifact?.DependencyGroups is not null
-                && manifest.SchemaVersion < 4)
+            // A 3 manifest that writes the field is wrong even when the value
+            // is null: the field itself belongs to 4 (.NET reads null back
+            // exactly like an omitted field, so the raw text decides).
+            var (declaredPreserve, declaredGroups) = ManifestFields.Gated(manifestBytes);
+            if (manifest.SchemaVersion < 4 && declaredPreserve)
+            {
+                context.Error(
+                    "manifest-preserve",
+                    $"{prefix}: preserve requires sei.json schemaVersion 4",
+                    reference.Path);
+            }
+
+            if (manifest.SchemaVersion < 4 && declaredGroups)
             {
                 context.Error(
                     "manifest-group",
@@ -1460,14 +1475,6 @@ public static class IndexVerifier
 
             if (manifest.Artifact?.Preserve is { } preserve)
             {
-                if (manifest.SchemaVersion < 4)
-                {
-                    context.Error(
-                        "manifest-preserve",
-                        $"{prefix}: preserve requires sei.json schemaVersion 4",
-                        reference.Path);
-                }
-
                 var deployed = DeployedPaths(manifest, seenNames);
                 foreach (var file in preserve)
                 {
