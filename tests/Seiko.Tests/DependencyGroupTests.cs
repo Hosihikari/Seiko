@@ -1435,6 +1435,48 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Frozen_UsesTheLockedSelectorOfASharedPath()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("host1", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["h1.txt"] = "h1" } }],
+        });
+        fixture.AddSei("host2", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["h2.txt"] = "h2" } }],
+        });
+        var origin = fixture.WriteOrigin("app", "1.0.0", "app.txt", "app");
+        var indexPath = Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/');
+        var originPath = Path.GetRelativePath(fixture.Root, Path.Combine(fixture.Root, origin));
+
+        // One file, two selectors on the same path. The first needs host1,
+        // which is not installed; the second needs host2 and is what the lock
+        // records. Replaying by path alone would take the first and fail.
+        fixture.WriteConfig("win-x64");
+        File.WriteAllText(
+            Path.Combine(fixture.Root, "seiko.conf"),
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+            + $"sources = [ {{ id = \"local\", index = \"{indexPath}\" }} ]\n"
+            + "rid = \"win-x64\"\n"
+            + $"origin = [ {{ name = \"app\", paths = [\"{originPath}\", \"{originPath}\"], "
+            + "selectors = [ "
+            + "{ rid = \"*\", prerequisites = [ { name = \"host1\", version = \"[1.0.0]\" } ] }, "
+            + "{ rid = \"*\", prerequisites = [ { name = \"host2\", version = \"[1.0.0]\" } ] } "
+            + "] } ]\n"
+            + "sei = [ { name = \"app\" }, { name = \"host2\", version = \"[1.0.0]\" } ]\n");
+
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var locked = client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app");
+        Assert.Equal("host2", locked.Artifact.Prerequisites.Single().Name);
+
+        client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+    }
+
+    [Fact]
     public void Frozen_RejectsAReorderedGroupList()
     {
         using var fixture = new Fixture();

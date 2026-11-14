@@ -197,17 +197,34 @@ internal sealed class OriginSource : ISeiSource
         };
         // The locked selector's own prerequisites are part of the recorded
         // artifact-level share, so they are the comparison base on top of the
-        // file's declaration.
-        var selectorIndex = spec.Paths.FindIndex(path =>
-            string.Equals(path, locked.Path, StringComparison.Ordinal));
-        var selector = selectorIndex >= 0 && selectorIndex < spec.Selectors.Count
-            ? spec.Selectors[selectorIndex]
-            : null;
-        var expectedPrerequisites = Merge(artifact.Prerequisites, selector?.Prerequisites ?? []);
-        if (!SameRelations(recovered.Dependencies, artifact.Dependencies)
-            || !SameRelations(recovered.Prerequisites, expectedPrerequisites)
-            || !SameRelations(recovered.OptionalPeers, artifact.OptionalPeers)
-            || !SameRelations(recovered.Conflicts, artifact.Conflicts))
+        // file's declaration. A path may carry more than one selector, and the
+        // lock names only the path, so each candidate is tried; the one that
+        // leaves exactly the declaration is the selector that was locked.
+        var candidates = spec.Paths
+            .Select((candidate, index) => (Path: candidate, Index: index))
+            .Where(item => string.Equals(item.Path, locked.Path, StringComparison.Ordinal))
+            .Select(item => item.Index < spec.Selectors.Count ? spec.Selectors[item.Index] : null)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            candidates.Add(null);
+        }
+
+        OriginSelector? selector = null;
+        foreach (var candidate in candidates)
+        {
+            var expectedPrerequisites = Merge(artifact.Prerequisites, candidate?.Prerequisites ?? []);
+            if (SameRelations(recovered.Dependencies, artifact.Dependencies)
+                && SameRelations(recovered.Prerequisites, expectedPrerequisites)
+                && SameRelations(recovered.OptionalPeers, artifact.OptionalPeers)
+                && SameRelations(recovered.Conflicts, artifact.Conflicts))
+            {
+                selector = candidate;
+                break;
+            }
+        }
+
+        if (selector is null && candidates.TrueForAll(candidate => candidate is not null))
         {
             throw new SeikoException(
                 $"{spec.Name}: the locked dependency group does not match the file's groups "
