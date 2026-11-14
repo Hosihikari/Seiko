@@ -381,6 +381,32 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void Rollback_ReachesAManagedGenerationWhileThePreservedFileStillExists()
+    {
+        using var fixture = PreservingFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+
+        // Generation 2 resets the path to managed; the file is never removed.
+        client.Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true);
+        Assert.Contains(ConfigPath, ReadState(fixture).Files.Keys);
+
+        // Back to generation 1: the path is preserve there, so it stays the
+        // user's while generation 3 exists only as the rollback target.
+        client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1);
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+        Assert.True(File.Exists(Config(fixture)));
+
+        // Forward again to generation 2. The file is still on disk and matches
+        // the target generation, so nothing may report an unmanaged conflict.
+        client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2);
+
+        Assert.Equal("default", File.ReadAllText(Config(fixture)));
+        Assert.Contains(ConfigPath, ReadState(fixture).Files.Keys);
+    }
+
+    [Fact]
     public void DryRun_ListsPreservePathsWithoutAddingChangeEntries()
     {
         using var fixture = PreservingFixture();

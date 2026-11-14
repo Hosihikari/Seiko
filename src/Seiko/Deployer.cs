@@ -263,8 +263,13 @@ public static class Deployer
 
             // --reset-preserved turns the declared paths back into ordinary
             // desired files, so an existing copy is replaced without asking
-            // for --force as well. Every other collision keeps the usual rule.
-            var reset = resetPreserved && preservedPaths.Contains(relative);
+            // for --force as well. A rollback does the same for a path the
+            // target generation recorded as reset: that generation reproduces
+            // its own management even if the current generation had let go of
+            // the path and the file stayed on disk. Every other collision
+            // keeps the usual rule.
+            var reset = (resetPreserved && preservedPaths.Contains(relative))
+                || (adoptedSnapshots is not null && marks.Contains(relative));
             var unchanged = false;
             if (exists)
             {
