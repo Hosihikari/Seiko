@@ -1743,8 +1743,11 @@ public sealed class DependencyGroupTests
             Artifacts = [new ArtifactFixture { Files = { ["h2.txt"] = "h2" } }],
         });
         var origin = fixture.WriteOrigin("app", "1.0.0", "app.txt", "app");
-        var indexPath = Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/');
-        var originPath = Path.GetRelativePath(fixture.Root, Path.Combine(fixture.Root, origin));
+        var indexDirectory = Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/');
+        // HOCON reads backslashes as escapes, so a Windows path needs the
+        // forward-slash spelling here too.
+        var originPath = Path.GetRelativePath(fixture.Root, Path.Combine(fixture.Root, origin))
+            .Replace('\\', '/');
 
         // One file, two selectors on the same path. The first needs host1,
         // which is not installed; the second needs host2 and is what the lock
@@ -1753,7 +1756,7 @@ public sealed class DependencyGroupTests
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
-            + $"sources = [ {{ id = \"local\", index = \"{indexPath}\" }} ]\n"
+            + $"sources = [ {{ id = \"local\", index = \"{indexDirectory}\" }} ]\n"
             + "rid = \"win-x64\"\n"
             + $"origin = [ {{ name = \"app\", paths = [\"{originPath}\", \"{originPath}\"], "
             + "selectors = [ "
