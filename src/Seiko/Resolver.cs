@@ -266,9 +266,26 @@ public sealed class Resolver
             return null;
         }
 
+        // When the lock already picked one of these groups, prefer it over
+        // the others: it is the answer the user chose last time.
+        var ordered = _openTies
+            .OrderBy(item => GetLockedArtifact(item.Name) is { } locked
+                && string.Equals(
+                    locked.Sha256,
+                    item.Pick.Artifact.Source?.Sha256,
+                    StringComparison.OrdinalIgnoreCase)
+                && locked.Group == item.Pick.Group
+                    ? 0
+                    : 1)
+            .ToList();
+        // One candidate per name: forcing every tied one would let the last
+        // win arbitrarily, and the search can fall back on its own when the
+        // forced one is not viable.
         var changed = false;
-        foreach (var (name, pick) in _openTies.ToList())
+        foreach (var name in ordered.Select(item => item.Name).Distinct(StringComparer.Ordinal))
         {
+            var pick = ordered.First(item =>
+                string.Equals(item.Name, name, StringComparison.Ordinal)).Pick;
             if (_forced.TryGetValue(name, out var current)
                 && current.Group == pick.Group
                 && string.Equals(
@@ -276,6 +293,8 @@ public sealed class Resolver
                     pick.Artifact.Source?.Sha256,
                     StringComparison.OrdinalIgnoreCase))
             {
+                _openTies.RemoveAll(item =>
+                    string.Equals(item.Name, name, StringComparison.Ordinal));
                 continue;
             }
 
@@ -355,13 +374,21 @@ public sealed class Resolver
             var best = solvable
                 .Where(unit => DependencyGroups.Score(unit.Artifact, unit.Group) == top)
                 .ToList();
-            if (best.Count != 1
+
+            // The lock breaks a tie between equally specific candidates: it is
+            // the answer the user settled on last time.
+            var chosen = best.Count > 1 && LockedPick(resolved.Name, best) is { } preferredLock
+                ? preferredLock
+                : best.Count == 1
+                    ? best[0]
+                    : null;
+            if (chosen is null
                 || DependencyGroups.Score(resolved.Artifact, resolved.GroupIndex) >= top)
             {
                 continue;
             }
 
-            _forced[resolved.Name] = new ForcedPick(resolved.Version, best[0].Artifact, best[0].Group);
+            _forced[resolved.Name] = new ForcedPick(resolved.Version, chosen.Artifact, chosen.Group);
             added.Add(resolved.Name);
         }
 
@@ -1265,6 +1292,38 @@ public sealed class Resolver
         return NuGetVersion.TryParse(locked.Version, out var version) ? version : null;
     }
 
+    // The current selection is exactly the locked one; an update of some
+    // other name may have made both groups solvable, and then the lock no
+    // longer decides between them.
+    private bool IsKeptFromLock(ResolvedSei resolved)
+    {
+        var locked = _lock?.Sei.FirstOrDefault(
+            sei => string.Equals(sei.Name, resolved.Name, StringComparison.Ordinal));
+        return locked is not null
+            && string.Equals(locked.Version, resolved.Version, StringComparison.Ordinal)
+            && string.Equals(
+                locked.Artifact.Sha256,
+                resolved.Artifact.Source?.Sha256,
+                StringComparison.OrdinalIgnoreCase)
+            && locked.Artifact.Group == resolved.GroupIndex;
+    }
+
+    // The candidate among `units` that the lock picked, if it is there.
+    private ArtifactCandidate? LockedPick(string name, IEnumerable<ArtifactCandidate> units)
+    {
+        if (GetLockedArtifact(name) is not { } locked)
+        {
+            return null;
+        }
+
+        return units.FirstOrDefault(unit =>
+            string.Equals(
+                unit.Artifact.Source?.Sha256,
+                locked.Sha256,
+                StringComparison.OrdinalIgnoreCase)
+            && unit.Group == locked.Group);
+    }
+
     private (string Sha256, int? Group)? GetLockedArtifact(string name)
     {
         if (_updateNames?.Contains(name) == true)
@@ -1441,21 +1500,33 @@ public sealed class Resolver
 
             // A lock already decided between equally specific groups: the
             // recorded group keeps winning instead of re-reporting ambiguity
-            // on every run. Artifact-only ties keep the old rule. Only a
-            // recorded group that is itself on the top layer can decide the
-            // tie; a less specific one sitting below it means the top layer
-            // was never compared and stays ambiguous (ADR-0045).
+            // on every run. Only a recorded group that is itself on the top
+            // layer can decide the tie; a less specific one sitting below it
+            // means the top layer was never compared and stays ambiguous
+            // (ADR-0045).
             var locked = GetLockedArtifact(resolved.Name);
-            if (resolved.GroupIndex is { } selectedGroup
-                && DependencyGroups.Score(resolved.Artifact, selectedGroup) == top
-                && locked is { } preference
-                && string.Equals(
-                    resolved.Artifact.Source?.Sha256,
-                    preference.Sha256,
-                    StringComparison.OrdinalIgnoreCase)
-                && selectedGroup == preference.Group)
+            if (locked is { } preference
+                && sheIsOnTop(preference)
+                && (IsKeptFromLock(resolved)
+                    || LockedPick(resolved.Name, solvable) is not null))
             {
                 continue;
+            }
+
+            bool sheIsOnTop((string Sha256, int? Group) pick)
+                => NodeScore(pick) == top;
+
+            int NodeScore((string Sha256, int? Group) pick)
+            {
+                var unit = solvable.FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.Artifact.Source?.Sha256,
+                        pick.Sha256,
+                        StringComparison.OrdinalIgnoreCase)
+                    && candidate.Group == pick.Group);
+                return unit is null
+                    ? -1
+                    : DependencyGroups.Score(unit.Artifact, unit.Group);
             }
 
             // With a guessed node in the graph, "solvable" was judged against

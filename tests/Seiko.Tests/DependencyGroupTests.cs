@@ -702,6 +702,86 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Update_KeepsTheLockedTopGroupInsteadOfReportingAmbiguity()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "host");
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["b1.txt"] = "b1" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["b2.txt"] = "b2" } }],
+            });
+
+        // Two equally specific groups, each pinned to one b version, plus an
+        // unconditional fallback.
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("b", "[2.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("b", "[3.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("host", "[1.0.0]"),
+            new SpecFixture("b", "*"));
+        var client = new SeikoClient();
+
+        // Only b 1 and 2 exist, so group 2 has nothing to match and group 1
+        // becomes the lock.
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal(
+            1,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+
+        // Publish 3 and 4. Updating b lets it climb to 4, which neither high
+        // group accepts; the initial answer falls to the fallback while both
+        // high groups stay solvable in their own graphs (b's range is open).
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "3.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["b3.txt"] = "b3" } }],
+            },
+            new VersionFixture
+            {
+                Version = "4.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["b4.txt"] = "b4" } }],
+            });
+
+        client.Update(fixture.Root, "b", storeRoot: fixture.StoreDirectory);
+
+        // The locked group sits on the top layer, so the tie is settled by it
+        // instead of raising an ambiguity on every later run.
+        Assert.Equal(
+            1,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+    }
+
+    [Fact]
     public void Sync_RejectsATieOnFirstInstall()
     {
         using var fixture = new Fixture();
