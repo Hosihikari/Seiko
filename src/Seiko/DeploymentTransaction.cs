@@ -19,6 +19,11 @@ internal sealed class DeploymentTransaction
     private readonly DeploymentJournal _journal = new();
     private readonly Dictionary<string, DeploymentJournalEntry> _entries = new(StringComparer.Ordinal);
 
+    // Set once the journal reached the disk. Later additions (a temporary for
+    // a path that only appeared mid-deployment) persist themselves instead of
+    // waiting for a write that may never come.
+    private bool _journalWritten;
+
     private DeploymentTransaction(string root, string stateDirectory)
     {
         _root = Path.GetFullPath(root);
@@ -123,10 +128,20 @@ internal sealed class DeploymentTransaction
     {
         var normalized = Normalize(relative);
         _journal.TemporaryPaths ??= [];
-        if (!_journal.TemporaryPaths.Contains(normalized, StringComparer.Ordinal))
+        if (_journal.TemporaryPaths.Contains(normalized, StringComparer.Ordinal))
         {
-            _journal.TemporaryPaths.Add(normalized);
-            WriteCreatedMarker(_ownershipDirectory, "temporary", normalized, null);
+            return;
+        }
+
+        _journal.TemporaryPaths.Add(normalized);
+        WriteCreatedMarker(_ownershipDirectory, "temporary", normalized, null);
+
+        // A name added after the journal was written (a path that only
+        // appeared mid-deployment) has to reach the disk now; otherwise a
+        // crash leaves a file the journal never named.
+        if (_journalWritten)
+        {
+            WriteJournalFile(_journalPath, _journal);
         }
     }
 
@@ -211,6 +226,7 @@ internal sealed class DeploymentTransaction
     public void WriteJournal()
     {
         WriteJournalFile(_journalPath, _journal);
+        _journalWritten = true;
     }
 
     public void Commit()

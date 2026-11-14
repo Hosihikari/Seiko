@@ -448,6 +448,30 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void AJournaledTemporaryAddedAfterTheWriteReachesTheDisk()
+    {
+        using var fixture = new Fixture();
+        var stateDirectory = Path.Combine(fixture.Root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        File.WriteAllText(Path.Combine(fixture.Root, "tool"), "old");
+
+        var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WriteJournal();
+
+        // A path can only appear after the plan, and its detach copy is named
+        // then; the journal already on disk must learn that name.
+        var name = ".seiko-detach-" + new string('b', 32);
+        transaction.WillCreateTemporary(name);
+
+        var journal = JsonSerializer.Deserialize(
+            File.ReadAllBytes(Path.Combine(stateDirectory, "transaction.json")),
+            SeikoJsonContext.Default.DeploymentJournal)!;
+
+        Assert.Contains(name, journal.TemporaryPaths!);
+    }
+
+    [Fact]
     public void Recovery_AcceptsADetachTemporaryAndRemovesIt()
     {
         using var fixture = new Fixture();
