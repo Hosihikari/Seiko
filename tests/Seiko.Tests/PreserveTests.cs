@@ -397,6 +397,75 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void TheJournalNamesTheDetachCopyThatIsActuallyWritten()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [ConfigPath] = "shared" } }],
+            },
+            new VersionFixture
+            {
+                Version = "1.1.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "shared" },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var target = Config(fixture);
+        var directory = Path.GetDirectoryName(target)!;
+        var storeCopy = Directory
+            .EnumerateFiles(fixture.StoreDirectory, "server.properties", SearchOption.AllDirectories)
+            .First();
+        File.Delete(target);
+        Assert.True(FileLink.TryHardLink(storeCopy, target));
+
+        // The moment after the private copy exists and before it replaces the
+        // path: a kill here leaves the copy behind, and recovery can only
+        // remove it if the journal names this exact file.
+        string? written = null;
+        string? journaled = null;
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.1.0]"));
+        try
+        {
+            Deployer.BeforeFirstDetachMoveForTests.Value = () =>
+            {
+                written = Directory.EnumerateFiles(directory, ".seiko-detach-*").Single();
+                journaled = JsonSerializer.Deserialize(
+                    File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "transaction.json")),
+                    SeikoJsonContext.Default.DeploymentJournal)!
+                    .TemporaryPaths!
+                    .Single(path => path.Contains(".seiko-detach-", StringComparison.Ordinal));
+            };
+            client.Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        finally
+        {
+            Deployer.BeforeFirstDetachMoveForTests.Value = null;
+        }
+
+        Assert.NotNull(written);
+        Assert.Equal(
+            Path.GetRelativePath(fixture.Root, written!).Replace('\\', '/'),
+            journaled);
+    }
+
+    [Fact]
     public void Sync_ResetPreservedReplacesAnUpgradedPreservePath()
     {
         using var fixture = new Fixture();

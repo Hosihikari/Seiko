@@ -24,6 +24,10 @@ public static class Deployer
     // by a second process.
     internal static AsyncLocal<Action?> BeforeFirstPublishForTests { get; } = new();
 
+    // Runs once, after the first held copy was written and before it replaces
+    // the path: the moment a kill would leave the temporary behind.
+    internal static AsyncLocal<Action?> BeforeFirstDetachMoveForTests { get; } = new();
+
     public static void Recover(string root, string stateDirectory)
         => DeploymentTransaction.Recover(root, stateDirectory);
 
@@ -204,6 +208,9 @@ public static class Deployer
                     || (authoritative.TryGetValue(relative, out var record) && record.Preserved));
         var preservedHere = new HashSet<string>(StringComparer.Ordinal);
         var retained = new List<string>();
+        // The temporary name each held copy is written to. Chosen with the
+        // journal entry so recovery and the copy agree on one file.
+        var detachTemporaries = new Dictionary<string, string>(StringComparer.Ordinal);
         var replaceable = ValidateDesiredTree(root, desired, managed, force);
         var adoptedHashes = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -497,9 +504,13 @@ public static class Deployer
             foreach (var relative in retained)
             {
                 // A held copy is registered before it replaces the path, so a
-                // crash between the two leaves a restorable picture.
+                // crash between the two leaves a restorable picture. The name
+                // is chosen once and kept: registering one name and copying to
+                // another would leave the real file behind on recovery.
+                var temporary = DetachTemporaryName(relative);
+                detachTemporaries[relative] = temporary;
                 transaction.WillChange(relative);
-                transaction.WillCreateTemporary(DetachTemporaryName(relative));
+                transaction.WillCreateTemporary(temporary);
             }
 
             transaction.WriteJournal();
@@ -626,7 +637,16 @@ public static class Deployer
 
             foreach (var relative in retained)
             {
-                DetachFromShare(root, relative);
+                // A path held only since the journal was written (it appeared
+                // mid-deployment) has no entry yet; it is registered then.
+                if (!detachTemporaries.TryGetValue(relative, out var temporary))
+                {
+                    temporary = DetachTemporaryName(relative);
+                    detachTemporaries[relative] = temporary;
+                    transaction.WillCreateTemporary(temporary);
+                }
+
+                DetachFromShare(root, relative, temporary);
             }
 
             foreach (var relative in modes.Keys.OrderBy(key => key, StringComparer.Ordinal))
@@ -774,7 +794,7 @@ public static class Deployer
     // Replace the file with a private copy when it still shares its bytes
     // with the store. One link means a plain copy already; more than one
     // means the store (or another root) still shares the inode.
-    private static void DetachFromShare(string root, string relative)
+    private static void DetachFromShare(string root, string relative, string temporaryName)
     {
         var destination = Native(root, relative);
         if (LinkCount(destination) <= 1)
@@ -782,10 +802,16 @@ public static class Deployer
             return;
         }
 
-        var temporary = Native(root, DetachTemporaryName(relative));
+        var temporary = Native(root, temporaryName);
         try
         {
             ReadableFile.Copy(destination, temporary, overwrite: false);
+            if (BeforeFirstDetachMoveForTests.Value is { } beforeMove)
+            {
+                BeforeFirstDetachMoveForTests.Value = null;
+                beforeMove();
+            }
+
             File.Move(temporary, destination, overwrite: true);
         }
         finally
