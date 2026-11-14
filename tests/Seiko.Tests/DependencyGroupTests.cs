@@ -1729,6 +1729,71 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Frozen_RejectsASwappedGroupWhenTheLockedPathNoLongerMatchesASelector()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "a");
+        AddPackage(fixture, "b");
+        var origin = fixture.WriteOrigin(
+            "app",
+            "1.0.0",
+            "app.txt",
+            "app",
+            // The selector gates on a; group 0 adds b and is therefore the
+            // strictly more specific one, so no tie is reported.
+            groups:
+            [
+                new GroupFixture(Prerequisites: [new DepFixture("b", "*")]),
+                new GroupFixture(),
+            ]);
+        var originPath = Path.GetRelativePath(fixture.Root, Path.Combine(fixture.Root, origin))
+            .Replace('\\', '/');
+        var movedPath = "dist/moved.sei";
+        var indexPath = Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/');
+
+        // The lock records originPath with its gated selector. The edited
+        // config names only movedPath, gated on nothing, so replay has no
+        // selector that can match the locked path and falls back to the bare
+        // declaration.
+        void WriteConfig(string path, string selector)
+            => File.WriteAllText(
+                Path.Combine(fixture.Root, "seiko.conf"),
+                $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
+                + $"sources = [ {{ id = \"local\", index = \"{indexPath}\" }} ]\n"
+                + "rid = \"win-x64\"\n"
+                + $"origin = [ {{ name = \"app\", paths = [\"{path}\"], "
+                + $"selectors = [ {selector} ] }} ]\n"
+                + "sei = [ { name = \"a\", version = \"[1.0.0]\" }, { name = \"b\", version = \"[1.0.0]\" }, { name = \"app\" } ]\n");
+
+        const string Gated = "{ rid = \"*\", prerequisites = [ { name = \"a\", version = \"[1.0.0]\" } ] }";
+        fixture.WriteConfig("win-x64");
+        WriteConfig(originPath, Gated);
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        Assert.Equal(
+            0,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+
+        // Hand-swap the group: the lock keeps A's merge, so a share rebuilt
+        // without the selector fails to match the file's groups.
+        File.WriteAllText(
+            lockPath,
+            File.ReadAllText(lockPath).Replace("\"group\": 0", "\"group\": 1", StringComparison.Ordinal));
+
+        File.Copy(
+            Path.Combine(fixture.Root, origin),
+            Path.Combine(fixture.Root, movedPath),
+            overwrite: true);
+        WriteConfig(movedPath, "{ rid = \"*\" }");
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+
+        Assert.Contains("changed", error.Message);
+    }
+
+    [Fact]
     public void Frozen_UsesTheLockedSelectorOfASharedPath()
     {
         using var fixture = new Fixture();

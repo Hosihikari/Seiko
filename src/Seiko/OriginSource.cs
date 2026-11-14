@@ -211,7 +211,13 @@ internal sealed class OriginSource : ISeiSource
             candidates.Add(null);
         }
 
+        // A null candidate means "the path no longer matches any selector", so
+        // the comparison base is the bare declaration. Whether that candidate
+        // *matched* has to be tracked separately: `selector` staying null is
+        // ambiguous between "the null base matched" and "nothing matched", and
+        // the guard below must fire for the second case.
         OriginSelector? selector = null;
+        var matched = false;
         foreach (var candidate in candidates)
         {
             var expectedPrerequisites = Merge(artifact.Prerequisites, candidate?.Prerequisites ?? []);
@@ -221,11 +227,12 @@ internal sealed class OriginSource : ISeiSource
                 && SameRelations(recovered.Conflicts, artifact.Conflicts))
             {
                 selector = candidate;
+                matched = true;
                 break;
             }
         }
 
-        if (selector is null && candidates.TrueForAll(candidate => candidate is not null))
+        if (!matched)
         {
             throw new SeikoException(
                 $"{spec.Name}: the locked dependency group does not match the file's groups "
