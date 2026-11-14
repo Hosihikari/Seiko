@@ -921,6 +921,47 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Frozen_AcceptsRepeatedNamesWithDifferentRanges()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "host");
+        var origin = fixture.WriteOrigin(
+            "app",
+            "1.0.0",
+            "app.txt",
+            "app",
+            groups:
+            [
+                // The group repeats one of the artifact-level ranges of the
+                // same name.
+                new GroupFixture(
+                    Dependencies: [new DepFixture("host", "[1.0.0,4.0.0)")],
+                    Prerequisites: [new DepFixture("host", "*")]),
+            ],
+            // Declared high range first; the lock sorts low range first, so
+            // replaying rebuilds the artifact-level share in the other order.
+            dependencies: [("host", "[1.0.0,4.0.0)"), ("host", "[0.0.0,4.0.0)")],
+            dependencyLevel: "artifact");
+        fixture.WriteConfig("win-x64", new SpecFixture("host", "[1.0.0]"));
+        var client = new SeikoClient();
+
+        client.Add(
+            fixture.Root,
+            Path.GetRelativePath(
+                Directory.GetCurrentDirectory(),
+                Path.Combine(fixture.Root, origin)),
+            storeRoot: fixture.StoreDirectory);
+
+        // Lock entries are written sorted by range, so the group's range can
+        // land before the artifact-level one even though it was declared
+        // second. The replay rebuilds the artifact-level share by removing
+        // the group's share from that sorted list, so the result is ordered
+        // differently from the manifest; comparing by position alone would
+        // call that a change.
+        client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen);
+    }
+
+    [Fact]
     public void Frozen_RejectsAReorderedGroupList()
     {
         using var fixture = new Fixture();

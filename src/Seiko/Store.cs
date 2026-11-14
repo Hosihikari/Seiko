@@ -650,8 +650,14 @@ public sealed class Store
         IReadOnlyList<SeiDependency>? left,
         IReadOnlyList<SeiDependency>? right)
     {
-        var a = (left ?? []).OrderBy(item => item.Name, StringComparer.Ordinal).ToList();
-        var b = (right ?? []).OrderBy(item => item.Name, StringComparer.Ordinal).ToList();
+        var a = (left ?? [])
+            .OrderBy(item => item.Name, StringComparer.Ordinal)
+            .ThenBy(item => item.Version ?? "", StringComparer.Ordinal)
+            .ToList();
+        var b = (right ?? [])
+            .OrderBy(item => item.Name, StringComparer.Ordinal)
+            .ThenBy(item => item.Version ?? "", StringComparer.Ordinal)
+            .ToList();
         return a.Count == b.Count
             && a.Zip(b).All(pair =>
                 string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
