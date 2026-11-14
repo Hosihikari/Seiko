@@ -2788,9 +2788,16 @@ public sealed class SeikoClient
             // is not deleted by the rollback: its content stays and only the
             // ownership record goes. Listing it under "removed" says the file
             // disappears, which is exactly what does not happen.
-            if (PreservedInTargetLock(store, snapshotLock, path))
+            switch (PreservedInTargetLock(store, snapshotLock, path))
             {
-                continue;
+                case PreserveQuestion.Yes:
+                    continue;
+                case PreserveQuestion.Unknown:
+                    // The manifest could not be read. The online rollback
+                    // fetches it and may keep the path, so "removed" would be
+                    // a guess; the path is named as a needed download instead.
+                    missing.Add(path);
+                    continue;
             }
 
             removed.Add(path);
@@ -2809,11 +2816,16 @@ public sealed class SeikoClient
     }
 
     // Whether any sei in the target lock declares `path` as a preserve target.
-    // The lock carries no preserve list, so the stored manifest is read; a
-    // missing store entry cannot be read and is treated as not preserved, the
-    // same way the real run re-fetches it before deploying.
-    private static bool PreservedInTargetLock(Store store, SeikoLock snapshotLock, string path)
+    // The lock carries no preserve list, so the stored manifest is read. When
+    // an artifact is missing from the store its manifest cannot be read at
+    // all, and the online rollback fetches it and may well keep the path — so
+    // the answer is "unknown", not "no".
+    private static PreserveQuestion PreservedInTargetLock(
+        Store store,
+        SeikoLock snapshotLock,
+        string path)
     {
+        var unknown = false;
         foreach (var locked in snapshotLock.Sei)
         {
             StoredSei? stored;
@@ -2823,17 +2835,29 @@ public sealed class SeikoClient
             }
             catch (SeikoException)
             {
-                return false;
+                stored = null;
             }
 
-            if (stored is not null
-                && (stored.Manifest.Artifact?.Preserve?.Contains(path, StringComparer.Ordinal) ?? false))
+            if (stored is null)
             {
-                return true;
+                unknown = true;
+                continue;
+            }
+
+            if (stored.Manifest.Artifact?.Preserve?.Contains(path, StringComparer.Ordinal) ?? false)
+            {
+                return PreserveQuestion.Yes;
             }
         }
 
-        return false;
+        return unknown ? PreserveQuestion.Unknown : PreserveQuestion.No;
+    }
+
+    private enum PreserveQuestion
+    {
+        No,
+        Yes,
+        Unknown,
     }
 
     private static bool StoreHas(Store store, string sha256)

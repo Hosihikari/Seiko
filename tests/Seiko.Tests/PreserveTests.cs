@@ -472,6 +472,31 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void PreviewRollback_DoesNotCallAPreservedTargetRemovedWhenItsArtifactIsNotCached()
+    {
+        using var fixture = PreservingFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        client.Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true);
+        Assert.Contains(ConfigPath, ReadState(fixture).Files.Keys);
+
+        // Drop every cached artifact: the target manifest cannot be read, so
+        // nothing here knows whether the path is a preserve target. The online
+        // rollback would refetch it and keep the file, so "removed" is wrong.
+        foreach (var directory in Directory.EnumerateDirectories(fixture.StoreDirectory))
+        {
+            if (!string.Equals(Path.GetFileName(directory), ".locks", StringComparison.Ordinal))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
+        var preview = client.PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+        Assert.DoesNotContain(ConfigPath, preview.Removed);
+    }
+
+    [Fact]
     public void Rollback_RestoresAPreservePathTheTargetGenerationManaged()
     {
         using var fixture = new Fixture();
