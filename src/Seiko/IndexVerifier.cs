@@ -1461,7 +1461,7 @@ public static class IndexVerifier
                 }
             }
 
-            if (manifest.Artifact?.DependencyGroups is { Count: > 0 }
+            if (manifest.Artifact?.DependencyGroups is not null
                 && manifest.SchemaVersion < 4)
             {
                 context.Error(
@@ -1470,7 +1470,7 @@ public static class IndexVerifier
                     reference.Path);
             }
 
-            if (manifest.Artifact?.Preserve is { Count: > 0 } preserve)
+            if (manifest.Artifact?.Preserve is { } preserve)
             {
                 if (manifest.SchemaVersion < 4)
                 {

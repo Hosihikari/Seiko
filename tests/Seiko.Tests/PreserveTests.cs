@@ -15,6 +15,43 @@ public sealed class PreserveTests
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
             SeikoJsonContext.Default.LocalState)!;
 
+    // Rewrites the stored manifest and re-points the index at the new bytes,
+    // so the artifact stays self-consistent and only the intended field
+    // differs.
+    private static void RewriteManifest(Fixture fixture, Action<System.Text.Json.Nodes.JsonObject> mutate)
+    {
+        var zip = Directory.EnumerateFiles(
+            Path.Combine(fixture.SourceDirectory, "artifacts"),
+            "app-1.0.0-*.zip").Single();
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Update))
+        {
+            var entry = archive.GetEntry("sei.json")!;
+            string text;
+            using (var stream = entry.Open())
+            using (var reader = new StreamReader(stream))
+            {
+                text = reader.ReadToEnd();
+            }
+
+            entry.Delete();
+            var replacement = archive.CreateEntry("sei.json");
+            using var output = replacement.Open();
+            using var writer = new StreamWriter(output);
+            var node = System.Text.Json.Nodes.JsonNode.Parse(text)!.AsObject();
+            mutate(node);
+            writer.Write(node.ToJsonString());
+        }
+
+        var indexPath = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
+        var sei = JsonSerializer.Deserialize(
+            File.ReadAllBytes(indexPath),
+            SeikoJsonContext.Default.SeiIndex)!;
+        sei.Versions[0].Artifacts[0].Source.Sha256 = Hashing.Sha256File(zip);
+        sei.Versions[0].Artifacts[0].Source.Size = new FileInfo(zip).Length;
+        File.WriteAllBytes(indexPath, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        fixture.RefreshCatalog();
+    }
+
     private static Fixture PreservingFixture(string content = "default")
     {
         var fixture = new Fixture();
@@ -493,6 +530,59 @@ public sealed class PreserveTests
         Assert.Contains(result.Findings, finding =>
             finding.Code == "manifest-preserve"
             && finding.Message.Contains("nope.txt", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Sync_RejectsAnEmptyPreserveOnAPreV4Manifest()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    ManifestSchemaVersion = 3,
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+
+        // Empty but present: the field itself still needs 4.
+        RewriteManifest(fixture, node => node["artifact"]!["preserve"] = new System.Text.Json.Nodes.JsonArray());
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("schemaVersion 3 cannot declare preserve", error.Message);
+    }
+
+    [Fact]
+    public void Sync_RejectsAManifestWithoutSchemaVersion()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    Preserve = [ConfigPath],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+
+        RewriteManifest(fixture, node => node.Remove("schemaVersion"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("schemaVersion", error.Message);
     }
 
     [Fact]

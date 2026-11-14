@@ -8,7 +8,9 @@ public sealed class SeiManifest
     // installing a metadata-only zip as an empty package.
     public const int CurrentSchemaVersion = 4;
 
-    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+    // 0 means the manifest never said; a version that declares new fields
+    // must have said so, so an omitted field is not read as the newest one.
+    public int SchemaVersion { get; set; } = 0;
     public string Name { get; set; } = "";
     public string Version { get; set; } = "";
     public List<SeiDependency> Dependencies { get; set; } = [];

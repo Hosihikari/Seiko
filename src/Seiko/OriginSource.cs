@@ -446,8 +446,8 @@ internal sealed class OriginSource : ISeiSource
         }
 
         if (manifest.SchemaVersion < 4
-            && (manifest.Artifact?.Preserve is { Count: > 0 }
-                || manifest.Artifact?.DependencyGroups is { Count: > 0 }))
+            && (manifest.Artifact?.Preserve is not null
+                || manifest.Artifact?.DependencyGroups is not null))
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve or dependencyGroups",

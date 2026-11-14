@@ -297,14 +297,14 @@ public sealed class Store
         // `preserve` and `dependencyGroups` are 4 fields. A lower manifest
         // that carries them is a version declaration error, not a package to
         // install with the fields guessed at.
-        if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is { Count: > 0 })
+        if (manifest.SchemaVersion < 4 && manifest.Artifact?.Preserve is not null)
         {
             throw new SeikoException(
                 $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare preserve",
                 "io");
         }
 
-        if (manifest.SchemaVersion < 4 && manifest.Artifact?.DependencyGroups is { Count: > 0 })
+        if (manifest.SchemaVersion < 4 && manifest.Artifact?.DependencyGroups is not null)
         {
             throw new SeikoException(
                 $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare dependencyGroups",
