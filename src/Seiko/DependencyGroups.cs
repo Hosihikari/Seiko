@@ -78,11 +78,52 @@ internal static class DependencyGroups
     // Applicability conditions are the two gates: a positive one
     // (prerequisites) and a negative one (conflicts). Dependencies and
     // optional peers are part of what the group installs or constrains, not
-    // part of when it applies.
+    // part of when it applies. Repeated entries are collapsed: [a] and [a, a]
+    // gate exactly alike.
     public static string ConditionKey(DependencyGroup group)
-        => ArtifactConditions.Key(null, group.Prerequisites)
+        => ArtifactConditions.Key(null, Distinct(group.Prerequisites))
             + "\n--\n"
-            + ArtifactConditions.Key(null, group.Conflicts);
+            + ArtifactConditions.Key(null, Distinct(group.Conflicts));
+
+    private static List<SeiDependency> Distinct(IEnumerable<SeiDependency>? relations)
+        => (relations ?? [])
+            .Where(relation => relation is not null)
+            .DistinctBy(
+                relation => $"{relation.Name}|{relation.Version ?? ""}",
+                StringComparer.Ordinal)
+            .ToList();
+
+    // The rule the index verifier and the origin reader share: two groups
+    // gated identically but installing different relations cannot be told
+    // apart (ADR-0045).
+    public static int? FindAmbiguousPair(IReadOnlyList<DependencyGroup?> groups)
+    {
+        for (var right = 1; right < groups.Count; right++)
+        {
+            if (groups[right] is not { } current)
+            {
+                continue;
+            }
+
+            for (var left = 0; left < right; left++)
+            {
+                if (groups[left] is { } existing
+                    && string.Equals(
+                        ConditionKey(existing),
+                        ConditionKey(current),
+                        StringComparison.Ordinal)
+                    && !string.Equals(
+                        ResultKey(existing),
+                        ResultKey(current),
+                        StringComparison.Ordinal))
+                {
+                    return right;
+                }
+            }
+        }
+
+        return null;
+    }
 
     // The install side of a group. Two groups that apply under the same
     // conditions but differ here would let environment and source drift pick

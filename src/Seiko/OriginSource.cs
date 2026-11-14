@@ -459,6 +459,17 @@ internal sealed class OriginSource : ISeiSource
             throw new SeikoException($"{Path.GetFileName(path)}: sei.json has no artifact object", "io");
         }
 
+        // A local file follows the same packaging rule as an index entry:
+        // identically gated groups with different relations can only be told
+        // apart by luck (ADR-0045).
+        if (manifest.Artifact.DependencyGroups is { } groups
+            && DependencyGroups.FindAmbiguousPair(groups) is { } ambiguous)
+        {
+            throw new SeikoException(
+                $"{Path.GetFileName(path)}: dependency groups {ambiguous} and an earlier one have the same conditions but different relations",
+                "usage");
+        }
+
         if (!string.Equals(manifest.Name, name, StringComparison.Ordinal))
         {
             throw new SeikoException(

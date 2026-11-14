@@ -730,7 +730,6 @@ public static class IndexVerifier
 
         if (artifact.DependencyGroups is { } groups)
         {
-            var seen = new List<DependencyGroup>();
             for (var index = 0; index < groups.Count; index++)
             {
                 var group = groups[index];
@@ -749,32 +748,21 @@ public static class IndexVerifier
                 ValidateRelations(context, path, name, entry.Version, $"{kind} prerequisite", group.Prerequisites);
                 ValidateRelations(context, path, name, entry.Version, $"{kind} optional peer", group.OptionalPeers);
                 ValidateRelations(context, path, name, entry.Version, $"{kind} conflict", group.Conflicts);
+            }
 
-                // Two groups that apply under identical conditions but
-                // install different relations cannot be told apart by the
-                // resolver; which one wins would depend on source drift and
-                // environment. Reject that at packaging time (ADR-0045).
-                // Unconditional groups are allowed: a single one is a
-                // fallback, and two unconditional groups with identical
-                // relations are exact duplicates, not a silent choice.
-                if (seen.Any(existing =>
-                    string.Equals(
-                        DependencyGroups.ConditionKey(existing),
-                        DependencyGroups.ConditionKey(group),
-                        StringComparison.Ordinal)
-                    && !string.Equals(
-                        DependencyGroups.ResultKey(existing),
-                        DependencyGroups.ResultKey(group),
-                        StringComparison.Ordinal)))
-                {
-                    context.Error(
-                        "artifact-group-ambiguous",
-                        $"sei '{name}' {entry.Version} has dependency groups with the same conditions but different relations",
-                        path);
-                    ok = false;
-                }
-
-                seen.Add(group);
+            // Two groups that apply under identical conditions but install
+            // different relations cannot be told apart by the resolver; which
+            // one wins would depend on source drift and environment. Reject
+            // that at packaging time (ADR-0045). Unconditional groups are
+            // allowed: a single one is a fallback, and two unconditional
+            // groups with identical relations are exact duplicates.
+            if (DependencyGroups.FindAmbiguousPair(groups) is not null)
+            {
+                context.Error(
+                    "artifact-group-ambiguous",
+                    $"sei '{name}' {entry.Version} has dependency groups with the same conditions but different relations",
+                    path);
+                ok = false;
             }
         }
 

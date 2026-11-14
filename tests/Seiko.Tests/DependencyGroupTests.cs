@@ -794,6 +794,82 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Verify_TreatsRepeatedPrerequisitesAsTheSameCondition()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "a", "x", "y" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        // The same condition written twice: [a] and [a, a]
+                        // gate identically, so these two are indistinguishable.
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("x", "*")],
+                            Prerequisites: [new DepFixture("a", "*")]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("y", "*")],
+                            Prerequisites:
+                            [
+                                new DepFixture("a", "*"),
+                                new DepFixture("a", "*"),
+                            ]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-group-ambiguous");
+    }
+
+    [Fact]
+    public void Add_RejectsUnconditionalOriginGroupsThatInstallDifferentSei()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "x", "y" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // Two unconditional origin groups: an indexed artifact of the same
+        // shape is rejected at packaging time, so a local file must not slip
+        // through and let a failing dependency decide.
+        var origin = fixture.WriteOrigin(
+            "app",
+            "1.0.0",
+            "app.txt",
+            "app",
+            groups:
+            [
+                new GroupFixture(Dependencies: [new DepFixture("x", "*")]),
+                new GroupFixture(Dependencies: [new DepFixture("y", "*")]),
+            ]);
+        fixture.WriteConfig("win-x64", new SpecFixture("x", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
+            fixture.Root,
+            Path.GetRelativePath(
+                Directory.GetCurrentDirectory(),
+                Path.Combine(fixture.Root, origin)),
+            storeRoot: fixture.StoreDirectory));
+
+        Assert.Contains("same conditions", error.Message);
+    }
+
+    [Fact]
     public void Verify_AllowsGroupsDistinguishedByConflicts()
     {
         using var fixture = new Fixture();
