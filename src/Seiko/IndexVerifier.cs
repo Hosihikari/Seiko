@@ -1364,18 +1364,18 @@ public static class IndexVerifier
                     $"{prefix}: sei.json modes do not match the index artifact",
                     reference.Path);
             }
-            else if (manifest.SchemaVersion >= 4
-                && !PreserveEqual(manifest.Artifact.Preserve, reference.Artifact.Preserve))
+            else if (!PreserveEqual(manifest.Artifact.Preserve, reference.Artifact.Preserve))
             {
+                // A lower manifest cannot just be missing the field: the
+                // index declaring it means the artifact must too (ADR-0045).
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json preserve does not match the index artifact",
                     reference.Path);
             }
-            else if (manifest.SchemaVersion >= 4
-                && !DependencyGroups.Equal(
-                    manifest.Artifact.DependencyGroups,
-                    reference.Artifact.DependencyGroups))
+            else if (!DependencyGroups.Equal(
+                manifest.Artifact.DependencyGroups,
+                reference.Artifact.DependencyGroups))
             {
                 context.Error(
                     "manifest-mismatch",

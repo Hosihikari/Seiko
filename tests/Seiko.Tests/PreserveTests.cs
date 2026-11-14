@@ -496,6 +496,62 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void Verify_RejectsIndexPreserveOfASchemaThreeManifest()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    ManifestSchemaVersion = 3,
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        // The index alone gains the declaration; the zip and its digest stay
+        // untouched, so nothing about the artifact itself changed.
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
+        var sei = JsonSerializer.Deserialize(
+            File.ReadAllBytes(path),
+            SeikoJsonContext.Default.SeiIndex)!;
+        sei.Versions[0].Artifacts[0].Preserve = [ConfigPath];
+        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        fixture.RefreshCatalog();
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding =>
+            finding.Message.Contains("preserve", StringComparison.Ordinal));
+        Assert.True(result.Errors > 0);
+    }
+
+    [Fact]
+    public void Sync_RejectsAPreserveThatDiffersFromTheManifest()
+    {
+        using var fixture = PreservingFixture();
+
+        // The index claims a second preserve path the sei.json does not
+        // declare; installation would hold two different truths.
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
+        var sei = JsonSerializer.Deserialize(
+            File.ReadAllBytes(path),
+            SeikoJsonContext.Default.SeiIndex)!;
+        sei.Versions[0].Artifacts[0].Preserve = [ConfigPath, "other.txt"];
+        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        fixture.RefreshCatalog();
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("preserve", error.Message);
+    }
+
+    [Fact]
     public void Verify_RejectsPreserveThatDiffersFromTheIndex()
     {
         using var fixture = PreservingFixture();

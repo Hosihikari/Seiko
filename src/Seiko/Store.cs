@@ -627,10 +627,19 @@ public sealed class Store
 
         // The index entry selects the group, so the manifest's whole list must
         // agree; a mismatch would resolve against relations installation never
-        // sees (ADR-0045).
+        // sees (ADR-0045). preserve follows the same rule: the index entry is
+        // what previews read, so a disagreement would preview the wrong
+        // ownership.
         if (!DependencyGroups.Equal(manifest.Artifact.DependencyGroups, sei.Artifact.DependencyGroups))
         {
             throw new SeikoException($"{sei.Name}: sei.json dependency groups do not match the index artifact", "io");
+        }
+
+        if (!DependencyGroups.RelationsEqual(
+            (manifest.Artifact.Preserve ?? []).Select(path => new SeiDependency { Name = path }).ToList(),
+            (sei.Artifact.Preserve ?? []).Select(path => new SeiDependency { Name = path }).ToList()))
+        {
+            throw new SeikoException($"{sei.Name}: sei.json preserve does not match the index artifact", "io");
         }
     }
 
