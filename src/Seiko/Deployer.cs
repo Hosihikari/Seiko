@@ -34,7 +34,7 @@ public static class Deployer
         bool force = false,
         IReadOnlyDictionary<string, string>? adoptedSnapshots = null,
         bool resetPreserved = false,
-        IReadOnlySet<string>? preservedMarks = null)
+        IReadOnlyDictionary<string, DeployedFile>? targetFiles = null)
         => DeployCore(
             root,
             sei,
@@ -48,7 +48,7 @@ public static class Deployer
             force,
             adoptedSnapshots,
             resetPreserved,
-            preservedMarks);
+            targetFiles);
 
     internal static DeployResult DeployInTransaction(
         string root,
@@ -76,7 +76,7 @@ public static class Deployer
             force,
             adoptedSnapshots,
             resetPreserved,
-            preservedMarks: null);
+            targetFiles: null);
 
     private static DeployResult DeployCore(
         string root,
@@ -91,7 +91,7 @@ public static class Deployer
         bool force,
         IReadOnlyDictionary<string, string>? adoptedSnapshots,
         bool resetPreserved,
-        IReadOnlySet<string>? preservedMarks)
+        IReadOnlyDictionary<string, DeployedFile>? targetFiles)
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
@@ -179,17 +179,24 @@ public static class Deployer
 
         var managed = new HashSet<string>(state.Files.Keys, StringComparer.Ordinal);
 
-        // Paths that --reset-preserved already opted back in. A rollback
-        // reproduces the target generation, so that generation's marks apply;
-        // a normal run continues from the current state.
-        var marks = preservedMarks
-            ?? state.Files
-                .Where(pair => pair.Value.Preserved)
-                .Select(pair => pair.Key)
-                .ToHashSet(StringComparer.Ordinal);
+        // A rollback reproduces the target generation, so that generation's
+        // own records are the authority for what it deployed; a normal run
+        // reads the current state. `preserved` marks are how --reset-preserved
+        // records its opt-in, and they only matter for the normal run: on a
+        // rollback the target's file list already says what it managed.
+        var rollback = targetFiles is not null;
+        var authoritative = targetFiles ?? state.Files;
+
         var preservedPaths = new HashSet<string>(
             sei.SelectMany(item => item.Manifest.Artifact?.Preserve ?? []),
             StringComparer.Ordinal);
+
+        // Whether the reset survives on the new record: the target's own mark
+        // on a rollback, the flag or the previous mark on a normal run.
+        bool PreservedOnRecord(string relative, string after)
+            => preservedPaths.Contains(after)
+                && (resetPreserved
+                    || (authoritative.TryGetValue(relative, out var record) && record.Preserved));
         var preservedHere = new HashSet<string>(StringComparer.Ordinal);
         var replaceable = ValidateDesiredTree(root, desired, managed, force);
         var adoptedHashes = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -237,20 +244,22 @@ public static class Deployer
         {
             var destination = Native(root, relative);
             var exists = File.Exists(destination);
-            var managedHere = state.Files.TryGetValue(relative, out var previous);
+            var managedHere = authoritative.TryGetValue(relative, out var previous);
 
             // A preserve path is the user's from the moment it first lands:
             // existing content wins over the artifact's copy and the path is
             // left out of the state, so no later run rewrites or deletes it.
             // Two things override that: --reset-preserved, which turns the
             // path into a managed file and records that it was reset; and the
-            // existing state already carrying that record. A path an earlier
-            // version managed without a reset is still the user's from the
-            // moment the declaration appears. A rollback instead reproduces
-            // the target generation, so there its own record decides.
+            // state already carrying that record. A path an earlier version
+            // managed without a reset is still the user's from the moment the
+            // declaration appears. A rollback instead reproduces the target
+            // generation, so there its own record decides — and when the
+            // record exists the path is managed again, which means a user
+            // edit made since falls under the ordinary conflict rules.
             if (preservedPaths.Contains(relative)
                 && !resetPreserved
-                && !marks.Contains(relative))
+                && !(managedHere && previous!.Preserved))
             {
                 preservedHere.Add(relative);
                 if (!exists)
@@ -263,13 +272,10 @@ public static class Deployer
 
             // --reset-preserved turns the declared paths back into ordinary
             // desired files, so an existing copy is replaced without asking
-            // for --force as well. A rollback does the same for a path the
-            // target generation recorded as reset: that generation reproduces
-            // its own management even if the current generation had let go of
-            // the path and the file stayed on disk. Every other collision
-            // keeps the usual rule.
-            var reset = (resetPreserved && preservedPaths.Contains(relative))
-                || (adoptedSnapshots is not null && marks.Contains(relative));
+            // for --force as well. A rollback does not: reproducing a
+            // generation must not overwrite what the user changed after it.
+            // Every other collision keeps the usual rule.
+            var reset = resetPreserved && preservedPaths.Contains(relative);
             var unchanged = false;
             if (exists)
             {
@@ -281,9 +287,22 @@ public static class Deployer
                         "deploy");
                 }
 
-                var modified = managedHere
-                    && !previous!.Adopted
-                    && !string.Equals(actual, previous.Sha256, StringComparison.Ordinal);
+                // Whether the user changed the file is judged against the
+                // current state's record of it — that is the deployment the
+                // file on disk belongs to. The target's record only says
+                // whether the path is in scope.
+                var modified = !rollback
+                    ? managedHere
+                        && !previous!.Adopted
+                        && !string.Equals(actual, previous.Sha256, StringComparison.Ordinal)
+                    : !(authoritative.TryGetValue(relative, out var targetRecord)
+                            && string.Equals(actual, targetRecord.Sha256, StringComparison.Ordinal))
+                        && (state.Files.TryGetValue(relative, out var live)
+                            ? !live.Adopted
+                                && !string.Equals(actual, live.Sha256, StringComparison.Ordinal)
+                            // Not managed in the current generation either:
+                            // nobody records this content, so it is the user's.
+                            : true);
                 if (modified && !adopt && !force && !reset)
                 {
                     throw new SeikoException(
@@ -365,8 +384,7 @@ public static class Deployer
                         Adopted = adoptedHashes.ContainsKey(pair.Key) || adoptedFrom.ContainsKey(pair.Key),
                         // The reset survives until the declaration disappears;
                         // a rollback reproduces the target generation's marks.
-                        Preserved = preservedPaths.Contains(pair.Key)
-                            && (resetPreserved || marks.Contains(pair.Key)),
+                        Preserved = PreservedOnRecord(pair.Key, pair.Key),
                     },
                     StringComparer.Ordinal),
         };

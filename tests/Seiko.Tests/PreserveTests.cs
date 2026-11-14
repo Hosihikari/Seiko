@@ -444,6 +444,74 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void Rollback_DoesNotOverwriteAUserEditOfAPreservedPath()
+    {
+        using var fixture = PreservingFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        // Generation 2 takes the path under management by reset.
+        client.Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true);
+
+        // Back to 1: the path is preserve there and falls out of management.
+        client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1);
+
+        // The user edits what is now their file, then goes forward again. The
+        // reset happened once, in generation 2, but the edit is newer than
+        // that: the rollback must not overwrite it silently.
+        var target = Config(fixture);
+        File.WriteAllText(target, "edited");
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2));
+
+        Assert.Equal("deploy", error.Code);
+        Assert.Contains("edited", File.ReadAllText(target));
+        Assert.Contains("modified", error.Message);
+    }
+
+    [Fact]
+    public void Rollback_RestoresAnUpgradedManagedPathWithoutConflict()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [ConfigPath] = "one" } }],
+            },
+            new VersionFixture
+            {
+                Version = "1.1.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "two" },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        // Generation 2 declares preserve: the file stays as it is and leaves
+        // management, but it was managed in generation 1.
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.1.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+
+        // Generation 1 is a plain managed file; the same bytes are already on
+        // disk, so restoring it must not report an unmanaged conflict.
+        client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1);
+
+        Assert.Equal("one", File.ReadAllText(Config(fixture)));
+        Assert.Contains(ConfigPath, ReadState(fixture).Files.Keys);
+    }
+
+    [Fact]
     public void DryRun_ListsPreservePathsWithoutAddingChangeEntries()
     {
         using var fixture = PreservingFixture();

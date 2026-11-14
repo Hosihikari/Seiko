@@ -2630,13 +2630,9 @@ public sealed class SeikoClient
             writeLock: true,
             restoreConfig: snapshotConfig,
             adoptedSnapshots: adoptedSnapshots,
-            // The rollback reproduces the target generation: a preserve path
-            // it recorded as reset (--reset-preserved there) is restored as
-            // managed, every other preserve path is left alone.
-            preservedMarks: snapshotState.Files
-                .Where(pair => pair.Value.Preserved)
-                .Select(pair => pair.Key)
-                .ToHashSet(StringComparer.Ordinal));
+            // The target generation's own file records decide what it
+            // managed; the current state says nothing about it.
+            targetFiles: snapshotState.Files);
 
         return new RollbackResult
         {
