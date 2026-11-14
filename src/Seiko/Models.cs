@@ -440,7 +440,8 @@ public sealed record SeiArtifactInfo(
     IReadOnlyList<SeiDependency> Conflicts,
     int ExternalCount,
     IReadOnlyList<string> ExternalHosts,
-    bool ExternalKnown = true);
+    bool ExternalKnown = true,
+    IReadOnlyList<DependencyGroup>? DependencyGroups = null);
 
 public sealed record SeiVersionInfo(
     string Version,

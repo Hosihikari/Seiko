@@ -3243,7 +3243,8 @@ public sealed class SeikoClient
                                 : artifact.External?.Hosts ?? [],
                             artifact.External is not null
                                 || artifact.ExternalFiles is not null
-                                || artifact.ExternalArchives is not null))
+                                || artifact.ExternalArchives is not null,
+                            artifact.DependencyGroups))
                         .ToList(),
                     IndexOverlay.IsSourceOrigin(entry)))
                 .ToList();

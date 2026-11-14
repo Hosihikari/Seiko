@@ -1619,7 +1619,8 @@ static int Info(
                             artifact.Conflicts.ToList(),
                             artifact.ExternalCount,
                             artifact.ExternalHosts.ToList(),
-                            artifact.ExternalKnown))
+                            artifact.ExternalKnown,
+                            artifact.DependencyGroups?.ToList()))
                         .ToList(),
                     version.SourceRetired))
                 .ToList(),
@@ -1737,6 +1738,15 @@ static int Info(
             WriteRelations(artifact.Prerequisites, "prerequisite", 6);
             WriteRelations(artifact.OptionalPeers, "optional peer", 6);
             WriteRelations(artifact.Conflicts, "conflict", 6);
+            for (var index = 0; index < (artifact.DependencyGroups?.Count ?? 0); index++)
+            {
+                var group = artifact.DependencyGroups![index];
+                Console.WriteLine($"      group #{index}");
+                WriteRelations(group.Dependencies, "dependency", 8);
+                WriteRelations(group.Prerequisites, "prerequisite", 8);
+                WriteRelations(group.OptionalPeers, "optional peer", 8);
+                WriteRelations(group.Conflicts, "conflict", 8);
+            }
         }
     }
 

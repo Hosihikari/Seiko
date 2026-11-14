@@ -965,7 +965,50 @@ public sealed class Resolver
     private string NoArtifactMessage(ResolvedSei resolved)
     {
         var graphNames = _assigned.Keys.OrderBy(name => name, StringComparer.Ordinal);
-        return $"no artifact of {resolved.Name} {resolved.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]";
+        var message = $"no artifact of {resolved.Name} {resolved.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]";
+
+        // A group that lost every candidate is worth naming: without it the
+        // error only says "the artifact", and the artifact is often the one
+        // thing that did not change (ADR-0045's group diagnoses).
+        var blocked = new List<string>();
+        foreach (var artifact in resolved.Entry.Artifacts)
+        {
+            for (var index = 0; index < (artifact?.DependencyGroups?.Count ?? 0); index++)
+            {
+                var conditions = artifact!.DependencyGroups![index].Prerequisites
+                    .Select(prerequisite => $"{prerequisite.Name} {prerequisite.Version ?? "*"}")
+                    .Concat(artifact.DependencyGroups[index].Conflicts
+                        .Select(conflict => $"not {conflict.Name} {conflict.Version ?? "*"}"))
+                    .ToList();
+                if (conditions.Count > 0
+                    && !conditions.All(condition =>
+                        ConditionHolds(condition.StartsWith("not ", StringComparison.Ordinal)
+                            ? condition[4..]
+                            : condition)))
+                {
+                    blocked.Add($"#{index} ({string.Join(", ", conditions)})");
+                }
+            }
+        }
+
+        return blocked.Count == 0
+            ? message
+            : message + $"; unmatched group(s): {string.Join("; ", blocked)}";
+    }
+
+    // "name range" as written in the message: true while the name is not yet
+    // assigned (it may still arrive) or the assigned version still fits.
+    private bool ConditionHolds(string text)
+    {
+        var space = text.LastIndexOf(' ');
+        var name = space < 0 ? text : text[..space];
+        if (!_assigned.TryGetValue(name, out var target) || Uncertain(name))
+        {
+            return true;
+        }
+
+        return space < 0
+            || ParseRange(text[(space + 1)..], name).Satisfies(target.ParsedVersion);
     }
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
@@ -1194,13 +1237,18 @@ public sealed class Resolver
             }
 
             // The selected group's relations are part of the artifact scope;
-            // checking the merged lists validates both layers at once.
+            // checking the merged lists validates both layers at once. The
+            // label names the group so a failure points at the declaration
+            // that has to change (ADR-0045).
+            var scope = resolved.GroupIndex is { } group
+                ? $" (group #{group})"
+                : "";
             if (!ValidateRelations(
                 name,
                 resolved,
                 DependencyGroups.Prerequisites(resolved.Artifact, resolved.GroupIndex),
                 requirePresent: true,
-                "artifact prerequisite"))
+                "artifact prerequisite" + scope))
             {
                 return false;
             }
@@ -1210,7 +1258,7 @@ public sealed class Resolver
                 resolved,
                 DependencyGroups.OptionalPeers(resolved.Artifact, resolved.GroupIndex),
                 requirePresent: false,
-                "artifact optional peer"))
+                "artifact optional peer" + scope))
             {
                 return false;
             }
@@ -1219,7 +1267,7 @@ public sealed class Resolver
                 name,
                 resolved,
                 DependencyGroups.Conflicts(resolved.Artifact, resolved.GroupIndex),
-                "artifact conflict"))
+                "artifact conflict" + scope))
             {
                 return false;
             }
@@ -1481,7 +1529,7 @@ public sealed class Resolver
                 }
 
                 _lastConflict = Fail(
-                    $"prerequisite '{relation.Name}' required by {owner} {resolved.Version} is not in the resolved graph; add it explicitly or through a dependency");
+                    $"{label} '{relation.Name}' required by {owner} {resolved.Version} is not in the resolved graph; add it explicitly or through a dependency");
                 return false;
             }
 

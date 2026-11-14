@@ -138,6 +138,71 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Sync_NamesTheUnmatchedGroups()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "bridge");
+        AddPackage(fixture, "legacy");
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("bridge", "*")],
+                            Prerequisites: [new DepFixture("host", "*")],
+                            Conflicts: [new DepFixture("legacy", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("legacy", "[1.0.0]"));
+
+        var error = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("#0", error.Message);
+        Assert.Contains("host", error.Message);
+    }
+
+    [Fact]
+    public void Info_ListsDependencyGroups()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "bridge");
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(Dependencies: [new DepFixture("bridge", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var (stdout, stderr, exitCode) = Cli.Run(
+            ["info", "app", "--root", fixture.Root]);
+
+        Assert.True(exitCode == 0, stdout + stderr);
+        Assert.Contains("group #0", stdout + stderr);
+    }
+
+    [Fact]
     public void Sync_RejectsWhenEveryGroupIsExcluded()
     {
         using var fixture = new Fixture();
