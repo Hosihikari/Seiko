@@ -319,6 +319,13 @@ public sealed class DeployedFile
     public List<string> Owners { get; set; } = [];
     public string Sha256 { get; set; } = "";
     public bool Adopted { get; set; }
+
+    // The path is a preserve target that --reset-preserved turned into a
+    // managed file. It keeps being managed on later runs even while the
+    // artifact still declares it; his flag is what distinguishes the user's
+    // opt-in from a path an earlier version managed and a later one declared
+    // preserve (ADR-0045).
+    public bool Preserved { get; set; }
 }
 
 // Generation snapshots have no timestamp of their own; this sidecar records

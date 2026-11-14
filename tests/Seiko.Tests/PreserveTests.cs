@@ -179,7 +179,7 @@ public sealed class PreserveTests
     }
 
     [Fact]
-    public void Sync_KeepsManagingAPreservePathThatWasAlreadyManaged()
+    public void Sync_KeepsTheExistingFileWhenAnUpgradeAddsPreserve()
     {
         using var fixture = new Fixture();
         fixture.AddSei(
@@ -208,8 +208,43 @@ public sealed class PreserveTests
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.1.0]"));
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        var target = Config(fixture);
-        Assert.Equal("v2", File.ReadAllText(target));
+        // The declaration is what decides: the path is preserve now, so the
+        // content that exists wins and the path leaves the managed state.
+        Assert.Equal("v1", File.ReadAllText(Config(fixture)));
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+    }
+
+    [Fact]
+    public void Sync_ResetPreservedReplacesAnUpgradedPreservePath()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [ConfigPath] = "v1" } }],
+            },
+            new VersionFixture
+            {
+                Version = "1.1.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "v2" },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.1.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true);
+
+        Assert.Equal("v2", File.ReadAllText(Config(fixture)));
         Assert.Contains(ConfigPath, ReadState(fixture).Files.Keys);
     }
 

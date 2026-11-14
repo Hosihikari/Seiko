@@ -34,7 +34,7 @@ public static class Deployer
         bool force = false,
         IReadOnlyDictionary<string, string>? adoptedSnapshots = null,
         bool resetPreserved = false,
-        IReadOnlySet<string>? preservedManaged = null)
+        IReadOnlySet<string>? preservedMarks = null)
         => DeployCore(
             root,
             sei,
@@ -48,7 +48,7 @@ public static class Deployer
             force,
             adoptedSnapshots,
             resetPreserved,
-            preservedManaged);
+            preservedMarks);
 
     internal static DeployResult DeployInTransaction(
         string root,
@@ -76,7 +76,7 @@ public static class Deployer
             force,
             adoptedSnapshots,
             resetPreserved,
-            preservedManaged: null);
+            preservedMarks: null);
 
     private static DeployResult DeployCore(
         string root,
@@ -91,7 +91,7 @@ public static class Deployer
         bool force,
         IReadOnlyDictionary<string, string>? adoptedSnapshots,
         bool resetPreserved,
-        IReadOnlySet<string>? preservedManaged)
+        IReadOnlySet<string>? preservedMarks)
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
@@ -179,10 +179,14 @@ public static class Deployer
 
         var managed = new HashSet<string>(state.Files.Keys, StringComparer.Ordinal);
 
-        // A rollback reproduces the target generation, so that generation's
-        // state decides which preserve paths had already been opted back in;
+        // Paths that --reset-preserved already opted back in. A rollback
+        // reproduces the target generation, so that generation's marks apply;
         // a normal run continues from the current state.
-        var managedBefore = preservedManaged ?? managed;
+        var marks = preservedMarks
+            ?? state.Files
+                .Where(pair => pair.Value.Preserved)
+                .Select(pair => pair.Key)
+                .ToHashSet(StringComparer.Ordinal);
         var preservedPaths = new HashSet<string>(
             sei.SelectMany(item => item.Manifest.Artifact?.Preserve ?? []),
             StringComparer.Ordinal);
@@ -238,12 +242,15 @@ public static class Deployer
             // A preserve path is the user's from the moment it first lands:
             // existing content wins over the artifact's copy and the path is
             // left out of the state, so no later run rewrites or deletes it.
-            // A path that is already managed stays managed — a package cannot
-            // silently abandon a file it installed; --reset-preserved is how
-            // management is taken back up.
+            // Two things override that: --reset-preserved, which turns the
+            // path into a managed file and records that it was reset; and the
+            // existing state already carrying that record. A path an earlier
+            // version managed without a reset is still the user's from the
+            // moment the declaration appears. A rollback instead reproduces
+            // the target generation, so there its own record decides.
             if (preservedPaths.Contains(relative)
-                && !managedBefore.Contains(relative)
-                && !resetPreserved)
+                && !resetPreserved
+                && !marks.Contains(relative))
             {
                 preservedHere.Add(relative);
                 if (!exists)
@@ -343,6 +350,10 @@ public static class Deployer
                             ? kept
                             : pair.Value.Sha256,
                         Adopted = adoptedHashes.ContainsKey(pair.Key) || adoptedFrom.ContainsKey(pair.Key),
+                        // The reset survives until the declaration disappears;
+                        // a rollback reproduces the target generation's marks.
+                        Preserved = preservedPaths.Contains(pair.Key)
+                            && (resetPreserved || marks.Contains(pair.Key)),
                     },
                     StringComparer.Ordinal),
         };
