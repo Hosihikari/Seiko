@@ -182,6 +182,39 @@ internal sealed class OriginSource : ISeiSource
             && groupIndex < groups.Count
                 ? groups[groupIndex]
                 : null;
+
+        // Subtracting the selected group from the lock's merged scope only
+        // recovers the artifact-level share when the index is the one that
+        // was locked. A changed index would otherwise rebuild a share that
+        // happens to match the lock's own merged lists, so the recovered
+        // share is checked against the file's declaration (ADR-0045).
+        var recovered = new ArtifactManifest
+        {
+            Dependencies = Without(locked.Artifact.Dependencies, selected?.Dependencies),
+            Prerequisites = Without(locked.Artifact.Prerequisites, selected?.Prerequisites),
+            OptionalPeers = Without(locked.Artifact.OptionalPeers, selected?.OptionalPeers),
+            Conflicts = Without(locked.Artifact.Conflicts, selected?.Conflicts),
+        };
+        // The locked selector's own prerequisites are part of the recorded
+        // artifact-level share, so they are the comparison base on top of the
+        // file's declaration.
+        var selectorIndex = spec.Paths.FindIndex(path =>
+            string.Equals(path, locked.Path, StringComparison.Ordinal));
+        var selector = selectorIndex >= 0 && selectorIndex < spec.Selectors.Count
+            ? spec.Selectors[selectorIndex]
+            : null;
+        var expectedPrerequisites = Merge(artifact.Prerequisites, selector?.Prerequisites ?? []);
+        if (!SameRelations(recovered.Dependencies, artifact.Dependencies)
+            || !SameRelations(recovered.Prerequisites, expectedPrerequisites)
+            || !SameRelations(recovered.OptionalPeers, artifact.OptionalPeers)
+            || !SameRelations(recovered.Conflicts, artifact.Conflicts))
+        {
+            throw new SeikoException(
+                $"{spec.Name}: the locked dependency group does not match the file's groups "
+                + "(the file changed since it was locked)",
+                "checksum");
+        }
+
         return new SeiIndex
         {
             Name = manifest.Name,
@@ -201,10 +234,10 @@ internal sealed class OriginSource : ISeiSource
                         new ArtifactEntry
                         {
                             Rid = locked.Artifact.Rid,
-                            Prerequisites = Without(locked.Artifact.Prerequisites, selected?.Prerequisites),
-                            Dependencies = Without(locked.Artifact.Dependencies, selected?.Dependencies),
-                            OptionalPeers = Without(locked.Artifact.OptionalPeers, selected?.OptionalPeers),
-                            Conflicts = Without(locked.Artifact.Conflicts, selected?.Conflicts),
+                            Prerequisites = recovered.Prerequisites,
+                            Dependencies = recovered.Dependencies,
+                            OptionalPeers = recovered.OptionalPeers,
+                            Conflicts = recovered.Conflicts,
                             Layout = artifact.Layout,
                             Modes = artifact.Modes,
                             Preserve = artifact.Preserve,
@@ -353,6 +386,24 @@ internal sealed class OriginSource : ISeiSource
     // Both sets must hold for the file to apply, so the artifact carries the
     // union and the resolver evaluates it like any other condition. A name in
     // both keeps both ranges: dropping one would silently widen the condition.
+    private static bool SameRelations(
+        IReadOnlyList<SeiDependency>? left,
+        IReadOnlyList<SeiDependency>? right)
+    {
+        var a = (left ?? [])
+            .OrderBy(item => item.Name, StringComparer.Ordinal)
+            .ThenBy(item => item.Version ?? "", StringComparer.Ordinal)
+            .ToList();
+        var b = (right ?? [])
+            .OrderBy(item => item.Name, StringComparer.Ordinal)
+            .ThenBy(item => item.Version ?? "", StringComparer.Ordinal)
+            .ToList();
+        return a.Count == b.Count
+            && a.Zip(b).All(pair =>
+                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
+    }
+
     // Multiset subtraction: each group relation removes one matching entry
     // from the merged lock lists, leaving the artifact-level share.
     private static List<SeiDependency> Without(

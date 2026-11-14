@@ -1084,6 +1084,52 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Frozen_RejectsAnOriginLockWhoseGroupWasSwapped()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "a");
+        var origin = fixture.WriteOrigin(
+            "app",
+            "1.0.0",
+            "app.txt",
+            "app",
+            groups:
+            [
+                // Group 0 gates on a; group 1 is unconditional. Neither adds a
+                // dependency, so the merged relation lists alone cannot tell
+                // the two apart.
+                new GroupFixture(Prerequisites: [new DepFixture("a", "*")]),
+                new GroupFixture(),
+            ]);
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Add(
+            fixture.Root,
+            Path.GetRelativePath(
+                Directory.GetCurrentDirectory(),
+                Path.Combine(fixture.Root, origin)),
+            storeRoot: fixture.StoreDirectory);
+        Assert.Equal(
+            0,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+
+        // Hand-swap the recorded group. The merged relations still satisfy
+        // the "1" replay because the lock's own list keeps "a", so replaying
+        // blindly would accept a group the manifest does not support.
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        var text = File.ReadAllText(lockPath).Replace(
+            "\"group\": 0",
+            "\"group\": 1",
+            StringComparison.Ordinal);
+        File.WriteAllText(lockPath, text);
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+
+        Assert.Contains("changed", error.Message);
+    }
+
+    [Fact]
     public void Frozen_RejectsAReorderedGroupList()
     {
         using var fixture = new Fixture();
