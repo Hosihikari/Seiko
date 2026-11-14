@@ -52,6 +52,18 @@ public sealed class PreserveTests
         fixture.RefreshCatalog();
     }
 
+    private static int Links(string path)
+    {
+        using var process = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("stat", ["-f", "%l", path])
+            {
+                RedirectStandardOutput = true,
+            })!;
+        var text = process.StandardOutput.ReadToEnd().Trim();
+        process.WaitForExit();
+        return int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static Fixture PreservingFixture(string content = "default")
     {
         var fixture = new Fixture();
@@ -316,6 +328,61 @@ public sealed class PreserveTests
         Assert.Equal(
             (UnixFileMode)Convert.ToInt32("755", 8),
             File.GetUnixFileMode(Path.Combine(fixture.Root, ConfigPath)));
+    }
+
+    [Fact]
+    public void Sync_UpgradeToPreserveDetachesTheFileFromTheStore()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [ConfigPath] = "shared" } }],
+            },
+            new VersionFixture
+            {
+                Version = "1.1.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "shared" },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        // Force the shared-inode case regardless of filesystem: replace the
+        // deployed copy with a hardlink to the store.
+        var target = Config(fixture);
+        var storeCopy = Directory
+            .EnumerateFiles(fixture.StoreDirectory, "server.properties", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .First();
+        File.Delete(target);
+        Assert.True(FileLink.TryHardLink(storeCopy, target));
+        Assert.Equal(2, Links(target));
+
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.1.0]"));
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+
+        // The file left management, so it must be an independent copy: a
+        // hardlink would let an in-place edit reach the shared store bytes.
+        Assert.Equal(1, Links(target));
+        File.WriteAllText(target, "edited");
+        Assert.Equal("edited", File.ReadAllText(target));
+        Assert.Equal(1, Links(target));
     }
 
     [Fact]

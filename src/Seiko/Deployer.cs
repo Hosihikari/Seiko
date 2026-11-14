@@ -198,6 +198,7 @@ public static class Deployer
                 && (resetPreserved
                     || (authoritative.TryGetValue(relative, out var record) && record.Preserved));
         var preservedHere = new HashSet<string>(StringComparer.Ordinal);
+        var retained = new List<string>();
         var replaceable = ValidateDesiredTree(root, desired, managed, force);
         var adoptedHashes = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -265,6 +266,13 @@ public static class Deployer
                 if (!exists)
                 {
                     mutations.Add(new Mutation(relative, file, CreatedHere: true));
+                }
+                else
+                {
+                    // An owned link (hardlink or reflink) still writes through
+                    // an in-place edit into the store. The file just left
+                    // management, so it must become an independent copy.
+                    retained.Add(relative);
                 }
 
                 continue;
@@ -481,6 +489,14 @@ public static class Deployer
                 transaction.WillChange(relative);
             }
 
+            foreach (var relative in retained)
+            {
+                // A held copy is registered before it replaces the path, so a
+                // crash between the two leaves a restorable picture.
+                transaction.WillChange(relative);
+                transaction.WillCreateTemporary(DetachTemporaryName(relative));
+            }
+
             transaction.WriteJournal();
             if (restoreConfig is not null)
             {
@@ -587,6 +603,11 @@ public static class Deployer
                 }
 
                 AppliedForTests.Value?.Invoke(++applied);
+            }
+
+            foreach (var relative in retained)
+            {
+                DetachFromShare(root, relative);
             }
 
             foreach (var relative in modes.Keys.OrderBy(key => key, StringComparer.Ordinal))
@@ -712,6 +733,78 @@ public static class Deployer
 
             File.Move(temp, destination, overwrite: true);
             return;
+        }
+    }
+
+    private static string DetachTemporaryName(string relative)
+    {
+        var slash = relative.LastIndexOf('/');
+        var directory = slash < 0 ? "" : relative[..(slash + 1)];
+        return directory + ".seiko-detach-" + Guid.NewGuid().ToString("N");
+    }
+
+    // Replace the file with a private copy when it still shares its bytes
+    // with the store. One link means a plain copy already; more than one
+    // means the store (or another root) still shares the inode.
+    private static void DetachFromShare(string root, string relative)
+    {
+        var destination = Native(root, relative);
+        if (LinkCount(destination) <= 1)
+        {
+            return;
+        }
+
+        var temporary = Native(root, DetachTemporaryName(relative));
+        try
+        {
+            ReadableFile.Copy(destination, temporary, overwrite: false);
+            File.Move(temporary, destination, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+            {
+                File.Delete(temporary);
+            }
+        }
+    }
+
+    private static int LinkCount(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return 2;
+        }
+
+        try
+        {
+            var mode = File.GetUnixFileMode(path);
+            _ = mode;
+            var output = new System.Diagnostics.ProcessStartInfo("stat", ["-f", "%l", path])
+            {
+                RedirectStandardOutput = true,
+            };
+            using var process = System.Diagnostics.Process.Start(output);
+            if (process is null)
+            {
+                return 2;
+            }
+
+            var text = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return int.TryParse(
+                text,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var count)
+                ? count
+                : 2;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // Without a usable stat, assume a shared link and copy: a needless
+            // copy only costs space.
+            return 2;
         }
     }
 
