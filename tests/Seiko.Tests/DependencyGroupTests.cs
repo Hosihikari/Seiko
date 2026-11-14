@@ -316,6 +316,106 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Sync_ReportsAmbiguityWhenTheLockedGroupIsBelowTheTopLayer()
+    {
+        using var fixture = new Fixture();
+        AddPackage(fixture, "host");
+        fixture.AddSei("common", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts = [new ArtifactFixture { Files = { ["common.txt"] = "c1" } }],
+        });
+
+        // aaa is declared first, so its high group pins common@1 before app is
+        // reached and app's high groups fail in the current graph. Their own
+        // probes can drop aaa's high group, so both are solvable there.
+        fixture.AddSei("aaa", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["aaa.txt"] = "aaa" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("common", "[1.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("common", "[2.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("common", "[3.0.0]")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("aaa", "[1.0.0]"),
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("host", "[1.0.0]"));
+        var client = new SeikoClient();
+
+        // Only common 1.0.0 exists, so both specific groups are unsolvable
+        // and the unconditional group becomes the lock.
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal(
+            0,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+
+        // Later versions make both specific groups solvable in their own
+        // graphs. The lock group sits below the top layer, so it must not
+        // silence the tie between them.
+        var path = Path.Combine(fixture.SourceDirectory, "sei", "common.json");
+        var common = JsonSerializer.Deserialize(
+            File.ReadAllBytes(path),
+            SeikoJsonContext.Default.SeiIndex)!;
+        foreach (var version in new[] { "2.0.0", "3.0.0" })
+        {
+            common.Versions.Add(new SeiVersionEntry
+            {
+                Version = version,
+                Artifacts =
+                [
+                    new ArtifactEntry
+                    {
+                        Layout = "root",
+                        Source = common.Versions[0].Artifacts[0].Source,
+                    },
+                ],
+            });
+        }
+
+        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(common, SeikoJsonContext.Default.SeiIndex));
+        fixture.RefreshCatalog();
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("ambiguous artifact for app 1.0.0", error.Message);
+    }
+
+    [Fact]
     public void Sync_RejectsATieOnFirstInstall()
     {
         using var fixture = new Fixture();

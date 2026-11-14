@@ -1271,9 +1271,13 @@ public sealed class Resolver
 
             // A lock already decided between equally specific groups: the
             // recorded group keeps winning instead of re-reporting ambiguity
-            // on every run. Artifact-only ties keep the old rule.
+            // on every run. Artifact-only ties keep the old rule. Only a
+            // recorded group that is itself on the top layer can decide the
+            // tie; a less specific one sitting below it means the top layer
+            // was never compared and stays ambiguous (ADR-0045).
             var locked = GetLockedArtifact(resolved.Name);
             if (resolved.GroupIndex is { } selectedGroup
+                && DependencyGroups.Score(resolved.Artifact, selectedGroup) == top
                 && locked is { } preference
                 && string.Equals(
                     resolved.Artifact.Source?.Sha256,
