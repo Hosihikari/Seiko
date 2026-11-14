@@ -801,7 +801,29 @@ public sealed class SeikoClient
                     "io");
             }
 
-            return state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+            if (state is null)
+            {
+                throw new SeikoException("invalid deployment state", "io");
+            }
+
+            if (state.Files is null)
+            {
+                // The deployment rejects a state without a file list, so the
+                // plan cannot read it as "nothing deployed".
+                throw new SeikoException("deployment state has no file list", "io");
+            }
+
+            foreach (var (relative, record) in state.Files)
+            {
+                if (record is null)
+                {
+                    throw new SeikoException(
+                        $"deployment state has no record for {relative}",
+                        "io");
+                }
+            }
+
+            return state.Files;
         }
         catch (JsonException ex)
         {

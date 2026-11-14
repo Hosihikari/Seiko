@@ -860,7 +860,7 @@ public sealed class PreserveTests
     }
 
     [Fact]
-    public void DryRun_FailsOnATruncatedStateAndSurvivesANullRecord()
+    public void DryRun_FailsOnEveryStateShapeTheDeploymentRejects()
     {
         using var fixture = PreservingFixture();
         var client = new SeikoClient();
@@ -875,17 +875,25 @@ public sealed class PreserveTests
             () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
         Assert.Equal("io", error.Code);
 
-        // A null record is valid JSON; reading a mark off it used to throw.
+        // A null file list, and a null record inside one, are both shapes the
+        // deployment rejects; the plan has to fail on them as well instead of
+        // reading them as "no files".
+        File.WriteAllText(
+            statePath,
+            $$$"""{"schemaVersion":{{{LocalState.CurrentSchemaVersion}}},"generation":1,"files":null}""");
+        var noList = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
+        Assert.Equal("io", noList.Code);
+
         File.WriteAllText(
             statePath,
             $$$"""
             {"schemaVersion":{{{LocalState.CurrentSchemaVersion}}},"generation":1,
              "files":{"{{{ConfigPath}}}":null}}
             """);
-        var result = client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
-
-        var preserved = Assert.Single(result.Preview!.Preserved);
-        Assert.Equal(ConfigPath, preserved.Path);
+        var nullRecord = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
+        Assert.Contains(ConfigPath, nullRecord.Message);
     }
 
     [Fact]
