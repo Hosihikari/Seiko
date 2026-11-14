@@ -555,6 +555,7 @@ internal sealed class DeploymentTransaction
             Resolve(root, relative);
             if (!IsDeploymentTemporary(relative, entries)
                 && !IsRestoreTemporary(relative, entries)
+                && !IsDetachTemporary(relative, entries)
                 && !IsAdoptedStaging(relative))
             {
                 throw new SeikoException(
@@ -629,6 +630,11 @@ internal sealed class DeploymentTransaction
 
     private static bool IsRestoreTemporary(string relative, HashSet<string> entries)
         => HasTemporaryLeaf(relative, entries, ".seiko-restore-");
+
+    // The private copy that lets a file leave management without keeping the
+    // store's inode (preserve).
+    private static bool IsDetachTemporary(string relative, HashSet<string> entries)
+        => HasTemporaryLeaf(relative, entries, ".seiko-detach-");
 
     // The adopted staging directory is a generation-local directory, not a
     // sibling file, so it needs its own shape check.

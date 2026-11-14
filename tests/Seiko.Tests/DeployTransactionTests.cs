@@ -448,6 +448,33 @@ public sealed class DeployTransactionTests
     }
 
     [Fact]
+    public void Recovery_AcceptsADetachTemporaryAndRemovesIt()
+    {
+        using var fixture = new Fixture();
+        var root = fixture.Root;
+        var stateDirectory = Path.Combine(root, ".seiko");
+        Directory.CreateDirectory(stateDirectory);
+        var tool = Path.Combine(root, "tool");
+        File.WriteAllText(tool, "old");
+
+        var transaction = DeploymentTransaction.Begin(root, stateDirectory);
+        transaction.WillChange("tool");
+        transaction.WillCreateTemporary(".seiko-detach-" + new string('a', 32));
+        transaction.WriteJournal();
+
+        // The run dies after the private copy was written: the copy is on
+        // disk and only the journal names it. Recovery has to accept the
+        // shape, or it refuses the whole journal and nothing recovers.
+        File.WriteAllText(Path.Combine(root, ".seiko-detach-" + new string('a', 32)), "copy");
+
+        DeploymentTransaction.Recover(root, stateDirectory);
+
+        Assert.False(File.Exists(Path.Combine(root, ".seiko-detach-" + new string('a', 32))));
+        Assert.Equal("old", File.ReadAllText(tool));
+        Assert.False(File.Exists(Path.Combine(stateDirectory, "transaction.json")));
+    }
+
+    [Fact]
     public void Recover_RestoresFileAcrossNestedDirectoryConversion()
     {
         using var fixture = new Fixture();
