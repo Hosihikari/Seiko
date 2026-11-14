@@ -1435,6 +1435,44 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Verify_TreatsARepeatedIdenticalGroupAsTheSameConditions()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "host" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        var group = new GroupFixture(Prerequisites: [new DepFixture("host", "*")]);
+
+        // ADR-0045 allows a repeated group. The two artifacts apply in exactly
+        // the same environments, so the pair is ambiguous even though the
+        // second declares the gate twice.
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups = [group],
+                },
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups = [group, group],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-ambiguous");
+    }
+
+    [Fact]
     public void Verify_AllowsArtifactsWhoseGroupsAreMutuallyExclusive()
     {
         using var fixture = new Fixture();

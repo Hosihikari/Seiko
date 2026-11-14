@@ -19,9 +19,11 @@ internal static class ArtifactConditions
     // artifacts whose groups sit under different gates are distinguishable
     // even when the artifact-level keys match. The lock records the group
     // position, but applicability does not depend on it, so the conditions
-    // are sorted: reordering the groups must not make two artifacts that
-    // apply in exactly the same environments compare unequal (the cross-source
-    // digest check and the same-index equivalence check both rely on this).
+    // are sorted and exact duplicates collapse: reordering or repeating a
+    // group must not make two artifacts that apply in exactly the same
+    // environments compare unequal (the cross-source digest check and the
+    // same-index equivalence check both rely on this). ADR-0045 lets a
+    // repeated group stand, so `[G]` and `[G, G]` are the same environment.
     internal static string GroupConditions(ArtifactEntry artifact)
         => string.Join(
             "\n#\n",
@@ -29,7 +31,8 @@ internal static class ArtifactConditions
                 .Select(group => group is null
                     ? "?"
                     : DependencyGroups.ConditionKey(group))
-                .OrderBy(text => text, StringComparer.Ordinal));
+                .OrderBy(text => text, StringComparer.Ordinal)
+                .Distinct(StringComparer.Ordinal));
 
     // Origin selectors carry the same shape as artifact conditions, so the
     // ambiguity test there uses this too (ADR-0044).
