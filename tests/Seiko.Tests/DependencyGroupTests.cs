@@ -1243,6 +1243,51 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Verify_TreatsAnOmittedRangeAndAStarRangeAsTheSameCondition()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "a", "x", "y" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        // `a` and `a@*` are the same qualification, so the
+                        // second group's two entries collapse into one. The
+                        // raw texts differ, so deduplicating before
+                        // normalization would leave `[a]` and `[a, a@*]`
+                        // distinct and let the pair through.
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("ax", "*")],
+                            Prerequisites: [new DepFixture("a", null)]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("y", "*")],
+                            Prerequisites:
+                            [
+                                new DepFixture("a", "*"),
+                                new DepFixture("a", null),
+                            ]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.Contains(result.Findings, finding => finding.Code == "artifact-group-ambiguous");
+    }
+
+    [Fact]
     public void Verify_AllowsArtifactsWhoseGroupsAreMutuallyExclusive()
     {
         using var fixture = new Fixture();

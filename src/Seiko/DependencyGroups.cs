@@ -78,20 +78,13 @@ internal static class DependencyGroups
     // Applicability conditions are the two gates: a positive one
     // (prerequisites) and a negative one (conflicts). Dependencies and
     // optional peers are part of what the group installs or constrains, not
-    // part of when it applies. Repeated entries are collapsed: [a] and [a, a]
-    // gate exactly alike.
+    // part of when it applies. Repeated entries are collapsed, and collapsing
+    // happens *after* normalization: `[a]` and `[a, a@*]` gate exactly alike
+    // even though the raw texts differ.
     public static string ConditionKey(DependencyGroup group)
-        => ArtifactConditions.Key(null, Distinct(group.Prerequisites))
+        => ArtifactConditions.Key(null, group.Prerequisites)
             + "\n--\n"
-            + ArtifactConditions.Key(null, Distinct(group.Conflicts));
-
-    private static List<SeiDependency> Distinct(IEnumerable<SeiDependency>? relations)
-        => (relations ?? [])
-            .Where(relation => relation is not null)
-            .DistinctBy(
-                relation => $"{relation.Name}|{relation.Version ?? ""}",
-                StringComparer.Ordinal)
-            .ToList();
+            + ArtifactConditions.Key(null, group.Conflicts);
 
     // The rule the index verifier and the origin reader share: two groups
     // gated identically but installing different relations cannot be told

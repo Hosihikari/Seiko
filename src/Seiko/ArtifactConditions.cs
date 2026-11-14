@@ -35,12 +35,17 @@ internal static class ArtifactConditions
     private static string NormalizeRid(string? rid)
         => string.IsNullOrWhiteSpace(rid) ? "*" : rid.Trim();
 
+    // Normalized text is deduplicated, not the raw entries: `[a]` and
+    // `[a, a@*]` both normalize to the same line and must gate alike. Two
+    // different ranges of one name stay separate lines, so the result is a
+    // set of normalized conditions.
     private static string NormalizePrerequisites(List<SeiDependency>? prerequisites)
         => string.Join(
             "\n",
             (prerequisites ?? [])
                 .Where(relation => relation is not null)
                 .Select(relation => $"{relation.Name}\n{NormalizeRange(relation.Version)}")
+                .Distinct(StringComparer.Ordinal)
                 .OrderBy(text => text, StringComparer.Ordinal));
 
     private static string NormalizeRange(string? range)
