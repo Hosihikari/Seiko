@@ -315,19 +315,27 @@ public static class Deployer
                 mutation => DeploymentTemporaryName(mutation.RelativePath),
                 StringComparer.Ordinal);
 
+        var mutatedPaths = mutations
+            .Where(mutation => mutation.File is not null)
+            .Select(mutation => mutation.RelativePath)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // A preserve path the run left untouched is not ours to chmod: its
+        // permissions stay the user's, exactly like its content. Only a file
+        // that was actually created or written gets the declared mode.
         var modes = new Dictionary<string, UnixFileMode>(StringComparer.Ordinal);
         foreach (var (relative, file) in desired)
         {
+            if (preservedHere.Contains(relative) && !mutatedPaths.Contains(relative))
+            {
+                continue;
+            }
+
             if (TryParseMode(relative, file.Modes, out var mode))
             {
                 modes[relative] = mode;
             }
         }
-
-        var mutatedPaths = mutations
-            .Where(mutation => mutation.File is not null)
-            .Select(mutation => mutation.RelativePath)
-            .ToHashSet(StringComparer.Ordinal);
         var modeChanges = modes
             .Where(pair => !mutatedPaths.Contains(pair.Key)
                 && File.Exists(Native(root, pair.Key))

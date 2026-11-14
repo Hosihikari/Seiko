@@ -215,6 +215,73 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void Sync_DoesNotChangeModesOfAPreservedFile()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    Preserve = [ConfigPath],
+                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var target = Path.Combine(fixture.Root, ConfigPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "user");
+        File.SetUnixFileMode(target, (UnixFileMode)Convert.ToInt32("600", 8));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal("user", File.ReadAllText(target));
+        Assert.Equal(
+            (UnixFileMode)Convert.ToInt32("600", 8),
+            File.GetUnixFileMode(target));
+    }
+
+    [Fact]
+    public void Sync_AppliesModesToAFreshlyCreatedPreserveFile()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    Preserve = [ConfigPath],
+                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+
+        Assert.Equal(
+            (UnixFileMode)Convert.ToInt32("755", 8),
+            File.GetUnixFileMode(Path.Combine(fixture.Root, ConfigPath)));
+    }
+
+    [Fact]
     public void Sync_ResetPreservedReplacesAnUpgradedPreservePath()
     {
         using var fixture = new Fixture();
