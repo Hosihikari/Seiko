@@ -534,6 +534,12 @@ public static class Deployer
                     // was made.
                     if (preservedHere.Contains(mutation.RelativePath))
                     {
+                        // The late copy is the user's now; it keeps its
+                        // permissions and is detached if it arrived linked.
+                        // The plan meant to create this path, so the declared
+                        // mode has to be retracted with the write.
+                        retained.Add(mutation.RelativePath);
+                        modes.Remove(mutation.RelativePath);
                         continue;
                     }
 

@@ -579,6 +579,61 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void Sync_DoesNotChmodAFileThatArrivesDuringTheDeployment()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["a.txt"] = "a", [ConfigPath] = "default" },
+                    Preserve = [ConfigPath],
+                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var target = Path.Combine(fixture.Root, ConfigPath);
+        var appeared = false;
+
+        // a.txt is written by 1.0.0's... rather: the first applied file, after
+        // which the user's copy appears at the preserve path.
+        Deployer.AppliedForTests.Value = applied =>
+        {
+            if (applied == 1 && !appeared && !OperatingSystem.IsWindows())
+            {
+                appeared = true;
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllText(target, "user");
+                File.SetUnixFileMode(target, (UnixFileMode)Convert.ToInt32("600", 8));
+            }
+        };
+
+        try
+        {
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
+        }
+        finally
+        {
+            Deployer.AppliedForTests.Value = null;
+        }
+
+        Assert.Equal("user", File.ReadAllText(target));
+        Assert.Equal(
+            (UnixFileMode)Convert.ToInt32("600", 8),
+            File.GetUnixFileMode(target));
+        Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
+    }
+
+    [Fact]
     public void DryRun_ListsPreservePathsWithoutAddingChangeEntries()
     {
         using var fixture = PreservingFixture();
