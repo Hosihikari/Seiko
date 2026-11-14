@@ -369,7 +369,8 @@ public sealed class SeikoClient
                     resolved,
                     mode,
                     previewWarnings,
-                    resetPreserved),
+                    resetPreserved,
+                    ReadStateRecords(root)),
             };
         }
 
@@ -609,7 +610,8 @@ public sealed class SeikoClient
         IReadOnlyList<ResolvedSei> resolved,
         SyncMode mode,
         IReadOnlyList<string> warnings,
-        bool resetPreserved)
+        bool resetPreserved,
+        IReadOnlyDictionary<string, DeployedFile> state)
     {
         var previous = existing?.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal)
             ?? new Dictionary<string, LockedSei>(StringComparer.Ordinal);
@@ -619,10 +621,17 @@ public sealed class SeikoClient
         foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
         {
             previous.TryGetValue(sei.Name, out var old);
+            // Same bytes under a different group is not a keep: the group
+            // decides which relations the install carries, and `remove`
+            // already refuses to switch it silently. The preview has to show
+            // the same switch, or the plan hides work the run will do.
+            var groupChanged = old is not null
+                && old.Artifact.Group != sei.GroupIndex;
             var action = old is null
                 ? "add"
                 : old.Version == sei.Version
                     && string.Equals(old.Artifact.Sha256, sei.Artifact.Source.Sha256, StringComparison.OrdinalIgnoreCase)
+                    && !groupChanged
                         ? "keep"
                         : "update";
             if (action == "keep" && mode != SyncMode.Normal)
@@ -679,14 +688,17 @@ public sealed class SeikoClient
 
         // Preserve paths are mirrored by the index, so the plan can name them
         // without opening an artifact. This list is human-readable output
-        // only; changes[] keeps its per-sei shape (ADR-0016). Under
-        // --reset-preserved the real run replaces the file and manages it, so
-        // "kept as-is" would describe the opposite; only an empty path (which
-        // is created either way) is still a fresh copy.
+        // only; changes[] keeps its per-sei shape (ADR-0016). Two things mean
+        // the path is *not* left alone after all: --reset-preserved replaces
+        // it and manages it, and a record carrying the reset mark is still
+        // managed even without the flag. A path that is in the state without
+        // the mark was managed by an older version and is about to leave
+        // management; it is already a change, but the line still explains it.
         var preserved = resolved
             .OrderBy(sei => sei.Name, StringComparer.Ordinal)
             .SelectMany(sei => (IndexArtifactFor(sei).Preserve ?? [])
-                .Where(path => !resetPreserved)
+                .Where(path => !resetPreserved
+                    && !(state.TryGetValue(path, out var record) && record.Preserved))
                 .Select(path => new PreviewPreserve(sei.Name, path)))
             .ToList();
 
@@ -759,6 +771,30 @@ public sealed class SeikoClient
                     sei.Artifact.Source.Sha256,
                     StringComparison.OrdinalIgnoreCase))
             ?? sei.Artifact;
+
+    // The deployed records a preview needs to describe the plan honestly. A
+    // missing or unreadable state means "nothing was deployed yet"; the real
+    // run reports the same thing as its own error.
+    private static IReadOnlyDictionary<string, DeployedFile> ReadStateRecords(string root)
+    {
+        var path = Path.Combine(root, ".seiko", "state.json");
+        if (!File.Exists(path))
+        {
+            return new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            var state = JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.LocalState);
+            return state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        }
+    }
 
     private static bool ExternalSummaryMatches(ExternalSummary declared, ArtifactManifest? manifest)
         => ExternalFiles.SummaryMatches(declared, manifest);
@@ -2719,10 +2755,21 @@ public sealed class SeikoClient
 
         foreach (var path in currentFiles.Keys.OrderBy(item => item, StringComparer.Ordinal))
         {
-            if (!targetFiles.ContainsKey(path))
+            if (targetFiles.ContainsKey(path))
             {
-                removed.Add(path);
+                continue;
             }
+
+            // A path the target generation still deploys as a preserve target
+            // is not deleted by the rollback: its content stays and only the
+            // ownership record goes. Listing it under "removed" says the file
+            // disappears, which is exactly what does not happen.
+            if (PreservedInTargetLock(store, snapshotLock, path))
+            {
+                continue;
+            }
+
+            removed.Add(path);
         }
 
         return new RollbackPreview(
@@ -2735,6 +2782,34 @@ public sealed class SeikoClient
             replaced,
             adopted,
             missing.Distinct(StringComparer.Ordinal).ToList());
+    }
+
+    // Whether any sei in the target lock declares `path` as a preserve target.
+    // The lock carries no preserve list, so the stored manifest is read; a
+    // missing store entry cannot be read and is treated as not preserved, the
+    // same way the real run re-fetches it before deploying.
+    private static bool PreservedInTargetLock(Store store, SeikoLock snapshotLock, string path)
+    {
+        foreach (var locked in snapshotLock.Sei)
+        {
+            StoredSei? stored;
+            try
+            {
+                stored = store.TryGet(locked.Artifact.Sha256);
+            }
+            catch (SeikoException)
+            {
+                return false;
+            }
+
+            if (stored is not null
+                && (stored.Manifest.Artifact?.Preserve?.Contains(path, StringComparer.Ordinal) ?? false))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool StoreHas(Store store, string sha256)

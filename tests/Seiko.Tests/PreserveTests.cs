@@ -446,6 +446,27 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void PreviewRollback_DoesNotListAPreservedTargetAsRemoved()
+    {
+        using var fixture = PreservingFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        // Generation 2 takes the path under management; rolling back to 1
+        // gives ownership up but keeps the bytes, because generation 1
+        // deploys the path as a preserve target.
+        client.Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true);
+        Assert.Contains(ConfigPath, ReadState(fixture).Files.Keys);
+
+        var preview = client.PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory);
+
+        // "removed" says the file disappears; here only the record does, so
+        // the path must not be listed and the file must still exist.
+        Assert.DoesNotContain(ConfigPath, preview.Removed);
+        Assert.True(File.Exists(Config(fixture)));
+    }
+
+    [Fact]
     public void Rollback_RestoresAPreservePathTheTargetGenerationManaged()
     {
         using var fixture = new Fixture();
@@ -669,6 +690,23 @@ public sealed class PreserveTests
 
         // The real run replaces that file and takes it under management, so
         // saying "kept as-is" would describe the opposite of what happens.
+        Assert.Empty(result.Preview!.Preserved);
+    }
+
+    [Fact]
+    public void DryRun_DoesNotListAnAlreadyResetPathAsPreserved()
+    {
+        using var fixture = PreservingFixture();
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        File.WriteAllText(Config(fixture), "edited");
+        client.Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true);
+
+        // The record carries the reset mark, so a later plain upgrade keeps
+        // managing the path and replaces the file. The plan says "kept as-is"
+        // only for paths the run really leaves alone.
+        var result = client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
+
         Assert.Empty(result.Preview!.Preserved);
     }
 

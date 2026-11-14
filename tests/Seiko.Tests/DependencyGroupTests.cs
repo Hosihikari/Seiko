@@ -652,6 +652,67 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void DryRun_DoesNotCallASameDigestGroupSwitchAKeep()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "ax", "host" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // Group 0 gates on host and is therefore the specific one; group 1 is
+        // the unconditional fallback.
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("ax", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("host", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal(
+            0,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+
+        // Pretend the lock recorded the fallback group, relations and all:
+        // version, bytes and rid stay the same and only the group differs.
+        // Which group is selected is the selection itself, so "keep" would
+        // hide the switch.
+        var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
+        var lockFile = JsonSerializer.Deserialize(
+            File.ReadAllBytes(lockPath),
+            SeikoJsonContext.Default.SeikoLock)!;
+        var app = lockFile.Sei.Single(sei => sei.Name == "app");
+        app.Artifact.Group = 1;
+        app.Artifact.Dependencies = [];
+        app.Artifact.Prerequisites = [];
+        File.WriteAllBytes(
+            lockPath,
+            JsonSerializer.SerializeToUtf8Bytes(lockFile, SeikoJsonContext.Default.SeikoLock));
+
+        var preview = client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
+
+        var change = preview.Preview!.Changes.Single(item => item.Name == "app");
+        Assert.NotEqual("keep", change.Action);
+    }
+
+    [Fact]
     public void Remove_DoesNotSwitchGroupsSilently()
     {
         using var fixture = new Fixture();
