@@ -329,14 +329,14 @@ public sealed class DependencyGroupTests
         // app's high group pulls x; its low group does not. x's first group
         // depends on a missing package, the second on y. Only the second can
         // hold while app stays on its high group.
-        fixture.AddSei("x", new VersionFixture
+        fixture.AddSei("ax", new VersionFixture
         {
             Version = "1.0.0",
             Artifacts =
             [
                 new ArtifactFixture
                 {
-                    Files = { ["x.txt"] = "x" },
+                    Files = { ["ax.txt"] = "ax" },
                     DependencyGroups =
                     [
                         new GroupFixture(
@@ -360,7 +360,7 @@ public sealed class DependencyGroupTests
                     DependencyGroups =
                     [
                         new GroupFixture(
-                            Dependencies: [new DepFixture("x", "*")],
+                            Dependencies: [new DepFixture("ax", "*")],
                             Prerequisites: [new DepFixture("host", "*")]),
                         new GroupFixture(),
                     ],
@@ -376,7 +376,7 @@ public sealed class DependencyGroupTests
         // x disappear; the probe must not read that as "this group works".
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.True(File.Exists(FileOf(fixture, "x")));
+        Assert.True(File.Exists(FileOf(fixture, "ax")));
         Assert.True(File.Exists(FileOf(fixture, "y")));
     }
 
@@ -572,7 +572,7 @@ public sealed class DependencyGroupTests
     public void Remove_DoesNotSwitchGroupsSilently()
     {
         using var fixture = new Fixture();
-        foreach (var name in new[] { "a", "b", "x", "y" })
+        foreach (var name in new[] { "a", "b", "ax", "y" })
         {
             AddPackage(fixture, name);
         }
@@ -590,7 +590,7 @@ public sealed class DependencyGroupTests
                     DependencyGroups =
                     [
                         new GroupFixture(
-                            Dependencies: [new DepFixture("x", "*")],
+                            Dependencies: [new DepFixture("ax", "*")],
                             Prerequisites: [new DepFixture("a", "*")]),
                         new GroupFixture(
                             Dependencies: [new DepFixture("y", "*")],
@@ -624,6 +624,81 @@ public sealed class DependencyGroupTests
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("app", error.Message);
+    }
+
+    [Fact]
+    public void Sync_DoesNotLetAFallbackAnswerProveADeadGroup()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "host", "y" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // ax's two equally specific groups: one needs a package that does not
+        // exist, the other needs y. Only the second is viable.
+        fixture.AddSei("ax", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["ax.txt"] = "ax" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("missing", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("y", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                    ],
+                },
+            ],
+        });
+
+        // r's specific group pulls ax, its fallback does not. A probe of x's
+        // dead group can therefore answer with a complete graph that has no
+        // ax in it; that answer must not count as proof and must not tip the
+        // tie between x's groups into a false ambiguity.
+        fixture.AddSei("r", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["r.txt"] = "r" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("ax", "*")],
+                            Prerequisites: [new DepFixture("host", "*")]),
+                        new GroupFixture(),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("r", "[1.0.0]"),
+            new SpecFixture("host", "[1.0.0]"));
+
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        var lockedGroups = string.Join(
+            ", ",
+            client.ReadLock(fixture.Root)!.Sei.Select(sei => $"{sei.Name}@{sei.Artifact.Group}"));
+
+        Assert.True(File.Exists(FileOf(fixture, "ax")), lockedGroups);
+        Assert.True(File.Exists(FileOf(fixture, "y")));
+        Assert.Equal(
+            0,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "r").Artifact.Group);
+        Assert.Equal(
+            1,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "ax").Artifact.Group);
     }
 
     [Fact]
@@ -880,7 +955,7 @@ public sealed class DependencyGroupTests
                         // The same condition written twice: [a] and [a, a]
                         // gate identically, so these two are indistinguishable.
                         new GroupFixture(
-                            Dependencies: [new DepFixture("x", "*")],
+                            Dependencies: [new DepFixture("ax", "*")],
                             Prerequisites: [new DepFixture("a", "*")]),
                         new GroupFixture(
                             Dependencies: [new DepFixture("y", "*")],
@@ -965,7 +1040,7 @@ public sealed class DependencyGroupTests
             "app",
             groups:
             [
-                new GroupFixture(Dependencies: [new DepFixture("x", "*")]),
+                new GroupFixture(Dependencies: [new DepFixture("ax", "*")]),
                 new GroupFixture(Dependencies: [new DepFixture("y", "*")]),
             ]);
         fixture.WriteConfig("win-x64", new SpecFixture("x", "[1.0.0]"));

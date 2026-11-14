@@ -157,6 +157,7 @@ public sealed class Resolver
         // Warnings() reads it after the call, so it is cleared here, not read
         // from the previous answer.
         _skippedCritical.Clear();
+        _openTies.Clear();
         try
         {
             return ResolveWithPreference(specs);
@@ -169,7 +170,40 @@ public sealed class Resolver
 
     private IReadOnlyList<ResolvedSei> ResolveWithPreference(IReadOnlyList<SeiSpec> specs)
     {
-        var result = AcceptAfterProbeErrors(ResolveOnce(specs));
+        IReadOnlyList<ResolvedSei> result;
+        try
+        {
+            result = AcceptAfterProbeErrors(ResolveOnce(specs));
+        }
+        catch (SeikoException ex) when (_checkAmbiguity
+            && ex.Code == "resolve"
+            && !_budget.Exhausted
+            && !_budget.DepthSpent)
+        {
+            // An open tie is settled by forcing it; when that does not help,
+            // the tie was not the obstacle and the unfrozen answer stands.
+            if (RetryOpenTies(ex, specs) is { } retried)
+            {
+                result = retried;
+            }
+            else
+            {
+                _forced.Clear();
+                _openTies.Clear();
+                try
+                {
+                    result = AcceptAfterProbeErrors(ResolveOnce(specs));
+                }
+                catch (SeikoException) when (!_budget.Exhausted && !_budget.DepthSpent)
+                {
+                    // The unfrozen run fails too. Its wording is the search's
+                    // (a plain "version conflict"); the first failure names
+                    // the source-level problem, so it is the one reported.
+                    throw ex;
+                }
+            }
+        }
+
         if (!_checkAmbiguity)
         {
             return result;
@@ -191,11 +225,20 @@ public sealed class Resolver
             {
                 result = ResolveOnce(specs);
             }
-            catch (SeikoException)
+            catch (SeikoException ex)
             {
                 if (_budget.Exhausted || _budget.DepthSpent)
                 {
                     throw;
+                }
+
+                // A tie whose verdict stayed open only because answers kept
+                // dropping the candidate: force the candidate and search
+                // again, until no new tie is opened.
+                if (RetryOpenTies(ex, specs) is { } retried)
+                {
+                    result = retried;
+                    continue;
                 }
                 // The preference does not survive the other forced choices;
                 // fall back to the solution that was already complete. A spent
@@ -211,6 +254,53 @@ public sealed class Resolver
         }
 
         return AcceptAfterProbeErrors(result);
+    }
+
+    // A tie whose verdict stayed open only because answers kept dropping the
+    // candidate is settled by forcing the candidate and searching again,
+    // until no new one opens. Null when nothing was newly forced.
+    private IReadOnlyList<ResolvedSei>? RetryOpenTies(SeikoException ex, IReadOnlyList<SeiSpec> specs)
+    {
+        if (ex.Code != "resolve" || _openTies.Count == 0)
+        {
+            return null;
+        }
+
+        var changed = false;
+        foreach (var (name, pick) in _openTies.ToList())
+        {
+            if (_forced.TryGetValue(name, out var current)
+                && current.Group == pick.Group
+                && string.Equals(
+                    current.Artifact.Source?.Sha256,
+                    pick.Artifact.Source?.Sha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            _forced[name] = pick;
+            _openTies.RemoveAll(item =>
+                string.Equals(item.Name, name, StringComparison.Ordinal));
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return null;
+        }
+
+        try
+        {
+            return AcceptAfterProbeErrors(ResolveOnce(specs));
+        }
+        catch (SeikoException again) when (!_budget.Exhausted && !_budget.DepthSpent)
+        {
+            // Nothing new to force: the open tie was not the reason after
+            // all, and the caller's fallback (dropping this round's forces)
+            // gets its chance instead of a hard failure.
+            return RetryOpenTies(again, specs);
+        }
     }
 
     // A probe error met while judging an artifact does not settle that
@@ -239,8 +329,9 @@ public sealed class Resolver
             }
 
             var units = resolved.Entry.Artifacts
-                .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
-                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .Where(artifact => artifact is not null
+                    && (string.IsNullOrWhiteSpace(artifact.Rid)
+                        || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)))
                 .SelectMany(UnitsOf)
                 .ToList();
             if (units.Count < 2)
@@ -248,10 +339,17 @@ public sealed class Resolver
                 continue;
             }
 
+            // A "maybe" counts only when its own gate can still end: every
+            // prerequisite must already be assigned or pending, and the known
+            // ones must fit. Otherwise forcing it only reaches a branch that
+            // dies on a name nobody will add (prerequisites are not pulled
+            // in). Proven-dead units are skipped too.
             var solvable = units
                 .Where(unit => (ReferenceEquals(unit.Artifact, resolved.Artifact)
                         && unit.Group == resolved.GroupIndex)
-                    || CanSolveWith(unit, resolved))
+                    || (CanStillMatch(unit, resolved)
+                        && Reachable(unit)
+                        && TrySolveWith(unit, resolved) != SolveVerdict.Unsolvable))
                 .ToList();
             var top = solvable.Max(unit => DependencyGroups.Score(unit.Artifact, unit.Group));
             var best = solvable
@@ -874,6 +972,15 @@ public sealed class Resolver
         }
     }
 
+    // Every prerequisite name is already in the graph, or is at least a
+    // direct declaration of this operation — prerequisites are not pulled in,
+    // so a name outside both can never be satisfied by this run.
+    private bool Reachable(ArtifactCandidate candidate)
+        => candidate.Prerequisites.All(prerequisite =>
+            _assigned.ContainsKey(prerequisite.Name)
+            || _specs.Any(spec =>
+                string.Equals(spec.Name, prerequisite.Name, StringComparison.Ordinal)));
+
     private bool CanStillMatch(ArtifactCandidate candidate, ResolvedSei owner)
     {
         foreach (var prerequisite in candidate.Prerequisites)
@@ -1032,6 +1139,13 @@ public sealed class Resolver
 
         foreach (var entry in index.Versions)
         {
+            // The validation above only runs once per index object; a second
+            // pass over the same object would otherwise walk a null entry.
+            if (entry is null)
+            {
+                throw Fail($"source '{source.Id}': invalid version entry for {name}");
+            }
+
             if (!NuGetVersion.TryParse(entry.Version, out var version))
             {
                 throw Fail($"source '{source.Id}': invalid version '{entry.Version}' for {name}");
@@ -1290,8 +1404,9 @@ public sealed class Resolver
         foreach (var resolved in _assigned.Values)
         {
             var units = resolved.Entry.Artifacts
-                .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
-                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+                .Where(artifact => artifact is not null
+                    && (string.IsNullOrWhiteSpace(artifact.Rid)
+                        || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)))
                 .SelectMany(UnitsOf)
                 .ToList();
             if (units.Count < 2)
@@ -1355,7 +1470,19 @@ public sealed class Resolver
             }
 
             // Only the tied top layer decides the verdict; a lower, unknown
-            // candidate cannot change whether the top is ambiguous.
+            // candidate cannot change whether the top is ambiguous. An open
+            // verdict on the top layer is recorded so the preference round
+            // can force the candidate and settle it.
+            foreach (var item in verdicts.Where(item =>
+                DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
+                && item.Verdict == SolveVerdict.Maybe
+                && Reachable(item.Unit)))
+            {
+                _openTies.Add((
+                    resolved.Name,
+                    new ForcedPick(resolved.Version, item.Unit.Artifact, item.Unit.Group)));
+            }
+
             if (verdicts.Any(item =>
                 DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
                 && item.Verdict == SolveVerdict.Maybe))
@@ -1416,19 +1543,12 @@ public sealed class Resolver
         try
         {
             probe.ResolveOnce(_specs);
-            // A proven leaf ends the walk with the assignment in place. The
-            // exhausted-search fallback (`_collected`) only exists because
-            // every leaf was a guess.
-            if (probe._assigned.Count == 0)
-            {
-                return SolveVerdict.Maybe;
-            }
-
-            // A backtack upstream can drop the package that required this
+            // A backtrack upstream can drop the package that required this
             // candidate; the returned graph is then a complete solution that
             // does not contain the candidate at all, so it proves nothing.
-            // The candidate only counts as proven when the answer still holds
-            // it (ADR-0027's "its own complete graph").
+            // It must not be called dead either — the preference round can
+            // still force the upstream choice and try again (ADR-0027's "its
+            // own complete graph").
             if (!probe._assigned.TryGetValue(owner.Name, out var kept)
                 || kept.GroupIndex != candidate.Group
                 || !string.Equals(
@@ -1436,7 +1556,7 @@ public sealed class Resolver
                     candidate.Artifact.Source?.Sha256,
                     StringComparison.OrdinalIgnoreCase))
             {
-                return SolveVerdict.Unsolvable;
+                return SolveVerdict.Maybe;
             }
 
             // A graph holding placeholders or shadowed answers was reached by
@@ -1476,6 +1596,11 @@ public sealed class Resolver
     // artifact, so it has to reach the caller rather than be reported as a
     // verdict. Cleared per public resolution.
     private SeikoException? _probeError;
+
+    // Tied candidates whose verdict stayed open because a probe's answer
+    // dropped them. Forcing them and searching again is what settles the
+    // question; a forced answer that fails just falls back.
+    private readonly List<(string Name, ForcedPick Pick)> _openTies = [];
 
     private enum SolveVerdict
     {
@@ -1528,7 +1653,7 @@ public sealed class Resolver
                     continue;
                 }
 
-                _lastConflict = Fail(
+                    _lastConflict = Fail(
                     $"{label} '{relation.Name}' required by {owner} {resolved.Version} is not in the resolved graph; add it explicitly or through a dependency");
                 return false;
             }
