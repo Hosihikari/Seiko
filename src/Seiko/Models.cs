@@ -309,7 +309,11 @@ public sealed class LockedArtifact
 
 public sealed class LocalState
 {
-    public const int CurrentSchemaVersion = 2;
+    // 3 adds `preserved` to the file records. A state from before that field
+    // is not readable unambiguously: a missing mark could mean either "never
+    // reset" or "written by a build that had no mark", and the deployment
+    // behaves differently for each. v0 rejects old state instead of guessing.
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public int Generation { get; set; }

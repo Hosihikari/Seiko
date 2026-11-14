@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Seiko.Tests;
@@ -766,6 +768,47 @@ public sealed class PreserveTests
             () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
 
         Assert.Contains("schemaVersion 3 cannot declare preserve", error.Message);
+    }
+
+    [Fact]
+    public void Sync_RejectsAStateWrittenBeforeThePreservedMark()
+    {
+        using var fixture = new Fixture();
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { [ConfigPath] = "default" },
+                    Preserve = [ConfigPath],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+
+        // A reset record as the builds between preserve and the mark wrote it:
+        // the same state shape, but a record with no `preserved` key at all.
+        // Missing and false are indistinguishable, and the two deployments
+        // differ, so the older format cannot be read as the current one.
+        var statePath = Path.Combine(fixture.Root, ".seiko", "state.json");
+        var state = JsonNode.Parse(File.ReadAllText(statePath))!;
+        state["schemaVersion"] = 2;
+        state["files"]![ConfigPath] = new JsonObject
+        {
+            ["owners"] = new JsonArray("app"),
+            ["sha256"] = Hashing.Sha256Bytes(Encoding.UTF8.GetBytes("default")),
+            ["adopted"] = false,
+        };
+        File.WriteAllText(statePath, state.ToJsonString());
+
+        var error = Assert.Throws<SeikoException>(
+            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+
+        Assert.Contains("unsupported deployment state schemaVersion 2", error.Message);
     }
 
     [Fact]
