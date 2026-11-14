@@ -836,6 +836,52 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Verify_AllowsArtifactsWhoseGroupsAreMutuallyExclusive()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "endstone", "levilamina" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // Same rid, no artifact-level gates; the groups themselves are the
+        // conditions and no environment can satisfy both. They are not
+        // equivalent artifacts even though the artifact-level keys match.
+        fixture.AddSei("hello", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Prerequisites: [new DepFixture("endstone", "*")],
+                            Conflicts: [new DepFixture("levilamina", "*")]),
+                    ],
+                },
+                new ArtifactFixture
+                {
+                    Files = { ["hello.txt"] = "hello" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Prerequisites: [new DepFixture("levilamina", "*")],
+                            Conflicts: [new DepFixture("endstone", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig("win-x64");
+
+        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
+
+        Assert.DoesNotContain(result.Findings, finding => finding.Code == "artifact-ambiguous");
+    }
+
+    [Fact]
     public void Add_RejectsUnconditionalOriginGroupsThatInstallDifferentSei()
     {
         using var fixture = new Fixture();
