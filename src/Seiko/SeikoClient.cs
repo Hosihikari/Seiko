@@ -788,6 +788,16 @@ public sealed class SeikoClient
             var state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
                 SeikoJsonContext.Default.LocalState);
+            if (state is not null && state.SchemaVersion != LocalState.CurrentSchemaVersion)
+            {
+                // The run this plan describes rejects the same file, so a
+                // preview read under another format would be greener than the
+                // operation (ADR-0040).
+                throw new SeikoException(
+                    $"unsupported deployment state schemaVersion {state.SchemaVersion}",
+                    "io");
+            }
+
             return state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
         }
         catch (JsonException)
@@ -2894,6 +2904,7 @@ public sealed class SeikoClient
         var stateDirectory = Path.Combine(root, ".seiko");
         var statePath = Path.Combine(stateDirectory, "state.json");
         LocalState? state = null;
+        var stateSchemaSupported = true;
         if (File.Exists(statePath))
         {
             try
@@ -2905,11 +2916,17 @@ public sealed class SeikoClient
             catch (JsonException)
             {
             }
+
+            // A state in another format is still readable enough to name the
+            // current generation, and list keeps going on a broken snapshot
+            // (ADR-0040), so it is not an error here. It does make the current
+            // generation invalid: neither it nor a rollback can read the file.
+            stateSchemaSupported = state is null
+                || state.SchemaVersion == LocalState.CurrentSchemaVersion;
         }
 
         var current = state?.Generation ?? 0;
-        var files = state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
-        var generations = new List<GenerationInfo>();
+        var files = state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);        var generations = new List<GenerationInfo>();
         var directory = Path.Combine(stateDirectory, "generations");
         if (!Directory.Exists(directory))
         {
@@ -2935,7 +2952,7 @@ public sealed class SeikoClient
                 number == current,
                 snapshot?.Lock.Sei.Count ?? 0,
                 fileCount,
-                valid));
+                valid && (number != current || stateSchemaSupported)));
         }
 
         return generations.OrderByDescending(item => item.Generation).ToList();

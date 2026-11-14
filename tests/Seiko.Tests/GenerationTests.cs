@@ -167,6 +167,30 @@ public sealed class GenerationTests
     }
 
     [Fact]
+    public void ListAndDryRunDoNotTrustAStateInAnotherSchema()
+    {
+        using var fixture = Installed();
+        var path = Path.Combine(fixture.Root, ".seiko", "state.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        node["schemaVersion"] = 999;
+        File.WriteAllText(path, node.ToJsonString());
+
+        // List keeps going (ADR-0040) but must not call the current
+        // generation valid: it cannot be read back.
+        var generations = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory);
+        Assert.False(generations.Single(item => item.Current).Valid);
+
+        // The plan describes a run that rejects the same file, so it has to
+        // fail too (ADR-0040's "not greener than the operation").
+        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            dryRun: true));
+
+        Assert.Equal("io", error.Code);
+    }
+
+    [Fact]
     public void Preview_FailsOnAnIncompleteTarget()
     {
         using var fixture = Installed();
