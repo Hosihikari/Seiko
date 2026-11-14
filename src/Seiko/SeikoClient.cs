@@ -3711,6 +3711,8 @@ public sealed class SeikoClient
                 continue;
             }
 
+            // The group is part of the candidate: two selections can share
+            // version, digest and rid and still install different sei.
             if (string.Equals(locked.Version, current.Version, StringComparison.Ordinal)
                 && string.Equals(
                     locked.Artifact.Sha256,
@@ -3719,7 +3721,8 @@ public sealed class SeikoClient
                 && string.Equals(
                     locked.Artifact.Rid,
                     current.Artifact.Rid,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+                && locked.Artifact.Group == current.GroupIndex)
             {
                 continue;
             }

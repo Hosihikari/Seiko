@@ -504,6 +504,64 @@ public sealed class DependencyGroupTests
     }
 
     [Fact]
+    public void Remove_DoesNotSwitchGroupsSilently()
+    {
+        using var fixture = new Fixture();
+        foreach (var name in new[] { "a", "b", "x", "y" })
+        {
+            AddPackage(fixture, name);
+        }
+
+        // Group 0 holds while a is installed; removing a makes group 1 the
+        // only one left, with a different set of sei behind it.
+        fixture.AddSei("app", new VersionFixture
+        {
+            Version = "1.0.0",
+            Artifacts =
+            [
+                new ArtifactFixture
+                {
+                    Files = { ["app.txt"] = "app" },
+                    DependencyGroups =
+                    [
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("x", "*")],
+                            Prerequisites: [new DepFixture("a", "*")]),
+                        new GroupFixture(
+                            Dependencies: [new DepFixture("y", "*")],
+                            Prerequisites: [new DepFixture("b", "*")]),
+                    ],
+                },
+            ],
+        });
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("a", "[1.0.0]"));
+        var client = new SeikoClient();
+        client.Sync(fixture.Root, fixture.StoreDirectory);
+        Assert.Equal(
+            0,
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+
+        // b joins after group 0 is locked; on its own, group 1 would now be
+        // the only eligible one, but the lock keeps 0 and the tie is silent.
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("a", "[1.0.0]"),
+            new SpecFixture("b", "[1.0.0]"));
+
+        // Version, digest and rid all stay the same; only the group changes,
+        // and with it the installed set (x out, y in).
+        var error = Assert.Throws<SeikoException>(
+            () => client.Remove(fixture.Root, "a", storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("resolve", error.Code);
+        Assert.Contains("app", error.Message);
+    }
+
+    [Fact]
     public void Sync_RejectsATieOnFirstInstall()
     {
         using var fixture = new Fixture();
