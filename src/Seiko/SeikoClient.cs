@@ -363,7 +363,13 @@ public sealed class SeikoClient
                 Lock = lockFile,
                 FilesDeployed = 0,
                 Warnings = previewWarnings,
-                Preview = Preview(existingLock, lockFile, resolved, mode, previewWarnings),
+                Preview = Preview(
+                    existingLock,
+                    lockFile,
+                    resolved,
+                    mode,
+                    previewWarnings,
+                    resetPreserved),
             };
         }
 
@@ -602,7 +608,8 @@ public sealed class SeikoClient
         SeikoLock proposed,
         IReadOnlyList<ResolvedSei> resolved,
         SyncMode mode,
-        IReadOnlyList<string> warnings)
+        IReadOnlyList<string> warnings,
+        bool resetPreserved)
     {
         var previous = existing?.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal)
             ?? new Dictionary<string, LockedSei>(StringComparer.Ordinal);
@@ -672,10 +679,14 @@ public sealed class SeikoClient
 
         // Preserve paths are mirrored by the index, so the plan can name them
         // without opening an artifact. This list is human-readable output
-        // only; changes[] keeps its per-sei shape (ADR-0016).
+        // only; changes[] keeps its per-sei shape (ADR-0016). Under
+        // --reset-preserved the real run replaces the file and manages it, so
+        // "kept as-is" would describe the opposite; only an empty path (which
+        // is created either way) is still a fresh copy.
         var preserved = resolved
             .OrderBy(sei => sei.Name, StringComparer.Ordinal)
             .SelectMany(sei => (IndexArtifactFor(sei).Preserve ?? [])
+                .Where(path => !resetPreserved)
                 .Select(path => new PreviewPreserve(sei.Name, path)))
             .ToList();
 

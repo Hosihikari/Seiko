@@ -458,6 +458,25 @@ public sealed class PreserveTests
     }
 
     [Fact]
+    public void DryRun_DoesNotListAFreshCopyAsPreservedUnderReset()
+    {
+        using var fixture = PreservingFixture();
+        var target = Config(fixture);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "user");
+
+        var result = new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            dryRun: true,
+            resetPreserved: true);
+
+        // The real run replaces that file and takes it under management, so
+        // saying "kept as-is" would describe the opposite of what happens.
+        Assert.Empty(result.Preview!.Preserved);
+    }
+
+    [Fact]
     public void DryRunPrintsPreservePathsInHumanOutput()
     {
         using var fixture = PreservingFixture();
