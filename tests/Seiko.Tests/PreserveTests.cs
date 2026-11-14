@@ -60,8 +60,13 @@ public sealed class PreserveTests
 
     private static int Links(string path)
     {
+        // BSD stat prints %l, GNU coreutils -c %h; the two systems this runs
+        // on share neither spelling nor flag.
+        var (flag, format) = OperatingSystem.IsMacOS()
+            ? ("-f", "%l")
+            : ("-c", "%h");
         using var process = System.Diagnostics.Process.Start(
-            new System.Diagnostics.ProcessStartInfo("stat", ["-f", "%l", path])
+            new System.Diagnostics.ProcessStartInfo("stat", [flag, format, path])
             {
                 RedirectStandardOutput = true,
             })!;
