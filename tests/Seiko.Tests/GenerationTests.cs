@@ -190,6 +190,45 @@ public sealed class GenerationTests
         Assert.Equal("io", error.Code);
     }
 
+    [Theory]
+    [InlineData("null-list")]
+    [InlineData("null-record")]
+    public void EveryStateShapeTheRunRejectsAlsoFailsThePreviewsAndMarksTheCurrentGeneration(
+        string shape)
+    {
+        using var fixture = Installed();
+        Upgrade(fixture);
+        var path = Path.Combine(fixture.Root, ".seiko", "state.json");
+        var node = JsonNode.Parse(File.ReadAllText(path))!;
+        if (shape == "null-list")
+        {
+            node["files"] = null;
+        }
+        else
+        {
+            node["files"]!["hello.txt"] = null;
+        }
+
+        File.WriteAllText(path, node.ToJsonString());
+
+        // List keeps going but must not call the current generation valid.
+        var generations = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory);
+        Assert.False(generations.Single(item => item.Current).Valid);
+
+        // Both plans describe a run that rejects the same file.
+        var syncError = Assert.Throws<SeikoException>(() => new SeikoClient().Sync(
+            fixture.Root,
+            fixture.StoreDirectory,
+            dryRun: true));
+        Assert.Equal("io", syncError.Code);
+
+        var rollbackError = Assert.Throws<SeikoException>(
+            () => new SeikoClient().PreviewRollback(
+                fixture.Root,
+                storeRoot: fixture.StoreDirectory));
+        Assert.Equal("io", rollbackError.Code);
+    }
+
     [Fact]
     public void Preview_FailsOnAnIncompleteTarget()
     {

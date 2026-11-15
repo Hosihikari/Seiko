@@ -774,61 +774,88 @@ public sealed class SeikoClient
                     StringComparison.OrdinalIgnoreCase))
             ?? sei.Artifact;
 
+    // The generation number out of a state the strict reader rejects, so list
+    // can still say which generation is current. Null when even that fails.
+    private static LocalState? LenientState(string statePath)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(
+                File.ReadAllBytes(statePath),
+                SeikoJsonContext.Default.LocalState);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     // The deployed records a preview needs to describe the plan honestly. A
     // missing state means "nothing was deployed yet". A present but unreadable
     // one is an error rather than an empty set: the real run fails on the same
     // bytes, and silence would make the plan claim a clean slate.
     private static IReadOnlyDictionary<string, DeployedFile> ReadStateRecords(string root)
     {
+        var state = ReadCurrentState(root);
+        return state is null
+            ? new Dictionary<string, DeployedFile>(StringComparer.Ordinal)
+            : state.Files;
+    }
+
+    // Reads the current state under the deployment's own rules: the same
+    // schema gate and the same two shape checks. Every preview and list uses
+    // this, so none of them can be greener than the run they describe
+    // (ADR-0029, ADR-0040). Null when the root was never deployed.
+    private static LocalState? ReadCurrentState(string root)
+    {
         var path = Path.Combine(root, ".seiko", "state.json");
         if (!File.Exists(path))
         {
-            return new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+            return null;
         }
 
+        LocalState? state;
         try
         {
-            var state = JsonSerializer.Deserialize(
+            state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
                 SeikoJsonContext.Default.LocalState);
-            if (state is not null && state.SchemaVersion != LocalState.CurrentSchemaVersion)
-            {
-                // The run this plan describes rejects the same file, so a
-                // preview read under another format would be greener than the
-                // operation (ADR-0040).
-                throw new SeikoException(
-                    $"unsupported deployment state schemaVersion {state.SchemaVersion}",
-                    "io");
-            }
-
-            if (state is null)
-            {
-                throw new SeikoException("invalid deployment state", "io");
-            }
-
-            if (state.Files is null)
-            {
-                // The deployment rejects a state without a file list, so the
-                // plan cannot read it as "nothing deployed".
-                throw new SeikoException("deployment state has no file list", "io");
-            }
-
-            foreach (var (relative, record) in state.Files)
-            {
-                if (record is null)
-                {
-                    throw new SeikoException(
-                        $"deployment state has no record for {relative}",
-                        "io");
-                }
-            }
-
-            return state.Files;
         }
         catch (JsonException ex)
         {
             throw new SeikoException($"invalid deployment state ({ex.Message})", "io", ex);
         }
+
+        if (state is null)
+        {
+            throw new SeikoException("invalid deployment state", "io");
+        }
+
+        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
+        {
+            throw new SeikoException(
+                $"unsupported deployment state schemaVersion {state.SchemaVersion}",
+                "io");
+        }
+
+        if (state.Files is null)
+        {
+            // The deployment rejects a state without a file list, so a reader
+            // cannot treat it as "nothing deployed".
+            throw new SeikoException("deployment state has no file list", "io");
+        }
+
+        foreach (var (relative, record) in state.Files)
+        {
+            if (record is null)
+            {
+                throw new SeikoException(
+                    $"deployment state has no record for {relative}",
+                    "io");
+            }
+        }
+
+        return state;
     }
 
     private static bool ExternalSummaryMatches(ExternalSummary declared, ArtifactManifest? manifest)
@@ -2718,24 +2745,11 @@ public sealed class SeikoClient
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         var stateDirectory = Path.Combine(root, ".seiko");
-        var statePath = Path.Combine(stateDirectory, "state.json");
-        if (!File.Exists(statePath))
-        {
-            throw new SeikoException("no local state; run `sk sync` first", "lock");
-        }
 
-        var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
-            ?? throw new SeikoException("invalid local state", "lock");
-
-        // Same gate as the real rollback: a preview that passes an old state
-        // the run would reject is greener than the operation it describes
-        // (ADR-0040).
-        if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
-        {
-            throw new SeikoException(
-                $"unsupported deployment state schemaVersion {state.SchemaVersion}",
-                "io");
-        }
+        // The same reader the sync preview uses: the plan may not pass a state
+        // the run would reject (ADR-0040).
+        var state = ReadCurrentState(root)
+            ?? throw new SeikoException("no local state; run `sk sync` first", "lock");
 
         var target = toGeneration ?? state.Generation - 1;
         if (target < 1)
@@ -2758,8 +2772,8 @@ public sealed class SeikoClient
             ?? throw new SeikoException("no lock; run `sk sync`", "lock");
         var lockChanges = DiffSei(currentLock, snapshotLock);
 
-        var currentFiles = state.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
-        var targetFiles = snapshotState.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        var currentFiles = state.Files;
+        var targetFiles = snapshotState.Files;
         var added = new List<string>();
         var removed = new List<string>();
         var replaced = new List<string>();
@@ -2952,30 +2966,31 @@ public sealed class SeikoClient
         root = Path.GetFullPath(root);
         var stateDirectory = Path.Combine(root, ".seiko");
         var statePath = Path.Combine(stateDirectory, "state.json");
-        LocalState? state = null;
-        var stateSchemaSupported = true;
-        if (File.Exists(statePath))
+        LocalState? state;
+        var stateReadable = true;
+        if (!File.Exists(statePath))
+        {
+            state = null;
+        }
+        else
         {
             try
             {
-                state = JsonSerializer.Deserialize(
-                    File.ReadAllBytes(statePath),
-                    SeikoJsonContext.Default.LocalState);
+                state = ReadCurrentState(root);
             }
-            catch (JsonException)
+            catch (SeikoException)
             {
+                // List keeps going on a broken input and marks the entry
+                // invalid (ADR-0040). The generation number is still wanted,
+                // so the raw document is read leniently for that one field.
+                state = LenientState(statePath);
+                stateReadable = false;
             }
-
-            // A state in another format is still readable enough to name the
-            // current generation, and list keeps going on a broken snapshot
-            // (ADR-0040), so it is not an error here. It does make the current
-            // generation invalid: neither it nor a rollback can read the file.
-            stateSchemaSupported = state is null
-                || state.SchemaVersion == LocalState.CurrentSchemaVersion;
         }
 
         var current = state?.Generation ?? 0;
-        var files = state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);        var generations = new List<GenerationInfo>();
+        var files = state?.Files ?? new Dictionary<string, DeployedFile>(StringComparer.Ordinal);
+        var generations = new List<GenerationInfo>();
         var directory = Path.Combine(stateDirectory, "generations");
         if (!Directory.Exists(directory))
         {
@@ -3001,7 +3016,7 @@ public sealed class SeikoClient
                 number == current,
                 snapshot?.Lock.Sei.Count ?? 0,
                 fileCount,
-                valid && (number != current || stateSchemaSupported)));
+                valid && (number != current || stateReadable)));
         }
 
         return generations.OrderByDescending(item => item.Generation).ToList();
