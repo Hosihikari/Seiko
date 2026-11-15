@@ -3074,10 +3074,27 @@ public sealed class SeikoClient
             throw new SeikoException($"generation {target} has no state", "io");
         }
 
-        var state = JsonSerializer.Deserialize(
-            File.ReadAllBytes(statePath),
-            SeikoJsonContext.Default.LocalState)
-            ?? throw new SeikoException($"generation {target} has no state", "io");
+        LocalState? state;
+        try
+        {
+            state = JsonSerializer.Deserialize(
+                File.ReadAllBytes(statePath),
+                SeikoJsonContext.Default.LocalState);
+        }
+        catch (JsonException ex)
+        {
+            // Same classification as the current state's read: a broken file
+            // is a runtime input error, not an internal failure (ADR-0029).
+            throw new SeikoException(
+                $"generation {target} has an invalid state ({ex.Message})",
+                "io",
+                ex);
+        }
+
+        if (state is null)
+        {
+            throw new SeikoException($"generation {target} has no state", "io");
+        }
         if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
         {
             throw new SeikoException(

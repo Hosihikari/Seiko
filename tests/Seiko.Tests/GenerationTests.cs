@@ -230,6 +230,28 @@ public sealed class GenerationTests
     }
 
     [Fact]
+    public void Preview_ReportsATruncatedTargetStateAsAnIoError()
+    {
+        using var fixture = Installed();
+        Upgrade(fixture);
+        var path = Path.Combine(fixture.Root, ".seiko", "generations", "1", "state.json");
+        File.WriteAllText(path, File.ReadAllText(path)[..40]);
+
+        // The current side already reports `io`; the target must not surface a
+        // raw parse failure as an internal error, and it names the generation.
+        var preview = Assert.Throws<SeikoException>(
+            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+
+        Assert.Equal("io", preview.Code);
+        Assert.Contains("generation 1", preview.Message);
+
+        var rollback = Assert.Throws<SeikoException>(
+            () => new SeikoClient().Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1));
+
+        Assert.Equal("io", rollback.Code);
+    }
+
+    [Fact]
     public void Preview_FailsOnAnIncompleteTarget()
     {
         using var fixture = Installed();
