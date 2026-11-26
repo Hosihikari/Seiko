@@ -50,19 +50,21 @@ public static class CatalogFile
             // derived catalog cannot change the displayed version.
             var latest = SeikoClient.LatestVersion(effective);
             var advisory = MostSevere(versions);
-            entries.Add(new CatalogEntry
-            {
-                Name = effective.Name ?? "",
-                Version = latest?.Version,
-                Description = effective.Project?.Description,
-                Tags = effective.Project?.Tags is { } tags
-                    ? tags.OrderBy(tag => tag, StringComparer.Ordinal).ToList()
-                    : null,
-                License = effective.Project?.License,
-                Unlisted = effective.Unlisted,
-                Deprecated = effective.Deprecated,
-                Advisory = advisory,
-            });
+            entries.Add(
+                new CatalogEntry
+                {
+                    Name = effective.Name ?? "",
+                    Version = latest?.Version,
+                    Description = effective.Project?.Description,
+                    Tags = effective.Project?.Tags is { } tags
+                        ? tags.OrderBy(tag => tag, StringComparer.Ordinal).ToList()
+                        : null,
+                    License = effective.Project?.License,
+                    Unlisted = effective.Unlisted,
+                    Deprecated = effective.Deprecated,
+                    Advisory = advisory,
+                }
+            );
         }
 
         return new SeiCatalog
@@ -76,7 +78,10 @@ public static class CatalogFile
     // Duplicate names would otherwise crash search.
     public static bool IsValid(SeiCatalog? catalog)
     {
-        if (catalog is not { SchemaVersion: SeiCatalog.CurrentSchemaVersion } || catalog.Sei is null)
+        if (
+            catalog is not { SchemaVersion: SeiCatalog.CurrentSchemaVersion }
+            || catalog.Sei is null
+        )
         {
             return false;
         }
@@ -104,7 +109,8 @@ public static class CatalogFile
         {
             var catalog = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
-                SeikoJsonContext.Default.SeiCatalog);
+                SeikoJsonContext.Default.SeiCatalog
+            );
             return IsValid(catalog) ? catalog : null;
         }
         catch (JsonException)
@@ -127,7 +133,8 @@ public static class CatalogFile
         {
             File.WriteAllBytes(
                 temp,
-                JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog));
+                JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog)
+            );
             File.Move(temp, path, overwrite: true);
         }
         finally
@@ -149,20 +156,21 @@ public static class CatalogFile
             yield break;
         }
 
-        foreach (var file in Directory
-            .EnumerateFiles(seiDirectory, "*.json", SearchOption.TopDirectoryOnly)
-            .OrderBy(path => path, StringComparer.Ordinal))
+        foreach (
+            var file in Directory
+                .EnumerateFiles(seiDirectory, "*.json", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.Ordinal)
+        )
         {
             SeiIndex? index = null;
             try
             {
                 index = JsonSerializer.Deserialize(
                     File.ReadAllBytes(file),
-                    SeikoJsonContext.Default.SeiIndex);
+                    SeikoJsonContext.Default.SeiIndex
+                );
             }
-            catch (JsonException)
-            {
-            }
+            catch (JsonException) { }
 
             if (index is not null)
             {
@@ -174,15 +182,15 @@ public static class CatalogFile
     // The package's most severe advisory across all versions; search uses the
     // same helper for its per-name fallback, so a catalog's presence cannot
     // change the displayed security signal.
-    internal static AdvisoryInfo? MostSevere(IEnumerable<SeiVersionEntry?> versions)
-        => versions
+    internal static AdvisoryInfo? MostSevere(IEnumerable<SeiVersionEntry?> versions) =>
+        versions
             .Select(entry => entry?.Advisory)
             .Where(advisory => advisory is not null)
             .OrderByDescending(Rank)
             .FirstOrDefault();
 
-    private static int Rank(AdvisoryInfo? advisory)
-        => advisory?.Severity?.Trim().ToLowerInvariant() switch
+    private static int Rank(AdvisoryInfo? advisory) =>
+        advisory?.Severity?.Trim().ToLowerInvariant() switch
         {
             "critical" => 3,
             "high" => 2,

@@ -8,29 +8,29 @@ namespace Seiko.Tests;
 // code, and the index stays a single shape for everyone.
 public sealed class IndexOverlayTests
 {
-    private static SeiIndex Read(Fixture fixture)
-        => JsonSerializer.Deserialize(
+    private static SeiIndex Read(Fixture fixture) =>
+        JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "hello.json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
 
-    private static void Write(Fixture fixture, SeiIndex sei)
-        => File.WriteAllBytes(
+    private static void Write(Fixture fixture, SeiIndex sei) =>
+        File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
 
     private static Fixture FixtureWithTwoVersions()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         return fixture;
     }
@@ -76,7 +76,11 @@ public sealed class IndexOverlayTests
         using var fixture = FixtureWithTwoVersions();
         var sei = Read(fixture);
         var entry = sei.Versions.Single(item => item.Version == "2.0.0");
-        entry.Advisory = new AdvisoryInfo { Severity = "moderate", Url = "https://example.invalid/m" };
+        entry.Advisory = new AdvisoryInfo
+        {
+            Severity = "moderate",
+            Url = "https://example.invalid/m",
+        };
         entry.SourceAdvisories =
         [
             new AdvisoryInfo { Severity = "critical", Url = "https://example.invalid/c" },
@@ -97,7 +101,11 @@ public sealed class IndexOverlayTests
         using var fixture = FixtureWithTwoVersions();
         var sei = Read(fixture);
         var entry = sei.Versions.Single(item => item.Version == "2.0.0");
-        entry.Advisory = new AdvisoryInfo { Severity = "critical", Url = "https://example.invalid/c" };
+        entry.Advisory = new AdvisoryInfo
+        {
+            Severity = "critical",
+            Url = "https://example.invalid/c",
+        };
         entry.SourceAdvisories =
         [
             new AdvisoryInfo { Severity = "low", Url = "https://example.invalid/l" },
@@ -110,7 +118,10 @@ public sealed class IndexOverlayTests
         // maintainer's critical severity survives a lower source advisory.
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal("1.0.0", Assert.Single(result.Lock.Sei).Version);
-        Assert.Contains(result.Warnings, warning => warning.Contains("critical", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Warnings,
+            warning => warning.Contains("critical", StringComparison.Ordinal)
+        );
     }
 
     [Fact]

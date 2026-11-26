@@ -21,7 +21,8 @@ public sealed class AdoptRemoveTests
         Assert.Empty(lockFile.Sei);
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
-            SeikoJsonContext.Default.LocalState)!;
+            SeikoJsonContext.Default.LocalState
+        )!;
         Assert.Empty(state.Files);
     }
 
@@ -61,8 +62,9 @@ public sealed class AdoptRemoveTests
         var client = new SeikoClient();
         File.WriteAllText(Path.Combine(fixture.Root, "hello.txt"), "edited");
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Single(ConfigLoader.Load(fixture.Root).Sei);
@@ -71,11 +73,14 @@ public sealed class AdoptRemoveTests
     private static Fixture Seed()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         return fixture;

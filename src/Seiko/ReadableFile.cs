@@ -18,12 +18,15 @@ internal static class ReadableFile
         }
     }
 
-    public static void Copy(string source, string destination, bool overwrite)
-        => WithReadAccess(source, () =>
-        {
-            File.Copy(source, destination, overwrite);
-            return 0;
-        });
+    public static void Copy(string source, string destination, bool overwrite) =>
+        WithReadAccess(
+            source,
+            () =>
+            {
+                File.Copy(source, destination, overwrite);
+                return 0;
+            }
+        );
 
     private static UnixFileMode? AddReadAccess(string path)
     {
@@ -52,8 +55,6 @@ internal static class ReadableFile
         {
             File.SetUnixFileMode(path, original);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 }

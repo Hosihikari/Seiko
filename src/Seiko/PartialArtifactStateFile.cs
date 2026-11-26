@@ -15,7 +15,8 @@ internal static class PartialArtifactStateFile
         {
             return JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
-                SeikoJsonContext.Default.PartialArtifactState);
+                SeikoJsonContext.Default.PartialArtifactState
+            );
         }
         catch (JsonException)
         {
@@ -28,12 +29,16 @@ internal static class PartialArtifactStateFile
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
         File.WriteAllBytes(
             temp,
-            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.PartialArtifactState));
+            JsonSerializer.SerializeToUtf8Bytes(
+                state,
+                SeikoJsonContext.Default.PartialArtifactState
+            )
+        );
         File.Move(temp, path, overwrite: true);
     }
 
-    public static bool HasValidator(PartialArtifactState state)
-        => !string.IsNullOrWhiteSpace(state.ETag) || !string.IsNullOrWhiteSpace(state.LastModified);
+    public static bool HasValidator(PartialArtifactState state) =>
+        !string.IsNullOrWhiteSpace(state.ETag) || !string.IsNullOrWhiteSpace(state.LastModified);
 
     public static void ClearDirectory(string directory)
     {

@@ -8,16 +8,14 @@ public sealed class ResolverTests
     public void Resolve_ReconsidersAVersionWhenALaterConstraintNarrowsIt()
     {
         using var fixture = new Fixture();
-        fixture.AddSei(
-            "b",
-            Version("b", "1.5.0"),
-            Version("b", "2.5.0"));
+        fixture.AddSei("b", Version("b", "1.5.0"), Version("b", "2.5.0"));
         fixture.AddSei("a", Version("a", "1.0.0", new DepFixture("b", "[0.0.0,3.0.0)")));
         fixture.AddSei("c", Version("c", "1.0.0", new DepFixture("b", "[0.0.0,2.0.0)")));
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("c", "[1.0.0]"));
+            new SpecFixture("c", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -32,13 +30,11 @@ public sealed class ResolverTests
         fixture.AddSei(
             "a",
             Version("a", "1.0.0"),
-            Version("a", "2.0.0", new DepFixture("x", "[1.0.0]")));
+            Version("a", "2.0.0", new DepFixture("x", "[1.0.0]"))
+        );
         fixture.AddSei("x", Version("x", "1.0.0"));
         fixture.AddSei("d", Version("d", "1.0.0", new DepFixture("a", "[1.0.0,2.0.0)")));
-        fixture.WriteConfig(
-            "win-x64",
-            new SpecFixture("a"),
-            new SpecFixture("d", "[1.0.0]"));
+        fixture.WriteConfig("win-x64", new SpecFixture("a"), new SpecFixture("d", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -52,17 +48,23 @@ public sealed class ResolverTests
     public void Resolve_BacktracksWhenANewerVersionHasAMissingDependency()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("demo", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["demo.txt"] = "one" } }],
-        });
-        fixture.AddSei("demo", new VersionFixture
-        {
-            Version = "2.0.0",
-            Dependencies = [new DepFixture("missing", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["demo.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "demo",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["demo.txt"] = "one" } }],
+            }
+        );
+        fixture.AddSei(
+            "demo",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("missing", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["demo.txt"] = "two" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("demo", "*"));
 
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -78,16 +80,11 @@ public sealed class ResolverTests
         fixture.AddSei(
             "a",
             Version("a", "1.0.0"),
-            Version("a", "2.0.0", new DepFixture("b", "[2.0.0,3.0.0)")));
-        fixture.AddSei(
-            "b",
-            Version("b", "1.5.0"),
-            Version("b", "2.5.0"));
+            Version("a", "2.0.0", new DepFixture("b", "[2.0.0,3.0.0)"))
+        );
+        fixture.AddSei("b", Version("b", "1.5.0"), Version("b", "2.5.0"));
         fixture.AddSei("c", Version("c", "1.0.0", new DepFixture("b", "[0.0.0,2.0.0)")));
-        fixture.WriteConfig(
-            "win-x64",
-            new SpecFixture("a"),
-            new SpecFixture("c", "[1.0.0]"));
+        fixture.WriteConfig("win-x64", new SpecFixture("a"), new SpecFixture("c", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -103,10 +100,7 @@ public sealed class ResolverTests
     public void Resolve_AllowsPrereleaseRequestedByALaterDependency(bool directFirst)
     {
         using var fixture = new Fixture();
-        fixture.AddSei(
-            "a",
-            Version("a", "1.0.0"),
-            Version("a", "2.0.0-beta"));
+        fixture.AddSei("a", Version("a", "1.0.0"), Version("a", "2.0.0-beta"));
         fixture.AddSei("b", Version("b", "1.0.0", new DepFixture("a", "[2.0.0-beta]")));
         SpecFixture[] specs = directFirst
             ? [new SpecFixture("a"), new SpecFixture("b", "[1.0.0]")]
@@ -132,18 +126,16 @@ public sealed class ResolverTests
                 Version = "2.0.0",
                 Artifacts =
                 [
-                    new ArtifactFixture
-                    {
-                        Rid = "linux-x64",
-                        Files = { ["a.txt"] = "two" },
-                    },
+                    new ArtifactFixture { Rid = "linux-x64", Files = { ["a.txt"] = "two" } },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "*"));
         var client = new SeikoClient();
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
         Assert.Equal("resolve", error.Code);
 
         client.Sync(fixture.Root, fixture.StoreDirectory, latestInstallable: true);
@@ -155,29 +147,35 @@ public sealed class ResolverTests
     public void Resolve_PrerequisiteMatchesABundleThatDependsOnThePackage()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("bundle", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("hosting", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("hosting", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Prerequisites = [new DepFixture("bundle", "[1.0.0]")],
-                    Files = { ["hosting.txt"] = "selected" },
-                },
-                new ArtifactFixture
-                {
-                    Prerequisites = [new DepFixture("other", "[1.0.0]")],
-                    Files = { ["hosting.txt"] = "other" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "bundle",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("hosting", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture()],
+            }
+        );
+        fixture.AddSei(
+            "hosting",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Prerequisites = [new DepFixture("bundle", "[1.0.0]")],
+                        Files = { ["hosting.txt"] = "selected" },
+                    },
+                    new ArtifactFixture
+                    {
+                        Prerequisites = [new DepFixture("other", "[1.0.0]")],
+                        Files = { ["hosting.txt"] = "other" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("bundle", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -189,27 +187,28 @@ public sealed class ResolverTests
     public void Resolve_LatestInstallableReconsidersVersionsAfterGraphChanges()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Prerequisites = [new DepFixture("marker", "*")],
-                    Files = { ["a.txt"] = "a" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Prerequisites = [new DepFixture("marker", "*")],
+                        Files = { ["a.txt"] = "a" },
+                    },
+                ],
+            }
+        );
         fixture.AddSei(
             "b",
             Version("b", "2.0.0"),
-            Version("b", "1.0.0", new DepFixture("marker", "*")));
+            Version("b", "1.0.0", new DepFixture("marker", "*"))
+        );
         fixture.AddSei("marker", Version("marker", "1.0.0"));
-        fixture.WriteConfig(
-            "win-x64",
-            new SpecFixture("a", "*"),
-            new SpecFixture("b", "*"));
+        fixture.WriteConfig("win-x64", new SpecFixture("a", "*"), new SpecFixture("b", "*"));
         var client = new SeikoClient();
 
         client.Sync(fixture.Root, fixture.StoreDirectory, latestInstallable: true);
@@ -238,7 +237,8 @@ public sealed class ResolverTests
                         Files = { ["a.txt"] = "two" },
                     },
                 ],
-            });
+            }
+        );
         withoutCarrier.AddSei("marker", Version("marker", "1.0.0"));
         withoutCarrier.WriteConfig("win-x64", new SpecFixture("a", "*"));
         var client = new SeikoClient();
@@ -260,14 +260,19 @@ public sealed class ResolverTests
                         Files = { ["a.txt"] = "two" },
                     },
                 ],
-            });
+            }
+        );
         withCarrier.AddSei("marker", Version("marker", "1.0.0"));
         withCarrier.WriteConfig(
             "win-x64",
             new SpecFixture("a", "*"),
-            new SpecFixture("marker", "*"));
+            new SpecFixture("marker", "*")
+        );
         client.Sync(withCarrier.Root, withCarrier.StoreDirectory, latestInstallable: true);
-        Assert.Equal("2.0.0", client.ReadLock(withCarrier.Root)!.Sei.Single(sei => sei.Name == "a").Version);
+        Assert.Equal(
+            "2.0.0",
+            client.ReadLock(withCarrier.Root)!.Sei.Single(sei => sei.Name == "a").Version
+        );
     }
 
     [Fact]
@@ -279,12 +284,14 @@ public sealed class ResolverTests
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(
                 fixture.Root,
                 fixture.StoreDirectory,
                 mode: SyncMode.Frozen,
-                latestInstallable: true));
+                latestInstallable: true
+            )
+        );
 
         Assert.Equal("usage", error.Code);
     }
@@ -293,10 +300,7 @@ public sealed class ResolverTests
     public void Resolve_DoesNotTreatBuildMetadataAsPrereleaseAuthorization()
     {
         using var fixture = new Fixture();
-        fixture.AddSei(
-            "a",
-            Version("a", "1.0.0"),
-            Version("a", "2.0.0-beta"));
+        fixture.AddSei("a", Version("a", "1.0.0"), Version("a", "2.0.0-beta"));
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0,3.0.0+abc-def]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -309,10 +313,7 @@ public sealed class ResolverTests
     public void Resolve_RejectsPrereleaseAuthorizedOnlyByAnAbandonedBranch()
     {
         using var fixture = new Fixture();
-        fixture.AddSei(
-            "a",
-            Version("a", "1.0.0"),
-            Version("a", "2.0.0-beta"));
+        fixture.AddSei("a", Version("a", "1.0.0"), Version("a", "2.0.0-beta"));
         fixture.AddSei(
             "b",
             Version("b", "1.0.0", new DepFixture("a", "[1.5.0,3.0.0)")),
@@ -320,15 +321,15 @@ public sealed class ResolverTests
                 "b",
                 "2.0.0",
                 new DepFixture("a", "[2.0.0-beta]"),
-                new DepFixture("c", "[2.0.0]")));
+                new DepFixture("c", "[2.0.0]")
+            )
+        );
         fixture.AddSei("c", Version("c", "1.0.0"));
-        fixture.WriteConfig(
-            "win-x64",
-            new SpecFixture("b"),
-            new SpecFixture("a"));
+        fixture.WriteConfig("win-x64", new SpecFixture("b"), new SpecFixture("a"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("prerelease", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -340,10 +341,7 @@ public sealed class ResolverTests
     public void Resolve_PrefersStableWhenAPrereleaseHintComesFromAnAbandonedBranch()
     {
         using var fixture = new Fixture();
-        fixture.AddSei(
-            "a",
-            Version("a", "1.0.0"),
-            Version("a", "2.0.0-beta"));
+        fixture.AddSei("a", Version("a", "1.0.0"), Version("a", "2.0.0-beta"));
         fixture.AddSei(
             "b",
             Version("b", "1.0.0", new DepFixture("a", "[1.0.0,2.0.0)")),
@@ -351,12 +349,11 @@ public sealed class ResolverTests
                 "b",
                 "2.0.0",
                 new DepFixture("a", "[2.0.0-beta]"),
-                new DepFixture("c", "[2.0.0]")));
+                new DepFixture("c", "[2.0.0]")
+            )
+        );
         fixture.AddSei("c", Version("c", "1.0.0"));
-        fixture.WriteConfig(
-            "win-x64",
-            new SpecFixture("b"),
-            new SpecFixture("a"));
+        fixture.WriteConfig("win-x64", new SpecFixture("b"), new SpecFixture("a"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -372,10 +369,9 @@ public sealed class ResolverTests
         var versions = new List<VersionFixture>();
         for (var i = 1; i <= 101; i++)
         {
-            versions.Add(Version(
-                "b",
-                $"2.0.0-alpha.{i}",
-                new DepFixture("a", $"[3.0.0-beta.{i}]")));
+            versions.Add(
+                Version("b", $"2.0.0-alpha.{i}", new DepFixture("a", $"[3.0.0-beta.{i}]"))
+            );
         }
 
         versions.Add(Version("b", "1.0.0"));
@@ -394,19 +390,18 @@ public sealed class ResolverTests
     public void Resolve_ReportsTheConstraintChainOnConflict()
     {
         using var fixture = new Fixture();
-        fixture.AddSei(
-            "b",
-            Version("b", "1.5.0"),
-            Version("b", "2.5.0"));
+        fixture.AddSei("b", Version("b", "1.5.0"), Version("b", "2.5.0"));
         fixture.AddSei("a", Version("a", "1.0.0", new DepFixture("b", "[0.0.0,2.0.0)")));
         fixture.AddSei("c", Version("c", "1.0.0", new DepFixture("b", "[2.0.0,3.0.0)")));
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("c", "[1.0.0]"));
+            new SpecFixture("c", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("required by a", error.Message);
@@ -418,28 +413,32 @@ public sealed class ResolverTests
     {
         using var fixture = new Fixture();
         fixture.AddSei("marker", Version("marker", "1.0.0"));
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Prerequisites = [new DepFixture("marker", "*")],
-                    Dependencies = [new DepFixture("marker", "[2.0.0]")],
-                    Files = { ["a.txt"] = "wrong" },
-                },
-                new ArtifactFixture
-                {
-                    Prerequisites = [new DepFixture("marker", "*")],
-                    Files = { ["a.txt"] = "fallback" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Prerequisites = [new DepFixture("marker", "*")],
+                        Dependencies = [new DepFixture("marker", "[2.0.0]")],
+                        Files = { ["a.txt"] = "wrong" },
+                    },
+                    new ArtifactFixture
+                    {
+                        Prerequisites = [new DepFixture("marker", "*")],
+                        Files = { ["a.txt"] = "fallback" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("marker", "[1.0.0]"));
+            new SpecFixture("marker", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -452,19 +451,23 @@ public sealed class ResolverTests
     public void Resolve_RejectsAmbiguousArtifacts()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture { Files = { ["a.txt"] = "first" } },
-                new ArtifactFixture { Files = { ["a.txt"] = "second" } },
-            ],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture { Files = { ["a.txt"] = "first" } },
+                    new ArtifactFixture { Files = { ["a.txt"] = "second" } },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("ambiguous artifact", error.Message);
@@ -492,36 +495,43 @@ public sealed class ResolverTests
                         Files = { ["a.txt"] = "two" },
                     },
                 ],
-            });
+            }
+        );
         fixture.AddSei("marker", Version("marker", "1.0.0"));
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "*"),
-            new SpecFixture("marker", "[1.0.0]"));
+            new SpecFixture("marker", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("one", File.ReadAllText(Path.Combine(fixture.Root, "a.txt")));
-        Assert.Equal("1.0.0", new SeikoClient().ReadLock(fixture.Root)!
-            .Sei.Single(sei => sei.Name == "a").Version);
+        Assert.Equal(
+            "1.0.0",
+            new SeikoClient().ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "a").Version
+        );
     }
 
     [Fact]
     public void Resolve_AddsArtifactDependency()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["a.txt"] = "a" },
-                    Dependencies = [new DepFixture("marker", "[1.0.0]")],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["a.txt"] = "a" },
+                        Dependencies = [new DepFixture("marker", "[1.0.0]")],
+                    },
+                ],
+            }
+        );
         fixture.AddSei("marker", Version("marker", "1.0.0"));
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
 
@@ -534,23 +544,28 @@ public sealed class ResolverTests
         Assert.False(marker.Direct);
         Assert.Contains(
             lockFile.Sei.Single(sei => sei.Name == "a").Artifact.Dependencies,
-            dependency => dependency.Name == "marker");
+            dependency => dependency.Name == "marker"
+        );
     }
 
     [Fact]
     public void Resolve_RejectsMissingVersionPrerequisite()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Prerequisites = [new DepFixture("marker", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Prerequisites = [new DepFixture("marker", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("prerequisite", error.Message);
@@ -562,16 +577,20 @@ public sealed class ResolverTests
     {
         using var fixture = new Fixture();
         fixture.AddSei("marker", Version("marker", "1.0.0"));
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Prerequisites = [new DepFixture("marker", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Prerequisites = [new DepFixture("marker", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("marker", "[1.0.0]"));
+            new SpecFixture("marker", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -586,19 +605,24 @@ public sealed class ResolverTests
     {
         using var fixture = new Fixture();
         fixture.AddSei("b", Version("b", "1.0.0"));
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Conflicts = [new DepFixture("b", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Conflicts = [new DepFixture("b", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("b", "[1.0.0]"));
+            new SpecFixture("b", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("conflict", error.Message);
@@ -609,35 +633,38 @@ public sealed class ResolverTests
     {
         using var fixture = new Fixture();
         fixture.AddSei("b", Version("b", "1.0.0"));
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            OptionalPeers = [new DepFixture("b", "[2.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                OptionalPeers = [new DepFixture("b", "[2.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("b", "[1.0.0]"));
+            new SpecFixture("b", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("optional peer", error.Message);
     }
 
-    private static VersionFixture Version(string name, string version, params DepFixture[] dependencies)
-        => new()
+    private static VersionFixture Version(
+        string name,
+        string version,
+        params DepFixture[] dependencies
+    ) =>
+        new()
         {
             Version = version,
             Dependencies = [.. dependencies],
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [name + ".txt"] = version },
-                },
-            ],
+            Artifacts = [new ArtifactFixture { Files = { [name + ".txt"] = version } }],
         };
 }

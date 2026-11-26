@@ -8,17 +8,23 @@ public sealed class WorkflowTests
     public void Why_ReturnsDependencyChain()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("hello", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("hello", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -32,21 +38,28 @@ public sealed class WorkflowTests
     public void Why_ExplainsAPrerequisiteEdge()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Prerequisites = [new DepFixture("hello", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Prerequisites = [new DepFixture("hello", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("hello", "[1.0.0]"));
+            new SpecFixture("hello", "[1.0.0]")
+        );
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         var chains = new SeikoClient().WhyDetailed(fixture.Root, "hello");
@@ -60,17 +73,23 @@ public sealed class WorkflowTests
     public void UpdateLatestUsesTheSameFirstSourceAsResolution()
     {
         using var first = new Fixture();
-        first.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
+        first.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
         using var second = new Fixture();
-        second.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        second.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
         first.WriteConfig("win-x64", new SpecFixture("hello", "*"));
         second.WriteConfig("win-x64", new SpecFixture("hello", "*"));
         var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
@@ -87,7 +106,8 @@ public sealed class WorkflowTests
             sei = [
               { name = "hello", version = "*" }
             ]
-            """);
+            """
+        );
         var client = new SeikoClient();
         client.Sync(first.Root, first.StoreDirectory);
 
@@ -101,23 +121,28 @@ public sealed class WorkflowTests
     public void UpdateLatestIsRejectedWithLatestInstallable()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "*"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var configPath = Path.Combine(fixture.Root, "seiko.conf");
         var before = File.ReadAllText(configPath);
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Update(
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Update(
                 fixture.Root,
                 latest: true,
                 storeRoot: fixture.StoreDirectory,
-                latestInstallable: true));
+                latestInstallable: true
+            )
+        );
 
         Assert.Equal("usage", error.Code);
         Assert.Equal(before, File.ReadAllText(configPath));
@@ -127,18 +152,23 @@ public sealed class WorkflowTests
     public void Add_DoesNotEditConfigWhenTheRootLockIsHeld()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         using var held = ProcessLock.Acquire(
             Path.Combine(fixture.Root, ".seiko", "install.lock"),
-            "test install root");
+            "test install root"
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Empty(ConfigLoader.Load(fixture.Root).Sei);
@@ -148,11 +178,14 @@ public sealed class WorkflowTests
     public void Sync_CancelledBeforeDeployLeavesRootUntouched()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -160,11 +193,9 @@ public sealed class WorkflowTests
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
 
-        Assert.Throws<OperationCanceledException>(
-            () => client.Sync(
-                fixture.Root,
-                fixture.StoreDirectory,
-                cancellationToken: cancelled.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, cancellationToken: cancelled.Token)
+        );
 
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
         Assert.Single(client.ReadLock(fixture.Root)!.Sei);
@@ -174,18 +205,24 @@ public sealed class WorkflowTests
     public void Outdated_ReportsLatestInRangeAndOverall()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
 
         var config = ConfigLoader.Load(fixture.Root);
         Assert.Equal("[1.0.0]", Assert.Single(config.Sei).Version);
@@ -201,67 +238,99 @@ public sealed class WorkflowTests
     public void Outdated_ReportsTheDeclaredRangeAsABlocker()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("dep", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
-        fixture.AddSei("dep", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"), new SpecFixture("dep", "[1.0.0]"));
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "2.0.0",
-            Dependencies = [new DepFixture("dep", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "two" } }],
-        });
-        fixture.AddSei("dep", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("dep", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
+        fixture.AddSei(
+            "dep",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
+            }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("app", "[1.0.0]"),
+            new SpecFixture("dep", "[1.0.0]")
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("dep", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "two" } }],
+            }
+        );
+        fixture.AddSei(
+            "dep",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "two" } }],
+            }
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         var item = Assert.Single(client.Outdated(fixture.Root), entry => entry.Name == "dep");
 
-        Assert.Contains(item.Blockers, blocker =>
-            blocker.Relation == "declaration" && blocker.Target == "dep" && blocker.Range == "[1.0.0]");
-        Assert.Contains(item.Blockers, blocker =>
-            blocker.Relation == "dependency" && blocker.Target == "app");
+        Assert.Contains(
+            item.Blockers,
+            blocker =>
+                blocker.Relation == "declaration"
+                && blocker.Target == "dep"
+                && blocker.Range == "[1.0.0]"
+        );
+        Assert.Contains(
+            item.Blockers,
+            blocker => blocker.Relation == "dependency" && blocker.Target == "app"
+        );
     }
 
     [Fact]
     public void Outdated_RecomputesInstallableAgainstTheCandidateGraph()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "one" } }],
-        });
-        fixture.AddSei("marker", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["marker.txt"] = "marker" } }],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "2.0.0",
-            Dependencies = [new DepFixture("marker", "*")],
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Prerequisites = [new DepFixture("marker", "*")],
-                    Files = { ["app.txt"] = "two" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "one" } }],
+            }
+        );
+        fixture.AddSei(
+            "marker",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["marker.txt"] = "marker" } }],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Dependencies = [new DepFixture("marker", "*")],
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Prerequisites = [new DepFixture("marker", "*")],
+                        Files = { ["app.txt"] = "two" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -277,25 +346,34 @@ public sealed class WorkflowTests
     public void Outdated_UsesTransitiveDependencyRanges()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("lib", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
-        fixture.AddSei("lib", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib" } }],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("lib", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
+        fixture.AddSei(
+            "lib",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("lib", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib2" } }],
-        });
+        fixture.AddSei(
+            "lib",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib2" } }],
+            }
+        );
 
         var item = Assert.Single(client.Outdated(fixture.Root));
 
@@ -308,28 +386,38 @@ public sealed class WorkflowTests
     public void Outdated_UsesEveryRangeForTheSameName()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
-        fixture.AddSei("parent", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("hello", "[1.0.0,2.0.0)")],
-            Artifacts = [new ArtifactFixture { Files = { ["parent.txt"] = "parent" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
+        fixture.AddSei(
+            "parent",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("hello", "[1.0.0,2.0.0)")],
+                Artifacts = [new ArtifactFixture { Files = { ["parent.txt"] = "parent" } }],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("hello", "[1.0.0,3.0.0)"),
-            new SpecFixture("parent", "[1.0.0]"));
+            new SpecFixture("parent", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
 
         var item = Assert.Single(client.Outdated(fixture.Root));
 
@@ -341,58 +429,75 @@ public sealed class WorkflowTests
     public void Outdated_UsesArtifactDependencyRanges()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    Dependencies = [new DepFixture("lib", "[1.0.0]")],
-                },
-            ],
-        });
-        fixture.AddSei("lib", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib" } }],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        Dependencies = [new DepFixture("lib", "[1.0.0]")],
+                    },
+                ],
+            }
+        );
+        fixture.AddSei(
+            "lib",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("lib", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib2" } }],
-        });
+        fixture.AddSei(
+            "lib",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "lib2" } }],
+            }
+        );
 
         var item = Assert.Single(client.Outdated(fixture.Root));
 
         Assert.Equal("lib", item.Name);
         Assert.Equal("1.0.0", item.LatestInRange);
         Assert.Equal("2.0.0", item.Latest);
-        Assert.Contains(item.Blockers, blocker =>
-            blocker.Relation == "dependency" && blocker.Target == "app");
+        Assert.Contains(
+            item.Blockers,
+            blocker => blocker.Relation == "dependency" && blocker.Target == "app"
+        );
     }
 
     [Fact]
     public void Outdated_AllowsPrereleasesWhenTheRangeNamesOne()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0-beta.1",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "beta1" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0-beta.1",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "beta1" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0-beta,3.0.0)"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0-beta.2",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "beta2" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0-beta.2",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "beta2" } }],
+            }
+        );
 
         var item = Assert.Single(client.Outdated(fixture.Root));
 
@@ -404,18 +509,22 @@ public sealed class WorkflowTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             "schemaVersion = 2\n"
-            + $"sources = [\n  {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}\n]\n"
-            + "rid = \"win-x64\"\n"
-            + "sei = []\n");
+                + $"sources = [\n  {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}\n]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = []\n"
+        );
 
         new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory);
 
@@ -434,38 +543,50 @@ public sealed class WorkflowTests
         // their intersection filters versions, and that intersection has no
         // prerelease endpoint, so the permission must come from the original
         // constraints.
-        fixture.AddSei("lib", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "stable" } }],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    Dependencies = [new DepFixture("lib", "[2.0.0,3.0.0)")],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "lib",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["lib.txt"] = "stable" } }],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        Dependencies = [new DepFixture("lib", "[2.0.0,3.0.0)")],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("lib", "[1.0.0-alpha,3.0.0)"),
-            new SpecFixture("app", "[1.0.0]"));
+            new SpecFixture("app", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         var path = Path.Combine(fixture.SourceDirectory, "sei", "lib.json");
         var sei = System.Text.Json.JsonSerializer.Deserialize<SeiIndex>(
             File.ReadAllBytes(path),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions.Add(new SeiVersionEntry { Version = "2.1.0-beta.1" });
         File.WriteAllBytes(
             path,
-            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                sei,
+                SeikoJsonContext.Default.SeiIndex
+            )
+        );
 
         var item = Assert.Single(client.Outdated(fixture.Root), entry => entry.Name == "lib");
         Assert.Equal("2.1.0-beta.1", item.LatestInRange);
@@ -476,11 +597,14 @@ public sealed class WorkflowTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
 
         new SeikoClient().Add(fixture.Root, "hello", fixture.StoreDirectory, dryRun: true);
@@ -494,14 +618,22 @@ public sealed class WorkflowTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello"));
 
-        new SeikoClient().Update(fixture.Root, "hello", latest: true, storeRoot: fixture.StoreDirectory);
+        new SeikoClient().Update(
+            fixture.Root,
+            "hello",
+            latest: true,
+            storeRoot: fixture.StoreDirectory
+        );
 
         Assert.Single(server.Requests, request => request.Path == "/index.json");
         Assert.Single(server.Requests, request => request.Path == "/sei/hello.json");
@@ -511,21 +643,25 @@ public sealed class WorkflowTests
     public void Sync_RejectsOverlongArchiveEntryNames()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [new string('a', ArchiveLimits.MaxEntryNameLength + 1)] = "x" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [new string('a', ArchiveLimits.MaxEntryNameLength + 1)] = "x" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("too long", error.Message);
@@ -535,24 +671,33 @@ public sealed class WorkflowTests
     public void Sync_RejectsDeepArchiveEntryNames()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        [string.Join('/', Enumerable.Repeat("a", ArchiveLimits.MaxEntryNameDepth + 1))] = "x",
+                        Files =
+                        {
+                            [
+                                string.Join(
+                                    '/',
+                                    Enumerable.Repeat("a", ArchiveLimits.MaxEntryNameDepth + 1)
+                                )
+                            ] = "x",
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("too deep", error.Message);
@@ -562,11 +707,14 @@ public sealed class WorkflowTests
     public void Config_RejectsDeclarationWithoutNameBeforeDeploying()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         var deployed = Path.Combine(fixture.Root, "hello.txt");
@@ -576,12 +724,13 @@ public sealed class WorkflowTests
         var configPath = Path.Combine(fixture.Root, "seiko.conf");
         File.WriteAllText(
             configPath,
-            File.ReadAllText(configPath).Replace(
-                "sei = []",
-                "sei = [\n  { version = \"[1.0.0]\" }\n]"));
+            File.ReadAllText(configPath)
+                .Replace("sei = []", "sei = [\n  { version = \"[1.0.0]\" }\n]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("config", error.Code);
         Assert.True(File.Exists(deployed));
@@ -591,11 +740,14 @@ public sealed class WorkflowTests
     public void Search_FallsThroughWhenTheFirstSourceCannotProvideThePackage()
     {
         using var first = new Fixture();
-        first.AddSei("foo", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "first" } }],
-        });
+        first.AddSei(
+            "foo",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "first" } }],
+            }
+        );
         first.WriteConfig("win-x64");
         File.Delete(Path.Combine(first.SourceDirectory, "sei", "foo.json"));
         // Without the catalog the name list is walked, which is what this
@@ -603,11 +755,14 @@ public sealed class WorkflowTests
         File.Delete(Path.Combine(first.SourceDirectory, "catalog.json"));
 
         using var second = new Fixture();
-        second.AddSei("foo", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "second" } }],
-        });
+        second.AddSei(
+            "foo",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "second" } }],
+            }
+        );
         second.WriteConfig("win-x64");
         var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
         var secondIndex = Path.Combine(second.SourceDirectory, "index.json").Replace('\\', '/');
@@ -621,7 +776,8 @@ public sealed class WorkflowTests
             ]
             rid = "win-x64"
             sei = []
-            """);
+            """
+        );
 
         var result = Assert.Single(new SeikoClient().Search(first.Root, "foo"));
 
@@ -633,19 +789,25 @@ public sealed class WorkflowTests
     public void Search_DoesNotReadDuplicateNamesFromLaterSources()
     {
         using var first = new Fixture();
-        first.AddSei("foo", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "first" } }],
-        });
+        first.AddSei(
+            "foo",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "first" } }],
+            }
+        );
         first.WriteConfig("win-x64");
 
         using var second = new Fixture();
-        second.AddSei("foo", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "second" } }],
-        });
+        second.AddSei(
+            "foo",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["foo.txt"] = "second" } }],
+            }
+        );
         second.WriteConfig("win-x64");
         File.WriteAllText(Path.Combine(second.SourceDirectory, "sei", "foo.json"), "{broken");
         var firstIndex = Path.Combine(first.SourceDirectory, "index.json").Replace('\\', '/');
@@ -660,7 +822,8 @@ public sealed class WorkflowTests
             ]
             rid = "win-x64"
             sei = []
-            """);
+            """
+        );
 
         var result = Assert.Single(new SeikoClient().Search(first.Root, "foo"));
 
@@ -683,13 +846,10 @@ public sealed class WorkflowTests
                 Version = "2.0.0",
                 Artifacts =
                 [
-                    new ArtifactFixture
-                    {
-                        Rid = "linux-x64",
-                        Files = { ["hello.txt"] = "two" },
-                    },
+                    new ArtifactFixture { Rid = "linux-x64", Files = { ["hello.txt"] = "two" } },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "*"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory, latestInstallable: true);
@@ -705,11 +865,14 @@ public sealed class WorkflowTests
     public void Cache_StatusVerifyAndClean()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         var client = new SeikoClient();
@@ -733,18 +896,19 @@ public sealed class WorkflowTests
     public void Cache_ReportsAndRemovesInterruptedExtractions()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
-        var staging = Path.Combine(
-            fixture.StoreDirectory,
-            digest + ".tmp-" + new string('a', 32));
+        var staging = Path.Combine(fixture.StoreDirectory, digest + ".tmp-" + new string('a', 32));
         Directory.CreateDirectory(staging);
         File.WriteAllText(Path.Combine(staging, "payload.bin"), "leftover");
 
@@ -753,7 +917,8 @@ public sealed class WorkflowTests
         Assert.Equal(8, status.StagingBytes);
         Assert.Contains(
             client.CacheVerify(fixture.StoreDirectory),
-            finding => finding.Code == "cache-staging");
+            finding => finding.Code == "cache-staging"
+        );
 
         var clean = client.CacheClean(fixture.Root, fixture.StoreDirectory);
 
@@ -766,22 +931,24 @@ public sealed class WorkflowTests
     public void CacheClean_SkipsAnActivelyExtractedStagingDirectory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
-        var staging = Path.Combine(
-            fixture.StoreDirectory,
-            digest + ".tmp-" + new string('b', 32));
+        var staging = Path.Combine(fixture.StoreDirectory, digest + ".tmp-" + new string('b', 32));
         Directory.CreateDirectory(staging);
         using var held = ProcessLock.Acquire(
             Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
-            "test extraction");
+            "test extraction"
+        );
 
         var clean = client.CacheClean(fixture.Root, fixture.StoreDirectory);
 
@@ -793,18 +960,19 @@ public sealed class WorkflowTests
     public void Doctor_ReportsAndRemovesInterruptedExtractions()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
-        var staging = Path.Combine(
-            fixture.StoreDirectory,
-            digest + ".tmp-" + new string('c', 32));
+        var staging = Path.Combine(fixture.StoreDirectory, digest + ".tmp-" + new string('c', 32));
         Directory.CreateDirectory(staging);
 
         var reported = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
@@ -822,17 +990,23 @@ public sealed class WorkflowTests
         using var first = new Fixture();
         using var second = new Fixture();
         var sharedStore = Path.Combine(first.Root, "shared-store");
-        first.AddSei("first", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["first.txt"] = "first" } }],
-        });
+        first.AddSei(
+            "first",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["first.txt"] = "first" } }],
+            }
+        );
         first.WriteConfig("win-x64", new SpecFixture("first", "[1.0.0]"));
-        second.AddSei("second", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["second.txt"] = "second" } }],
-        });
+        second.AddSei(
+            "second",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["second.txt"] = "second" } }],
+            }
+        );
         second.WriteConfig("win-x64", new SpecFixture("second", "[1.0.0]"));
 
         var client = new SeikoClient();
@@ -863,7 +1037,8 @@ public sealed class WorkflowTests
             {
                 Version = "2.0.0",
                 Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -882,22 +1057,31 @@ public sealed class WorkflowTests
     public void Update_WithoutLatestKeepsRangeAndUpgrades()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0,3.0.0)"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
 
         new SeikoClient().Update(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
 
         Assert.Equal("two", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
-        Assert.Contains("[1.0.0,3.0.0)", File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")));
+        Assert.Contains(
+            "[1.0.0,3.0.0)",
+            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf"))
+        );
     }
 }

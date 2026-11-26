@@ -17,7 +17,9 @@ internal sealed class DeploymentTransaction
     private readonly string _backupDirectory;
     private readonly string _ownershipDirectory;
     private readonly DeploymentJournal _journal = new();
-    private readonly Dictionary<string, DeploymentJournalEntry> _entries = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DeploymentJournalEntry> _entries = new(
+        StringComparer.Ordinal
+    );
 
     // Set once the journal reached the disk. Later additions (a temporary for
     // a path that only appeared mid-deployment) persist themselves instead of
@@ -43,7 +45,8 @@ internal sealed class DeploymentTransaction
         {
             throw new SeikoException(
                 "an incomplete deployment transaction exists; run `sk sync` to recover it",
-                "deploy");
+                "deploy"
+            );
         }
 
         var backup = Path.Combine(stateDirectory, BackupName);
@@ -190,7 +193,8 @@ internal sealed class DeploymentTransaction
         var trashRelative = Path.Join(
             Normalize(Path.GetRelativePath(_root, _backupDirectory)),
             TrashName,
-            normalized);
+            normalized
+        );
         WriteCreatedMarker(_ownershipDirectory, "trash", trashRelative, null);
         _journal.TrashPaths ??= [];
         _journal.TrashPaths.Add(trashRelative);
@@ -204,7 +208,8 @@ internal sealed class DeploymentTransaction
             throw new SeikoException(
                 $"cannot purge {normalized}: config/data and the install root are on different volumes ({ex.Message})",
                 "io",
-                ex);
+                ex
+            );
         }
     }
 
@@ -220,8 +225,8 @@ internal sealed class DeploymentTransaction
         }
     }
 
-    private static bool IsCrossDevice(IOException ex)
-        => ex.HResult is 18 or unchecked((int)0x80070011);
+    private static bool IsCrossDevice(IOException ex) =>
+        ex.HResult is 18 or unchecked((int)0x80070011);
 
     public void WriteJournal()
     {
@@ -258,9 +263,10 @@ internal sealed class DeploymentTransaction
         {
             throw new SeikoException(
                 $"deployment failed ({original.Message}) and rollback also failed ({rollback.Message}); "
-                + "the transaction journal is kept for the next sync",
+                    + "the transaction journal is kept for the next sync",
                 "deploy",
-                rollback);
+                rollback
+            );
         }
     }
 
@@ -288,21 +294,27 @@ internal sealed class DeploymentTransaction
         DeploymentJournal journal;
         try
         {
-            journal = JsonSerializer.Deserialize(
+            journal =
+                JsonSerializer.Deserialize(
                     File.ReadAllBytes(journalPath),
-                    SeikoJsonContext.Default.DeploymentJournal)
-                ?? throw new SeikoException("invalid deployment transaction journal", "deploy");
+                    SeikoJsonContext.Default.DeploymentJournal
+                ) ?? throw new SeikoException("invalid deployment transaction journal", "deploy");
         }
         catch (JsonException ex)
         {
-            throw new SeikoException($"invalid deployment transaction journal: {ex.Message}", "deploy", ex);
+            throw new SeikoException(
+                $"invalid deployment transaction journal: {ex.Message}",
+                "deploy",
+                ex
+            );
         }
 
         if (journal.SchemaVersion != 1)
         {
             throw new SeikoException(
                 $"unsupported deployment transaction schema {journal.SchemaVersion}",
-                "deploy");
+                "deploy"
+            );
         }
 
         var rootFull = Path.GetFullPath(root);
@@ -322,13 +334,12 @@ internal sealed class DeploymentTransaction
         string root,
         string backupDirectory,
         DeploymentJournal journal,
-        string journalPath)
+        string journalPath
+    )
     {
         var rootFull = Path.GetFullPath(root);
         var backupFull = Path.GetFullPath(backupDirectory);
-        var ownershipDirectory = Path.Combine(
-            Path.GetDirectoryName(backupFull)!,
-            OwnershipName);
+        var ownershipDirectory = Path.Combine(Path.GetDirectoryName(backupFull)!, OwnershipName);
         ValidateJournalPaths(rootFull, backupFull, journal, ownershipDirectory);
         foreach (var temporary in journal.TemporaryPaths ?? [])
         {
@@ -369,10 +380,7 @@ internal sealed class DeploymentTransaction
         var wasCommitted = journal.Committed;
         journal.Committed = false;
         journal.TemporaryPaths = [];
-        var restoreTemporaries = PlanRestoreTemporaries(
-            rootFull,
-            journal,
-            ownershipDirectory);
+        var restoreTemporaries = PlanRestoreTemporaries(rootFull, journal, ownershipDirectory);
         if (restoreTemporaries.Count > 0 || journal.Entries.Count > 0 || wasCommitted)
         {
             WriteJournalFile(journalPath, journal);
@@ -399,7 +407,8 @@ internal sealed class DeploymentTransaction
                     {
                         throw new SeikoException(
                             $"rollback cannot restore file {relative}: a non-empty directory is in the way",
-                            "deploy");
+                            "deploy"
+                        );
                     }
                 }
 
@@ -418,7 +427,8 @@ internal sealed class DeploymentTransaction
                 {
                     throw new SeikoException(
                         $"rollback cannot delete {relative}: it is not a file created by this transaction",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 File.Delete(destination);
@@ -435,7 +445,8 @@ internal sealed class DeploymentTransaction
                 {
                     throw new SeikoException(
                         $"rollback cannot delete generation directory {normalized}: it predates this transaction",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 Directory.Delete(path, recursive: true);
@@ -447,38 +458,41 @@ internal sealed class DeploymentTransaction
         string root,
         string relative,
         DeploymentJournalEntry entry,
-        string ownershipDirectory)
+        string ownershipDirectory
+    )
     {
         if (!HasCreatedMarker(ownershipDirectory, "entry", relative, entry.Sha256))
         {
             return false;
         }
 
-        return entry.Sha256 is null
-            || MatchesCreatedDigest(Resolve(root, relative), entry.Sha256);
+        return entry.Sha256 is null || MatchesCreatedDigest(Resolve(root, relative), entry.Sha256);
     }
 
     private static void WriteCreatedMarker(
         string ownershipDirectory,
         string kind,
         string relative,
-        string? sha256)
+        string? sha256
+    )
     {
         var marker = MarkerPath(ownershipDirectory, kind, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
         File.WriteAllText(marker, $"{kind}\n{relative}\n{sha256 ?? ""}\n");
     }
 
-    private static string MarkerPath(string ownershipDirectory, string kind, string relative)
-        => Path.Combine(
+    private static string MarkerPath(string ownershipDirectory, string kind, string relative) =>
+        Path.Combine(
             ownershipDirectory,
-            Hashing.Sha256Bytes(Encoding.UTF8.GetBytes($"{kind}\n{relative}")) + ".created");
+            Hashing.Sha256Bytes(Encoding.UTF8.GetBytes($"{kind}\n{relative}")) + ".created"
+        );
 
     private static bool HasCreatedMarker(
         string ownershipDirectory,
         string kind,
         string relative,
-        string? sha256)
+        string? sha256
+    )
     {
         var marker = MarkerPath(ownershipDirectory, kind, relative);
         if (!File.Exists(marker) || PathSafety.IsLink(marker))
@@ -493,8 +507,8 @@ internal sealed class DeploymentTransaction
             && string.Equals(lines[2], sha256 ?? "", StringComparison.Ordinal);
     }
 
-    private static bool MatchesCreatedDigest(string path, string expected)
-        => string.Equals(Hashing.Sha256File(path), expected, StringComparison.Ordinal);
+    private static bool MatchesCreatedDigest(string path, string expected) =>
+        string.Equals(Hashing.Sha256File(path), expected, StringComparison.Ordinal);
 
     private static string TrashPrefix(string backupFull, string rootFull)
     {
@@ -502,7 +516,8 @@ internal sealed class DeploymentTransaction
         return relative + "/" + TrashName + "/";
     }
 
-    private static bool IsNewGeneration(string backupDirectory, string relative)    {
+    private static bool IsNewGeneration(string backupDirectory, string relative)
+    {
         var slash = relative.LastIndexOf('/');
         if (slash < 0 || !int.TryParse(relative[(slash + 1)..], out var generation))
         {
@@ -518,7 +533,8 @@ internal sealed class DeploymentTransaction
             {
                 var state = JsonSerializer.Deserialize(
                     File.ReadAllBytes(statePath),
-                    SeikoJsonContext.Default.LocalState);
+                    SeikoJsonContext.Default.LocalState
+                );
                 if (state is null)
                 {
                     return false;
@@ -539,7 +555,8 @@ internal sealed class DeploymentTransaction
         string root,
         string backupDirectory,
         DeploymentJournal journal,
-        string ownershipDirectory)
+        string ownershipDirectory
+    )
     {
         var ownershipRelative = Path.GetRelativePath(root, ownershipDirectory).Replace('\\', '/');
         PathSafety.EnsureNoLinks(root, ownershipRelative);
@@ -553,15 +570,19 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"duplicate entry in deployment transaction: {relative}",
-                    "deploy");
+                    "deploy"
+                );
             }
 
-            if (!entry.Existed
-                && !HasCreatedMarker(ownershipDirectory, "entry", relative, entry.Sha256))
+            if (
+                !entry.Existed
+                && !HasCreatedMarker(ownershipDirectory, "entry", relative, entry.Sha256)
+            )
             {
                 throw new SeikoException(
                     $"rollback path {relative} is not a file created by this transaction",
-                    "deploy");
+                    "deploy"
+                );
             }
         }
 
@@ -569,21 +590,25 @@ internal sealed class DeploymentTransaction
         {
             var relative = Normalize(temporary);
             Resolve(root, relative);
-            if (!IsDeploymentTemporary(relative, entries)
+            if (
+                !IsDeploymentTemporary(relative, entries)
                 && !IsRestoreTemporary(relative, entries)
                 && !IsDetachTemporary(relative, entries)
-                && !IsAdoptedStaging(relative))
+                && !IsAdoptedStaging(relative)
+            )
             {
                 throw new SeikoException(
                     $"invalid deployment transaction temporary path: {relative}",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             if (!HasCreatedMarker(ownershipDirectory, "temporary", relative, null))
             {
                 throw new SeikoException(
                     $"rollback temporary {relative} is not owned by this transaction",
-                    "deploy");
+                    "deploy"
+                );
             }
         }
 
@@ -591,12 +616,15 @@ internal sealed class DeploymentTransaction
         foreach (var trashed in journal.TrashPaths ?? [])
         {
             var relative = Normalize(trashed);
-            if (!relative.StartsWith(trashPrefix, StringComparison.Ordinal)
-                || relative.Length == trashPrefix.Length)
+            if (
+                !relative.StartsWith(trashPrefix, StringComparison.Ordinal)
+                || relative.Length == trashPrefix.Length
+            )
             {
                 throw new SeikoException(
                     $"invalid deployment transaction trash path: {relative}",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             Resolve(root, relative);
@@ -604,7 +632,8 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"rollback trash {relative} is not owned by this transaction",
-                    "deploy");
+                    "deploy"
+                );
             }
         }
 
@@ -619,9 +648,8 @@ internal sealed class DeploymentTransaction
                 stateRelative = "";
             }
 
-            var prefix = stateRelative.Length == 0
-                ? "generations/"
-                : stateRelative + "/generations/";
+            var prefix =
+                stateRelative.Length == 0 ? "generations/" : stateRelative + "/generations/";
             var leaf = relative.StartsWith(prefix, StringComparison.Ordinal)
                 ? relative[prefix.Length..]
                 : "";
@@ -629,28 +657,30 @@ internal sealed class DeploymentTransaction
             {
                 throw new SeikoException(
                     $"invalid deployment transaction generation path: {relative}",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             if (!HasCreatedMarker(ownershipDirectory, "generation", relative, null))
             {
                 throw new SeikoException(
                     $"rollback generation directory {relative} is not owned by this transaction",
-                    "deploy");
+                    "deploy"
+                );
             }
         }
     }
 
-    private static bool IsDeploymentTemporary(string relative, HashSet<string> entries)
-        => HasTemporaryLeaf(relative, entries, ".seiko-tmp-");
+    private static bool IsDeploymentTemporary(string relative, HashSet<string> entries) =>
+        HasTemporaryLeaf(relative, entries, ".seiko-tmp-");
 
-    private static bool IsRestoreTemporary(string relative, HashSet<string> entries)
-        => HasTemporaryLeaf(relative, entries, ".seiko-restore-");
+    private static bool IsRestoreTemporary(string relative, HashSet<string> entries) =>
+        HasTemporaryLeaf(relative, entries, ".seiko-restore-");
 
     // The private copy that lets a file leave management without keeping the
     // store's inode (preserve).
-    private static bool IsDetachTemporary(string relative, HashSet<string> entries)
-        => HasTemporaryLeaf(relative, entries, ".seiko-detach-");
+    private static bool IsDetachTemporary(string relative, HashSet<string> entries) =>
+        HasTemporaryLeaf(relative, entries, ".seiko-detach-");
 
     // The adopted staging directory is a generation-local directory, not a
     // sibling file, so it needs its own shape check.
@@ -662,16 +692,15 @@ internal sealed class DeploymentTransaction
             && Hashing.IsLowerHex(leaf.AsSpan(AdoptedStagingPrefix.Length));
     }
 
-    private static bool HasTemporaryLeaf(
-        string relative,
-        HashSet<string> entries,
-        string prefix)
+    private static bool HasTemporaryLeaf(string relative, HashSet<string> entries, string prefix)
     {
         var slash = relative.LastIndexOf('/');
         var leaf = slash < 0 ? relative : relative[(slash + 1)..];
-        if (!leaf.StartsWith(prefix, StringComparison.Ordinal)
+        if (
+            !leaf.StartsWith(prefix, StringComparison.Ordinal)
             || leaf.Length != prefix.Length + 32
-            || !Hashing.IsLowerHex(leaf.AsSpan(prefix.Length)))
+            || !Hashing.IsLowerHex(leaf.AsSpan(prefix.Length))
+        )
         {
             return false;
         }
@@ -693,7 +722,8 @@ internal sealed class DeploymentTransaction
     private static Dictionary<string, string> PlanRestoreTemporaries(
         string root,
         DeploymentJournal journal,
-        string ownershipDirectory)
+        string ownershipDirectory
+    )
     {
         var temporaries = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in journal.Entries)
@@ -734,9 +764,7 @@ internal sealed class DeploymentTransaction
             }
         }
 
-        throw new SeikoException(
-            $"could not reserve a restore temporary for {relative}",
-            "deploy");
+        throw new SeikoException($"could not reserve a restore temporary for {relative}", "deploy");
     }
 
     private static void CreateRestoreTemporary(string temporary, string backup)
@@ -766,12 +794,8 @@ internal sealed class DeploymentTransaction
                     pending.Push(child);
                 }
             }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
 
         for (var i = order.Count - 1; i >= 0; i--)
@@ -784,12 +808,8 @@ internal sealed class DeploymentTransaction
                     Directory.Delete(current);
                 }
             }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -821,9 +841,7 @@ internal sealed class DeploymentTransaction
         {
             // A committed journal can be cleaned on the next sync.
         }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static void WriteJournalFile(string journalPath, DeploymentJournal journal)
@@ -831,7 +849,8 @@ internal sealed class DeploymentTransaction
         var temp = journalPath + ".tmp-" + Guid.NewGuid().ToString("N");
         File.WriteAllBytes(
             temp,
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
         File.Move(temp, journalPath, overwrite: true);
     }
 
@@ -839,19 +858,19 @@ internal sealed class DeploymentTransaction
     {
         var relative = Path.GetRelativePath(
                 Path.GetFullPath(root),
-                Path.GetFullPath(stateDirectory))
+                Path.GetFullPath(stateDirectory)
+            )
             .Replace('\\', '/');
         PathSafety.EnsureNoLinks(root, relative);
     }
 
-    private static string Normalize(string relative)
-        => RelativePath.Parse(relative).Value;
+    private static string Normalize(string relative) => RelativePath.Parse(relative).Value;
 
-    private static string Resolve(string root, string relative)
-        => RootedPath.Resolve(root, RelativePath.Parse(relative));
+    private static string Resolve(string root, string relative) =>
+        RootedPath.Resolve(root, RelativePath.Parse(relative));
 
-    private static int? GetMode(string path)
-        => OperatingSystem.IsWindows() ? null : (int)File.GetUnixFileMode(path);
+    private static int? GetMode(string path) =>
+        OperatingSystem.IsWindows() ? null : (int)File.GetUnixFileMode(path);
 
     private static void SetMode(string path, int? mode)
     {

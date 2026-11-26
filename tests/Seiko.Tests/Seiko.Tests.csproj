@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
@@ -18,5 +17,4 @@
     <ProjectReference Include="../../src/McpServer/Seiko.McpServer.csproj" />
     <ProjectReference Include="../../src/CommandLine/Seiko.CommandLine.csproj" />
   </ItemGroup>
-
 </Project>

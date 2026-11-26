@@ -14,4 +14,5 @@ public sealed record SyncProgress(
     long Downloaded,
     long Total,
     int SeiCompleted,
-    int SeiTotal);
+    int SeiTotal
+);

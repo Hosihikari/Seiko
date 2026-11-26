@@ -14,16 +14,16 @@ internal static class SeikoHttp
     // would make that impossible. An empty value counts as unset.
     public static string UserAgent =>
         Environment.GetEnvironmentVariable(UserAgentVariable) is { } custom
-            && !string.IsNullOrWhiteSpace(custom)
-                ? custom
-                : DefaultUserAgent;
+        && !string.IsNullOrWhiteSpace(custom)
+            ? custom
+            : DefaultUserAgent;
 
     private static string DefaultUserAgent
     {
         get
         {
-            var version = typeof(SeikoHttp).Assembly
-                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            var version = typeof(SeikoHttp)
+                .Assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
                 ?.InformationalVersion;
             if (string.IsNullOrWhiteSpace(version))
             {

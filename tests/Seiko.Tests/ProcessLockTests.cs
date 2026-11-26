@@ -11,7 +11,8 @@ public sealed class ProcessLockTests
         var directory = Path.Combine(
             Path.GetTempPath(),
             "seiko-tests",
-            Guid.NewGuid().ToString("N"));
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "test.lock");
         File.WriteAllText(path, "");
@@ -27,8 +28,9 @@ public sealed class ProcessLockTests
             }
 
             var watch = Stopwatch.StartNew();
-            var error = Assert.Throws<SeikoException>(
-                () => ProcessLock.AcquireWaiting(path, "test lock"));
+            var error = Assert.Throws<SeikoException>(() =>
+                ProcessLock.AcquireWaiting(path, "test lock")
+            );
 
             Assert.Equal("io", error.Code);
             Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5));
@@ -50,7 +52,8 @@ public sealed class ProcessLockTests
         var directory = Path.Combine(
             Path.GetTempPath(),
             "seiko-tests",
-            Guid.NewGuid().ToString("N"));
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "test.lock");
         var held = ProcessLock.Acquire(path, "test lock");
@@ -58,11 +61,11 @@ public sealed class ProcessLockTests
         {
             using var canceled = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
 
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => Task.Run(() => ProcessLock.AcquireWaiting(
-                    path,
-                    "test lock",
-                    cancellationToken: canceled.Token)));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                Task.Run(() =>
+                    ProcessLock.AcquireWaiting(path, "test lock", cancellationToken: canceled.Token)
+                )
+            );
         }
         finally
         {

@@ -4,9 +4,11 @@ internal static class Urls
 {
     public static bool TryGetHttp(string? value, out Uri? uri)
     {
-        if (Uri.TryCreate(value, UriKind.Absolute, out var parsed)
+        if (
+            Uri.TryCreate(value, UriKind.Absolute, out var parsed)
             && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps)
-            && !string.IsNullOrWhiteSpace(parsed.Host))
+            && !string.IsNullOrWhiteSpace(parsed.Host)
+        )
         {
             uri = parsed;
             return true;
@@ -29,7 +31,10 @@ internal static class Urls
         {
             var http = text.IndexOf("http://", start, StringComparison.OrdinalIgnoreCase);
             var https = text.IndexOf("https://", start, StringComparison.OrdinalIgnoreCase);
-            var index = http < 0 ? https : https < 0 ? http : Math.Min(http, https);
+            var index =
+                http < 0 ? https
+                : https < 0 ? http
+                : Math.Min(http, https);
             if (index < 0)
             {
                 builder.Append(text, start, text.Length - start);
@@ -46,9 +51,10 @@ internal static class Urls
             var candidate = TrimTrailing(text[index..end], out var trimmed);
             builder.Append(
                 Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
-                    && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
                     ? Redact(uri)
-                    : StripTextually(candidate));
+                    : StripTextually(candidate)
+            );
             builder.Append(trimmed);
             start = end;
         }
@@ -60,12 +66,14 @@ internal static class Urls
     // IRI can carry Unicode userinfo or query text; stopping there would leave
     // the secret tail outside the redacted span. A JSON escape (`\uXXXX`) is
     // also accepted so already-serialized text stays one span.
-    private static bool IsUriChar(char value)
-        => !char.IsWhiteSpace(value)
-            && value is not ('<' or '>')
-            && (char.IsAsciiLetterOrDigit(value)
-                || !char.IsAscii(value)
-                || "-._~:/?#[]@!$&'()*+,;=%\\'\"".Contains(value, StringComparison.Ordinal));
+    private static bool IsUriChar(char value) =>
+        !char.IsWhiteSpace(value)
+        && value is not ('<' or '>')
+        && (
+            char.IsAsciiLetterOrDigit(value)
+            || !char.IsAscii(value)
+            || "-._~:/?#[]@!$&'()*+,;=%\\'\"".Contains(value, StringComparison.Ordinal)
+        );
 
     // Sentence punctuation commonly follows a URL. Only characters that are
     // rarely meaningful at the very end of a URL are trimmed, and never from
@@ -78,12 +86,20 @@ internal static class Urls
             end--;
         }
 
-        if (end > 0 && candidate[end - 1] == ')' && candidate.Count(c => c == '(') < candidate.Count(c => c == ')'))
+        if (
+            end > 0
+            && candidate[end - 1] == ')'
+            && candidate.Count(c => c == '(') < candidate.Count(c => c == ')')
+        )
         {
             end--;
         }
 
-        if (end > 0 && candidate[end - 1] == ']' && candidate.Count(c => c == '[') < candidate.Count(c => c == ']'))
+        if (
+            end > 0
+            && candidate[end - 1] == ']'
+            && candidate.Count(c => c == '[') < candidate.Count(c => c == ']')
+        )
         {
             end--;
         }

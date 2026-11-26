@@ -33,15 +33,18 @@ internal static class IndexOverlay
         return sei;
     }
 
-    public static bool IsSourceOrigin(SeiVersionEntry entry)
-        => entry.SourceYanked == true
-            || (entry.SourceAdvisories is { Count: > 0 }
-                && MostSevere(entry.Advisory, entry.SourceAdvisories) is { } chosen
-                && entry.SourceAdvisories.Contains(chosen));
+    public static bool IsSourceOrigin(SeiVersionEntry entry) =>
+        entry.SourceYanked == true
+        || (
+            entry.SourceAdvisories is { Count: > 0 }
+            && MostSevere(entry.Advisory, entry.SourceAdvisories) is { } chosen
+            && entry.SourceAdvisories.Contains(chosen)
+        );
 
     private static AdvisoryInfo? MostSevere(
         AdvisoryInfo? maintainer,
-        IReadOnlyList<AdvisoryInfo>? source)
+        IReadOnlyList<AdvisoryInfo>? source
+    )
     {
         var best = maintainer;
         foreach (var candidate in source ?? [])
@@ -60,8 +63,10 @@ internal static class IndexOverlay
         var severity = advisory?.Severity?.Trim();
         var index = severity is null
             ? -1
-            : Array.FindIndex(SeverityOrder, item =>
-                string.Equals(item, severity, StringComparison.OrdinalIgnoreCase));
+            : Array.FindIndex(
+                SeverityOrder,
+                item => string.Equals(item, severity, StringComparison.OrdinalIgnoreCase)
+            );
         return index;
     }
 }

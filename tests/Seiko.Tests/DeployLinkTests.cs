@@ -9,7 +9,11 @@ public sealed class DeployLinkTests
     [Fact]
     public void FileLink_Create_LinksFilesOnTheSameVolume()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
@@ -37,25 +41,31 @@ public sealed class DeployLinkTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
 
         client.Sync(fixture.Root, fixture.StoreDirectory);
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.Equal(
+            UnixFileMode.None,
+            File.GetUnixFileMode(Path.Combine(fixture.Root, "hello.txt"))
+        );
     }
 
     [Fact]
@@ -67,18 +77,21 @@ public sealed class DeployLinkTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -96,34 +109,40 @@ public sealed class DeployLinkTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "old" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "old" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "new" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "new" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         try
         {
@@ -134,8 +153,7 @@ public sealed class DeployLinkTests
                     throw new IOException("injected deployment failure");
                 }
             };
-            Assert.Throws<IOException>(
-                () => client.Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Throws<IOException>(() => client.Sync(fixture.Root, fixture.StoreDirectory));
         }
         finally
         {
@@ -157,36 +175,45 @@ public sealed class DeployLinkTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var oldStore = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
         var oldMode = File.GetUnixFileMode(oldStore);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "0000" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal(oldMode, File.GetUnixFileMode(oldStore));
         var newStore = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "hello.txt");
         Assert.NotEqual(UnixFileMode.None, File.GetUnixFileMode(newStore));
-        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.Equal(
+            UnixFileMode.None,
+            File.GetUnixFileMode(Path.Combine(fixture.Root, "hello.txt"))
+        );
     }
 
     [Fact]
@@ -194,11 +221,14 @@ public sealed class DeployLinkTests
     {
         var name = new string('a', 220) + ".txt";
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { [name] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [name] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -224,18 +254,21 @@ public sealed class DeployLinkTests
     public void Sync_RepairsTamperedCachedManifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "0644" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "0644" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -243,17 +276,20 @@ public sealed class DeployLinkTests
         var manifestPath = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "sei.json");
         var manifest = JsonSerializer.Deserialize(
             File.ReadAllBytes(manifestPath),
-            SeikoJsonContext.Default.SeiManifest)!;
+            SeikoJsonContext.Default.SeiManifest
+        )!;
         manifest.Artifact!.Modes!["hello.txt"] = "0777";
         File.WriteAllBytes(
             manifestPath,
-            JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
+            JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest)
+        );
 
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         var restored = JsonSerializer.Deserialize(
             File.ReadAllBytes(manifestPath),
-            SeikoJsonContext.Default.SeiManifest)!;
+            SeikoJsonContext.Default.SeiManifest
+        )!;
         Assert.Equal("0644", restored.Artifact!.Modes!["hello.txt"]);
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
     }
@@ -282,11 +318,14 @@ public sealed class DeployLinkTests
     public void Sync_NormalizesDotSegmentsInZipEntries()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["./dotpkg.txt"] = "dot" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["./dotpkg.txt"] = "dot" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -304,12 +343,16 @@ public sealed class DeployLinkTests
 
         var digestPath = DigestPath(fixture);
         var state = JsonNode.Parse(File.ReadAllText(digestPath))!.AsObject();
-        state["files"]!.AsArray().Add(new JsonObject
-        {
-            ["path"] = "bad\u0000path",
-            ["sha256"] = new string('a', 64),
-            ["size"] = 0,
-        });
+        state["files"]!
+            .AsArray()
+            .Add(
+                new JsonObject
+                {
+                    ["path"] = "bad\u0000path",
+                    ["sha256"] = new string('a', 64),
+                    ["size"] = 0,
+                }
+            );
         File.WriteAllText(digestPath, state.ToJsonString());
 
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -329,12 +372,16 @@ public sealed class DeployLinkTests
         File.WriteAllText(outside, "outside");
         var digestPath = DigestPath(fixture);
         var state = JsonNode.Parse(File.ReadAllText(digestPath))!.AsObject();
-        state["files"]!.AsArray().Add(new JsonObject
-        {
-            ["path"] = "../outside.txt",
-            ["sha256"] = Hashing.Sha256File(outside),
-            ["size"] = new FileInfo(outside).Length,
-        });
+        state["files"]!
+            .AsArray()
+            .Add(
+                new JsonObject
+                {
+                    ["path"] = "../outside.txt",
+                    ["sha256"] = Hashing.Sha256File(outside),
+                    ["size"] = new FileInfo(outside).Length,
+                }
+            );
         File.WriteAllText(digestPath, state.ToJsonString());
 
         var findings = client.CacheVerify(fixture.StoreDirectory);
@@ -381,22 +428,26 @@ public sealed class DeployLinkTests
     public void Sync_RejectsPrivilegedModes()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "04755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "04755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("setuid", error.Message);
@@ -456,7 +507,8 @@ public sealed class DeployLinkTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var sha = ArtifactSha(fixture);
         var artifactLock = ProcessLock.TryAcquire(
-            Path.Combine(fixture.StoreDirectory, ".locks", sha + ".lock"));
+            Path.Combine(fixture.StoreDirectory, ".locks", sha + ".lock")
+        );
         Assert.NotNull(artifactLock);
         try
         {
@@ -487,17 +539,18 @@ public sealed class DeployLinkTests
         {
             File.CreateSymbolicLink(link, outside);
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or PlatformNotSupportedException)
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         {
             return;
         }
 
         var findings = client.CacheVerify(fixture.StoreDirectory);
 
-        Assert.Contains(findings, finding =>
-            finding.Code == "cache-corrupt" && finding.Path == link);
+        Assert.Contains(
+            findings,
+            finding => finding.Code == "cache-corrupt" && finding.Path == link
+        );
     }
 
     [Fact]
@@ -514,9 +567,8 @@ public sealed class DeployLinkTests
         {
             File.CreateSymbolicLink(link, outside);
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or PlatformNotSupportedException)
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         {
             return;
         }
@@ -534,15 +586,10 @@ public sealed class DeployLinkTests
         using var fixture = NewFixture();
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        var manifest = Path.Combine(
-            fixture.StoreDirectory,
-            ArtifactSha(fixture),
-            "sei.json");
-        using (var stream = new FileStream(
-            manifest,
-            FileMode.Open,
-            FileAccess.Write,
-            FileShare.None))
+        var manifest = Path.Combine(fixture.StoreDirectory, ArtifactSha(fixture), "sei.json");
+        using (
+            var stream = new FileStream(manifest, FileMode.Open, FileAccess.Write, FileShare.None)
+        )
         {
             stream.SetLength(ArchiveLimits.MaxManifestBytes + 1);
         }
@@ -572,10 +619,7 @@ public sealed class DeployLinkTests
         using var fixture = NewFixture();
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        var orphan = Path.Combine(
-            fixture.StoreDirectory,
-            ".meta",
-            new string('c', 64) + ".json");
+        var orphan = Path.Combine(fixture.StoreDirectory, ".meta", new string('c', 64) + ".json");
         File.WriteAllText(orphan, "{}");
 
         client.CacheClean(fixture.Root, fixture.StoreDirectory);
@@ -595,9 +639,12 @@ public sealed class DeployLinkTests
         Directory.CreateDirectory(orphan);
 
         // While a reader holds the artifact lock the directory must survive.
-        using (ProcessLock.Acquire(
-            Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
-            "test artifact"))
+        using (
+            ProcessLock.Acquire(
+                Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
+                "test artifact"
+            )
+        )
         {
             var busy = client.CacheClean(fixture.Root, fixture.StoreDirectory);
             Assert.True(Directory.Exists(orphan));
@@ -612,23 +659,27 @@ public sealed class DeployLinkTests
     private static Fixture NewFixture()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         return fixture;
     }
 
-    private static string ArtifactSha(Fixture fixture)
-        => new SeikoClient().ReadLock(fixture.Root)!.Sei.Single().Artifact.Sha256;
+    private static string ArtifactSha(Fixture fixture) =>
+        new SeikoClient().ReadLock(fixture.Root)!.Sei.Single().Artifact.Sha256;
 
-    private static string DigestPath(Fixture fixture)
-        => Path.Combine(fixture.StoreDirectory, ".meta", ArtifactSha(fixture) + ".json");
+    private static string DigestPath(Fixture fixture) =>
+        Path.Combine(fixture.StoreDirectory, ".meta", ArtifactSha(fixture) + ".json");
 
-    private static StoreDigestsState ReadDigests(Fixture fixture)
-        => JsonSerializer.Deserialize(
+    private static StoreDigestsState ReadDigests(Fixture fixture) =>
+        JsonSerializer.Deserialize(
             File.ReadAllBytes(DigestPath(fixture)),
-            SeikoJsonContext.Default.StoreDigestsState)!;
+            SeikoJsonContext.Default.StoreDigestsState
+        )!;
 }

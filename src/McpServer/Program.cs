@@ -67,7 +67,13 @@ for (var i = 0; i < args.Length; i++)
 SeikoMcpServer server;
 try
 {
-    server = new SeikoMcpServer(root, allowMutations, allowedRoots, allowedStores, auditLog: auditLog);
+    server = new SeikoMcpServer(
+        root,
+        allowMutations,
+        allowedRoots,
+        allowedStores,
+        auditLog: auditLog
+    );
 }
 catch (SeikoException ex)
 {
@@ -94,7 +100,8 @@ return 0;
 
 static void PrintHelp()
 {
-    Console.WriteLine("""
+    Console.WriteLine(
+        """
         seiko-mcp - Seiko MCP server over stdio
 
         Usage: seiko-mcp [--root <path>] [--allow-mutations]
@@ -107,5 +114,6 @@ static void PrintHelp()
           --audit-log <path>     Append one JSON line per tool call (no credentials)
           -h, --help         Show this help
           -V, --version      Show version information
-        """);
+        """
+    );
 }

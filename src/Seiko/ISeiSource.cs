@@ -16,5 +16,6 @@ public interface ISeiSource
         ArtifactLocation source,
         string directory,
         DownloadSession session,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken
+    );
 }

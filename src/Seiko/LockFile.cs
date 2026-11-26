@@ -15,15 +15,17 @@ public static class LockFile
         SeikoLock? parsed;
         try
         {
-            parsed = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeikoLock);
+            parsed = JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.SeikoLock
+            );
         }
         catch (JsonException ex)
         {
             throw new SeikoException($"invalid lock file: {path} ({ex.Message})", "lock", ex);
         }
 
-        var value = parsed
-            ?? throw new SeikoException($"invalid lock file: {path}", "lock");
+        var value = parsed ?? throw new SeikoException($"invalid lock file: {path}", "lock");
 
         // Older locks are not migrated in v0; ADR-0031 maps that to `io`,
         // while a structurally broken current lock stays `lock`.
@@ -44,7 +46,8 @@ public static class LockFile
 
         foreach (var entry in value.Sei)
         {
-            if (entry is null
+            if (
+                entry is null
                 || entry.Artifact is null
                 || entry.Dependencies is null
                 || entry.Prerequisites is null
@@ -53,7 +56,8 @@ public static class LockFile
                 || entry.Artifact.Dependencies is null
                 || entry.Artifact.Prerequisites is null
                 || entry.Artifact.OptionalPeers is null
-                || entry.Artifact.Conflicts is null)
+                || entry.Artifact.Conflicts is null
+            )
             {
                 throw new SeikoException($"invalid lock file: {path}", "lock");
             }
@@ -72,14 +76,18 @@ public static class LockFile
 
             // Relation elements are read directly by replay; a JSON `null`
             // would otherwise surface as an internal NRE.
-            if (entry.Dependencies.Concat(entry.Prerequisites)
+            if (
+                entry
+                    .Dependencies.Concat(entry.Prerequisites)
                     .Concat(entry.OptionalPeers)
                     .Concat(entry.Conflicts)
                     .Any(relation => relation is null)
-                || entry.Artifact.Dependencies.Concat(entry.Artifact.Prerequisites)
+                || entry
+                    .Artifact.Dependencies.Concat(entry.Artifact.Prerequisites)
                     .Concat(entry.Artifact.OptionalPeers)
                     .Concat(entry.Artifact.Conflicts)
-                    .Any(relation => relation is null))
+                    .Any(relation => relation is null)
+            )
             {
                 throw new SeikoException($"invalid lock file: {path}", "lock");
             }
@@ -90,7 +98,8 @@ public static class LockFile
 
     public static void Write(string path, SeikoLock value)
     {
-        var json = JsonSerializer.Serialize(value, SeikoJsonContext.Default.SeikoLock)
+        var json = JsonSerializer
+            .Serialize(value, SeikoJsonContext.Default.SeikoLock)
             .Replace("\r\n", "\n", StringComparison.Ordinal);
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
         File.WriteAllText(temp, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -100,14 +109,14 @@ public static class LockFile
     public static SeikoLock FromResolution(
         string rid,
         IReadOnlyList<ISeiSource> sources,
-        IReadOnlyList<ResolvedSei> sei)
+        IReadOnlyList<ResolvedSei> sei
+    )
     {
         return new SeikoLock
         {
             Target = new PlatformInfo { Rid = rid },
             Sources = sources.Select(s => s.Id).ToList(),
-            Sei = sei
-                .OrderBy(p => p.Name, StringComparer.Ordinal)
+            Sei = sei.OrderBy(p => p.Name, StringComparer.Ordinal)
                 .Select(p => new LockedSei
                 {
                     Name = p.Name,
@@ -122,10 +131,18 @@ public static class LockFile
                         // The artifact scope records what actually applied:
                         // the common relations merged with the selected group.
                         Group = p.GroupIndex,
-                        Dependencies = SortRelations(DependencyGroups.Dependencies(p.Artifact, p.GroupIndex)),
-                        Prerequisites = SortRelations(DependencyGroups.Prerequisites(p.Artifact, p.GroupIndex)),
-                        OptionalPeers = SortRelations(DependencyGroups.OptionalPeers(p.Artifact, p.GroupIndex)),
-                        Conflicts = SortRelations(DependencyGroups.Conflicts(p.Artifact, p.GroupIndex)),
+                        Dependencies = SortRelations(
+                            DependencyGroups.Dependencies(p.Artifact, p.GroupIndex)
+                        ),
+                        Prerequisites = SortRelations(
+                            DependencyGroups.Prerequisites(p.Artifact, p.GroupIndex)
+                        ),
+                        OptionalPeers = SortRelations(
+                            DependencyGroups.OptionalPeers(p.Artifact, p.GroupIndex)
+                        ),
+                        Conflicts = SortRelations(
+                            DependencyGroups.Conflicts(p.Artifact, p.GroupIndex)
+                        ),
                     },
                     Dependencies = SortRelations(p.Entry.Dependencies),
                     Prerequisites = SortRelations(p.Entry.Prerequisites),
@@ -136,11 +153,14 @@ public static class LockFile
         };
     }
 
-    private static List<SeiDependency> SortRelations(IEnumerable<SeiDependency>? relations)
-        => (relations ?? [])
+    private static List<SeiDependency> SortRelations(IEnumerable<SeiDependency>? relations) =>
+        (relations ?? [])
             .OrderBy(relation => relation.Name, StringComparer.Ordinal)
             .ThenBy(relation => relation.Version ?? "", StringComparer.Ordinal)
-            .Select(relation => new SeiDependency { Name = relation.Name, Version = relation.Version })
+            .Select(relation => new SeiDependency
+            {
+                Name = relation.Name,
+                Version = relation.Version,
+            })
             .ToList();
-
 }

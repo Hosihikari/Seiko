@@ -8,24 +8,37 @@ public sealed class SyncTests
     public void Sync_InstallsDependenciesAndDeploysPayload()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("levilamina", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("hosihikari", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("hello-seiko", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("levilamina", null), new DepFixture("hosihikari", "[1.0.0,2.0.0)")],
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "levilamina",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hosihikari",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hello-seiko",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies =
+                [
+                    new DepFixture("levilamina", null),
+                    new DepFixture("hosihikari", "[1.0.0,2.0.0)"),
+                ],
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["plugins/hello-seiko/main.cs"] = "Console.WriteLine(\"hello\");",
-                        ["plugins/hello-seiko/manifest.json"] = "{}",
+                        Files =
+                        {
+                            ["plugins/hello-seiko/main.cs"] = "Console.WriteLine(\"hello\");",
+                            ["plugins/hello-seiko/manifest.json"] = "{}",
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello-seiko", "[1.0.0,2.0.0)"));
 
         var client = new SeikoClient();
@@ -34,7 +47,18 @@ public sealed class SyncTests
         Assert.Equal(3, result.SeiInstalled);
         Assert.True(File.Exists(Path.Combine(fixture.Root, "plugins", "hello-seiko", "main.cs")));
         Assert.False(File.Exists(Path.Combine(fixture.Root, "sei.json")));
-        Assert.True(File.Exists(Path.Combine(fixture.Root, ".seiko", "installed", "hello-seiko", "1.0.0", "sei.json")));
+        Assert.True(
+            File.Exists(
+                Path.Combine(
+                    fixture.Root,
+                    ".seiko",
+                    "installed",
+                    "hello-seiko",
+                    "1.0.0",
+                    "sei.json"
+                )
+            )
+        );
 
         var lockFile = client.ReadLock(fixture.Root)!;
         Assert.Equal(3, lockFile.Sei.Count);
@@ -46,28 +70,32 @@ public sealed class SyncTests
     public void Sync_DeploysPayloadNamedToothJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["tooth.json"] = """{"payload":true}""",
-                        ["nested/tooth.json"] = "nested",
+                        Files =
+                        {
+                            ["tooth.json"] = """{"payload":true}""",
+                            ["nested/tooth.json"] = "nested",
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal(
             """{"payload":true}""",
-            File.ReadAllText(Path.Combine(fixture.Root, "tooth.json")));
+            File.ReadAllText(Path.Combine(fixture.Root, "tooth.json"))
+        );
         Assert.True(File.Exists(Path.Combine(fixture.Root, "nested", "tooth.json")));
         Assert.False(File.Exists(Path.Combine(fixture.Root, "sei.json")));
     }
@@ -76,28 +104,41 @@ public sealed class SyncTests
     public void Sync_SelectsArtifactByPrerequisiteAndRid()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("levilamina", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("endstone", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("hosihikari-hosting", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Rid = "win-x64",
-                    Prerequisites = [new DepFixture("levilamina", "*")],
-                    Files = { ["selected.txt"] = "levilamina" },
-                },
-                new ArtifactFixture
-                {
-                    Rid = "win-x64",
-                    Prerequisites = [new DepFixture("endstone", "*")],
-                    Files = { ["selected.txt"] = "endstone" },
-                },
-            ],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("levilamina"), new SpecFixture("hosihikari-hosting"));
+        fixture.AddSei(
+            "levilamina",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "endstone",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hosihikari-hosting",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Rid = "win-x64",
+                        Prerequisites = [new DepFixture("levilamina", "*")],
+                        Files = { ["selected.txt"] = "levilamina" },
+                    },
+                    new ArtifactFixture
+                    {
+                        Rid = "win-x64",
+                        Prerequisites = [new DepFixture("endstone", "*")],
+                        Files = { ["selected.txt"] = "endstone" },
+                    },
+                ],
+            }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("levilamina"),
+            new SpecFixture("hosihikari-hosting")
+        );
 
         var client = new SeikoClient();
         var result = client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -112,15 +153,20 @@ public sealed class SyncTests
     public void Sync_RejectsChecksumMismatch()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         fixture.CorruptChecksum("hello");
 
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
         Assert.Contains("checksum mismatch", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -128,11 +174,14 @@ public sealed class SyncTests
     public void Sync_RemovesStaleFilesOnNextSync()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -150,11 +199,14 @@ public sealed class SyncTests
     public void Sync_WritesDeterministicLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);

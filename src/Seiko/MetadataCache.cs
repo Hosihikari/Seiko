@@ -9,8 +9,12 @@ internal static class MetadataCache
 {
     public const string DirectoryName = ".metadata";
 
-    public static string PathFor(string storeRoot, string url)
-        => Path.Combine(storeRoot, DirectoryName, Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(url)) + ".json");
+    public static string PathFor(string storeRoot, string url) =>
+        Path.Combine(
+            storeRoot,
+            DirectoryName,
+            Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(url)) + ".json"
+        );
 
     // A source that answered 404 for a name is worth remembering: without it
     // an offline replay fails on the first source that simply lacks the sei,
@@ -39,7 +43,11 @@ internal static class MetadataCache
         }
     }
 
-    public static void Write<T>(string path, T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info)
+    public static void Write<T>(
+        string path,
+        T value,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info
+    )
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
@@ -56,14 +64,15 @@ internal static class MetadataCache
                 {
                     File.Delete(temp);
                 }
-                catch (IOException)
-                {
-                }
+                catch (IOException) { }
             }
         }
     }
 
-    public static T? TryRead<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info)
+    public static T? TryRead<T>(
+        string path,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> info
+    )
         where T : class
     {
         if (!File.Exists(path))
@@ -80,5 +89,4 @@ internal static class MetadataCache
             return null;
         }
     }
-
 }

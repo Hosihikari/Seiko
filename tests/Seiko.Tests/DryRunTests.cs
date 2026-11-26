@@ -8,11 +8,14 @@ public sealed class DryRunTests
     public void DryRun_AddDoesNotWriteConfigLockOrDeployment()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         var configBefore = File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.conf"));
 
@@ -20,7 +23,8 @@ public sealed class DryRunTests
             fixture.Root,
             "hello",
             storeRoot: fixture.StoreDirectory,
-            dryRun: true);
+            dryRun: true
+        );
 
         Assert.NotNull(result.Preview);
         var change = Assert.Single(result.Preview.Changes);
@@ -29,7 +33,12 @@ public sealed class DryRunTests
         Assert.Equal(configBefore, File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.conf")));
         Assert.False(File.Exists(Path.Combine(fixture.Root, "seiko.lock.json")));
         Assert.False(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
-        Assert.Empty(Directory.EnumerateFileSystemEntries(fixture.StoreDirectory, "????????????????????????????????????????????????????????????????"));
+        Assert.Empty(
+            Directory.EnumerateFileSystemEntries(
+                fixture.StoreDirectory,
+                "????????????????????????????????????????????????????????????????"
+            )
+        );
     }
 
     [Fact]
@@ -38,10 +47,7 @@ public sealed class DryRunTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
 
-        var result = new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            dryRun: true);
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
 
         Assert.NotNull(result.Preview);
         // A preview registers nothing and takes no lock: both leave files that
@@ -54,21 +60,31 @@ public sealed class DryRunTests
     public void DryRun_PreviewCarriesWarningsAndEveryRelationKind()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("marker", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["m.txt"] = "m" } }],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Prerequisites = [new DepFixture("marker", "*")],
-            OptionalPeers = [new DepFixture("marker", "*")],
-            Conflicts = [new DepFixture("gone", "*")],
-            Deprecated = "use world",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"), new SpecFixture("marker", "[1.0.0]"));
+        fixture.AddSei(
+            "marker",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["m.txt"] = "m" } }],
+            }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Prerequisites = [new DepFixture("marker", "*")],
+                OptionalPeers = [new DepFixture("marker", "*")],
+                Conflicts = [new DepFixture("gone", "*")],
+                Deprecated = "use world",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0]"),
+            new SpecFixture("marker", "[1.0.0]")
+        );
 
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
 
@@ -84,19 +100,29 @@ public sealed class DryRunTests
     public void DryRun_RemoveReportsRemovedSei()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        var result = client.Remove(fixture.Root, "hello", storeRoot: fixture.StoreDirectory, dryRun: true);
+        var result = client.Remove(
+            fixture.Root,
+            "hello",
+            storeRoot: fixture.StoreDirectory,
+            dryRun: true
+        );
 
-        Assert.Contains(result.Preview!.Changes, change =>
-            change.Action == "remove" && change.Name == "hello");
+        Assert.Contains(
+            result.Preview!.Changes,
+            change => change.Action == "remove" && change.Name == "hello"
+        );
         Assert.Single(ConfigLoader.Load(fixture.Root).Sei);
         Assert.NotNull(client.ReadLock(fixture.Root));
         Assert.True(File.Exists(Path.Combine(fixture.Root, "hello.txt")));
@@ -106,11 +132,14 @@ public sealed class DryRunTests
     public void DryRun_LockedKeepsLockBytes()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -121,7 +150,8 @@ public sealed class DryRunTests
             fixture.Root,
             fixture.StoreDirectory,
             mode: SyncMode.Locked,
-            dryRun: true);
+            dryRun: true
+        );
 
         Assert.Equal("replay", Assert.Single(result.Preview!.Changes).Action);
         Assert.Equal(before, File.ReadAllBytes(lockPath));
@@ -131,30 +161,35 @@ public sealed class DryRunTests
     public void DryRun_ReportsRelationDiagnostics()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("dep", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("dep", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "dep",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
+            }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("dep", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
-        var result = new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            dryRun: true);
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
 
-        Assert.Contains(result.Preview!.Diagnostics, diagnostic =>
-            diagnostic.Name == "hello"
-            && diagnostic.Kind == "dependency"
-            && diagnostic.Message.Contains("dep"));
-        Assert.Contains(result.Preview.Diagnostics, diagnostic =>
-            diagnostic.Kind == "artifact");
+        Assert.Contains(
+            result.Preview!.Diagnostics,
+            diagnostic =>
+                diagnostic.Name == "hello"
+                && diagnostic.Kind == "dependency"
+                && diagnostic.Message.Contains("dep")
+        );
+        Assert.Contains(result.Preview.Diagnostics, diagnostic => diagnostic.Kind == "artifact");
     }
 
     [Fact]
@@ -172,16 +207,16 @@ public sealed class DryRunTests
             {
                 Version = "2.0.0",
                 Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
-        var result = new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            dryRun: true);
+        var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
 
-        Assert.Contains(result.Preview!.Blocked, block =>
-            block.Code == "newer-version" && block.Message.Contains("2.0.0"));
+        Assert.Contains(
+            result.Preview!.Blocked,
+            block => block.Code == "newer-version" && block.Message.Contains("2.0.0")
+        );
         Assert.Equal(0, result.FilesDeployed);
     }
 }

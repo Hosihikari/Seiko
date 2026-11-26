@@ -6,8 +6,8 @@ namespace Seiko;
 
 public static class ConfigLoader
 {
-    public static SeikoConfig Load(string root, bool requireSources = true)
-        => LoadPath(Path.Combine(root, "seiko.conf"), requireSources);
+    public static SeikoConfig Load(string root, bool requireSources = true) =>
+        LoadPath(Path.Combine(root, "seiko.conf"), requireSources);
 
     internal static SeikoConfig LoadPath(string path, bool requireSources = true)
     {
@@ -19,9 +19,7 @@ public static class ConfigLoader
         IConfiguration configuration;
         try
         {
-            configuration = new ConfigurationBuilder()
-                .AddHoconFile(path, optional: false)
-                .Build();
+            configuration = new ConfigurationBuilder().AddHoconFile(path, optional: false).Build();
         }
         catch (Exception ex)
         {
@@ -29,21 +27,26 @@ public static class ConfigLoader
         }
 
         var schemaText = configuration["schemaVersion"];
-        if (!int.TryParse(schemaText, out var schemaVersion)
-            || schemaVersion != SeikoConfig.CurrentSchemaVersion)
+        if (
+            !int.TryParse(schemaText, out var schemaVersion)
+            || schemaVersion != SeikoConfig.CurrentSchemaVersion
+        )
         {
             throw new SeikoException(
                 $"{path}: unsupported config schemaVersion '{schemaText ?? "(missing)"}'",
-                "config");
+                "config"
+            );
         }
 
-        var hasComponents = configuration.GetSection("components").Exists()
+        var hasComponents =
+            configuration.GetSection("components").Exists()
             || configuration.GetSection("components").GetChildren().Any();
         if (!hasComponents)
         {
             try
             {
-                hasComponents = HoconParser.Parse(File.ReadAllText(path), null)
+                hasComponents = HoconParser
+                    .Parse(File.ReadAllText(path), null)
                     .TryGetValue("components", out _);
             }
             catch (Exception ex)
@@ -56,13 +59,11 @@ public static class ConfigLoader
         {
             throw new SeikoException(
                 $"{path}: components is not supported; declare direct dependencies in sei",
-                "config");
+                "config"
+            );
         }
 
-        var config = new SeikoConfig
-        {
-            Rid = configuration["rid"],
-        };
+        var config = new SeikoConfig { Rid = configuration["rid"] };
 
         var sourceIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var child in configuration.GetSection("sources").GetChildren())
@@ -79,19 +80,22 @@ public static class ConfigLoader
                 throw new SeikoException($"{path}: duplicate source id '{id}'", "config");
             }
 
-            var tokenHosts = child.GetSection("tokenHosts")
+            var tokenHosts = child
+                .GetSection("tokenHosts")
                 .GetChildren()
                 .Select(section => section.Value)
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value!.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            config.Sources.Add(new SourceConfig
-            {
-                Id = id,
-                Index = index,
-                TokenHosts = tokenHosts.Count > 0 ? tokenHosts : null,
-            });
+            config.Sources.Add(
+                new SourceConfig
+                {
+                    Id = id,
+                    Index = index,
+                    TokenHosts = tokenHosts.Count > 0 ? tokenHosts : null,
+                }
+            );
         }
 
         if (requireSources && config.Sources.Count == 0)
@@ -109,11 +113,16 @@ public static class ConfigLoader
     // make the lock's `source = "origin"` ambiguous (ADR-0044).
     private static void EnsureUniqueDirect(SeikoConfig config, string path)
     {
-        if (config.Sources.Any(source => string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal)))
+        if (
+            config.Sources.Any(source =>
+                string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal)
+            )
+        )
         {
             throw new SeikoException(
                 $"{path}: source id '{OriginPaths.SourceId}' is reserved for local files",
-                "config");
+                "config"
+            );
         }
 
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -121,7 +130,10 @@ public static class ConfigLoader
         {
             if (!names.Add(spec.Name))
             {
-                throw new SeikoException($"{path}: duplicate direct declaration '{spec.Name}'", "config");
+                throw new SeikoException(
+                    $"{path}: duplicate direct declaration '{spec.Name}'",
+                    "config"
+                );
             }
         }
 
@@ -133,14 +145,18 @@ public static class ConfigLoader
         {
             if (!origins.Add(origin.Name))
             {
-                throw new SeikoException($"{path}: duplicate origin entry '{origin.Name}'", "config");
+                throw new SeikoException(
+                    $"{path}: duplicate origin entry '{origin.Name}'",
+                    "config"
+                );
             }
 
             if (!names.Contains(origin.Name))
             {
                 throw new SeikoException(
                     $"{path}: origin '{origin.Name}' has no matching sei declaration",
-                    "config");
+                    "config"
+                );
             }
         }
     }
@@ -155,14 +171,19 @@ public static class ConfigLoader
                 throw new SeikoException($"{path}: each origin entry needs a name", "config");
             }
 
-            var paths = child.GetSection("paths").GetChildren()
+            var paths = child
+                .GetSection("paths")
+                .GetChildren()
                 .Select(item => item.Value)
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Select(value => value!.Trim())
                 .ToList();
             if (paths.Count == 0)
             {
-                throw new SeikoException($"{path}: origin '{name}' needs at least one path", "config");
+                throw new SeikoException(
+                    $"{path}: origin '{name}' needs at least one path",
+                    "config"
+                );
             }
 
             // The stored form is always relative to the install root, so a
@@ -170,68 +191,75 @@ public static class ConfigLoader
             // are not accepted (ADR-0044).
             foreach (var stored in paths)
             {
-                if (Path.IsPathRooted(stored) || stored.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+                if (
+                    Path.IsPathRooted(stored)
+                    || stored.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     throw new SeikoException(
                         $"{path}: origin '{name}' path '{stored}' must be relative to the install root",
-                        "config");
+                        "config"
+                    );
                 }
             }
 
-            var selectors = child.GetSection("selectors").GetChildren()
+            var selectors = child
+                .GetSection("selectors")
+                .GetChildren()
                 .Select(ReadSelector)
                 .ToList();
             if (selectors.Count != paths.Count)
             {
                 throw new SeikoException(
                     $"{path}: origin '{name}' has {paths.Count} path(s) but {selectors.Count} selector(s)",
-                    "config");
+                    "config"
+                );
             }
 
-            config.Origin.Add(new OriginSpec
-            {
-                Name = name,
-                Paths = paths,
-                Selectors = selectors,
-            });
+            config.Origin.Add(
+                new OriginSpec
+                {
+                    Name = name,
+                    Paths = paths,
+                    Selectors = selectors,
+                }
+            );
         }
     }
 
     private static OriginSelector ReadSelector(IConfigurationSection section)
     {
-        var prerequisites = section.GetSection("prerequisites").GetChildren()
+        var prerequisites = section
+            .GetSection("prerequisites")
+            .GetChildren()
             .Select(item => new SeiDependency
             {
                 Name = item["name"] ?? "",
                 Version = item["version"],
             })
             .ToList();
-        return new OriginSelector
-        {
-            Rid = section["rid"],
-            Prerequisites = prerequisites,
-        };
+        return new OriginSelector { Rid = section["rid"], Prerequisites = prerequisites };
     }
 
     private static void ReadSpecs(
         IConfigurationSection section,
         List<SeiSpec> specs,
         string path,
-        string sectionName)
+        string sectionName
+    )
     {
         foreach (var child in section.GetChildren())
         {
             var name = child["name"];
             if (string.IsNullOrWhiteSpace(name))
             {
-                throw new SeikoException($"{path}: each {sectionName} entry needs a name", "config");
+                throw new SeikoException(
+                    $"{path}: each {sectionName} entry needs a name",
+                    "config"
+                );
             }
 
-            specs.Add(new SeiSpec
-            {
-                Name = name,
-                Version = child["version"],
-            });
+            specs.Add(new SeiSpec { Name = name, Version = child["version"] });
         }
     }
 }

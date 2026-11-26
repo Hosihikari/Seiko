@@ -15,7 +15,8 @@ internal static class ArchiveLimits
         {
             throw new SeikoException(
                 $"artifact has {count} entries; the limit is {MaxEntries}",
-                "checksum");
+                "checksum"
+            );
         }
     }
 
@@ -25,13 +26,13 @@ internal static class ArchiveLimits
         {
             throw new SeikoException(
                 $"artifact entry expands to {size} bytes; the limit is {MaxEntryBytes}",
-                "checksum");
+                "checksum"
+            );
         }
     }
 
-    public static bool ExceedsEntryNameLimits(string name)
-        => name.Length > MaxEntryNameLength
-            || name.AsSpan().Count('/') + 1 > MaxEntryNameDepth;
+    public static bool ExceedsEntryNameLimits(string name) =>
+        name.Length > MaxEntryNameLength || name.AsSpan().Count('/') + 1 > MaxEntryNameDepth;
 
     public static string NormalizeName(string entryName)
     {
@@ -41,18 +42,14 @@ internal static class ArchiveLimits
             return "";
         }
 
-        return string.Join(
-            '/',
-            raw.Split('/').Where(segment => segment is not ("" or ".")));
+        return string.Join('/', raw.Split('/').Where(segment => segment is not ("" or ".")));
     }
 
     public static void EnsureTotal(long total)
     {
         if (total > MaxTotalBytes)
         {
-            throw new SeikoException(
-                $"artifact expands beyond {MaxTotalBytes} bytes",
-                "checksum");
+            throw new SeikoException($"artifact expands beyond {MaxTotalBytes} bytes", "checksum");
         }
     }
 }

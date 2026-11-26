@@ -28,7 +28,8 @@ internal sealed class ProgressDisplay : IProgress<SyncProgress>, IDisposable
         return !string.Equals(
             Environment.GetEnvironmentVariable("TERM"),
             "dumb",
-            StringComparison.OrdinalIgnoreCase);
+            StringComparison.OrdinalIgnoreCase
+        );
     }
 
     public void Report(SyncProgress value)
@@ -74,7 +75,8 @@ internal sealed class ProgressDisplay : IProgress<SyncProgress>, IDisposable
                 ForegroundColor = ConsoleColor.Green,
                 BackgroundColor = ConsoleColor.DarkGray,
                 DisplayTimeInRealTime = true,
-            });
+            }
+        );
     }
 
     private void Update(SyncProgress value)
@@ -98,13 +100,13 @@ internal sealed class ProgressDisplay : IProgress<SyncProgress>, IDisposable
                         BackgroundColor = ConsoleColor.DarkGray,
                         CollapseWhenFinished = true,
                         DisplayTimeInRealTime = true,
-                    });
+                    }
+                );
                 _children[value.Name] = child;
             }
 
-            var tick = value.Total > 0
-                ? (int)Math.Min(1000, value.Downloaded * 1000 / value.Total)
-                : 0;
+            var tick =
+                value.Total > 0 ? (int)Math.Min(1000, value.Downloaded * 1000 / value.Total) : 0;
             child.Tick(tick, $"{FormatBytes(value.Downloaded)} / {FormatBytes(value.Total)}");
         }
         else
@@ -118,9 +120,10 @@ internal sealed class ProgressDisplay : IProgress<SyncProgress>, IDisposable
         }
 
         _seiCompleted = value.SeiCompleted;
-        var parentTick = _totalBytes > 0
-            ? (int)Math.Min(1000, _downloaded.Values.Sum() * 1000 / _totalBytes)
-            : Math.Min(_seiTotal, _seiCompleted);
+        var parentTick =
+            _totalBytes > 0
+                ? (int)Math.Min(1000, _downloaded.Values.Sum() * 1000 / _totalBytes)
+                : Math.Min(_seiTotal, _seiCompleted);
         _parent.Tick(parentTick, $"{_seiCompleted}/{_seiTotal} sei");
     }
 

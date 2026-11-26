@@ -4,18 +4,20 @@ namespace Seiko;
 
 public static class Hashing
 {
-    public static string Sha256File(string path)
-        => ReadableFile.WithReadAccess(path, () =>
-        {
-            using var stream = File.OpenRead(path);
-            return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-        });
+    public static string Sha256File(string path) =>
+        ReadableFile.WithReadAccess(
+            path,
+            () =>
+            {
+                using var stream = File.OpenRead(path);
+                return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            }
+        );
 
-    public static string Sha256Bytes(ReadOnlySpan<byte> bytes)
-        => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    public static string Sha256Bytes(ReadOnlySpan<byte> bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    public static bool IsSha256(string? value)
-        => value is { Length: 64 } && IsLowerHex(value);
+    public static bool IsSha256(string? value) => value is { Length: 64 } && IsLowerHex(value);
 
     internal static bool IsLowerHex(ReadOnlySpan<char> value)
     {
@@ -42,7 +44,8 @@ public static class Hashing
         {
             throw new SeikoException(
                 $"artifact digest is not 64 lowercase hexadecimal characters: {value}",
-                "checksum");
+                "checksum"
+            );
         }
 
         return normalized;

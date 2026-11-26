@@ -13,15 +13,25 @@ internal readonly struct RelativePath
     public string Value { get; }
 
     private static readonly char[] WindowsInvalidFileNameChars =
-        ['<', '>', ':', '"', '|', '?', '*'];
+    [
+        '<',
+        '>',
+        ':',
+        '"',
+        '|',
+        '?',
+        '*',
+    ];
 
     public static RelativePath Parse(string value, string code = "deploy")
     {
         var normalized = value.Replace('\\', '/');
-        if (string.IsNullOrWhiteSpace(normalized)
+        if (
+            string.IsNullOrWhiteSpace(normalized)
             || normalized.Contains('\0')
             || Path.IsPathRooted(normalized)
-            || normalized.Split('/').Any(segment => segment is "" or "." or ".."))
+            || normalized.Split('/').Any(segment => segment is "" or "." or "..")
+        )
         {
             throw new SeikoException($"invalid path: {value}", code);
         }
@@ -34,11 +44,13 @@ internal readonly struct RelativePath
     // platform so a store entry has the same validity everywhere.
     public static bool IsSafeStrict(string? value)
     {
-        if (string.IsNullOrEmpty(value)
+        if (
+            string.IsNullOrEmpty(value)
             || value.Contains('\\')
             || value.IndexOfAny(WindowsInvalidFileNameChars) >= 0
             || value.Any(character => character < ' ')
-            || Path.IsPathRooted(value))
+            || Path.IsPathRooted(value)
+        )
         {
             return false;
         }
@@ -58,7 +70,8 @@ internal static class RootedPath
         PathSafety.EnsureNoLinks(root, relative.Value, code);
         var rootFull = Path.GetFullPath(root);
         var full = Path.GetFullPath(
-            Path.Combine(rootFull, relative.Value.Replace('/', Path.DirectorySeparatorChar)));
+            Path.Combine(rootFull, relative.Value.Replace('/', Path.DirectorySeparatorChar))
+        );
         var prefix = rootFull.EndsWith(Path.DirectorySeparatorChar)
             ? rootFull
             : rootFull + Path.DirectorySeparatorChar;
@@ -86,6 +99,6 @@ internal static class RootedPath
         return path.StartsWith(prefix, comparison);
     }
 
-    public static bool IsUnderAny(string path, IEnumerable<string> roots)
-        => roots.Any(root => IsUnder(path, root));
+    public static bool IsUnderAny(string path, IEnumerable<string> roots) =>
+        roots.Any(root => IsUnder(path, root));
 }

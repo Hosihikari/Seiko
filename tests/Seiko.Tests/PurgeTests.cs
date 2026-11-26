@@ -26,7 +26,8 @@ public sealed class PurgeTests
             fixture.Root,
             "hello",
             storeRoot: fixture.StoreDirectory,
-            purge: true);
+            purge: true
+        );
 
         Assert.False(File.Exists(ConfigFile(fixture)));
         Assert.False(File.Exists(DataFile(fixture)));
@@ -41,11 +42,14 @@ public sealed class PurgeTests
         Seed(fixture);
         fixture.CorruptChecksum("other");
 
-        Assert.Throws<SeikoException>(() => new SeikoClient().Remove(
-            fixture.Root,
-            "hello",
-            storeRoot: fixture.StoreDirectory,
-            purge: true));
+        Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Remove(
+                fixture.Root,
+                "hello",
+                storeRoot: fixture.StoreDirectory,
+                purge: true
+            )
+        );
 
         Assert.Equal("kept", File.ReadAllText(ConfigFile(fixture)));
         Assert.Equal("data", File.ReadAllText(DataFile(fixture)));
@@ -56,11 +60,14 @@ public sealed class PurgeTests
     public void Remove_PurgeWithoutFilesStillSucceeds()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -72,20 +79,27 @@ public sealed class PurgeTests
 
     private static void Seed(Fixture fixture)
     {
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
+        fixture.AddSei(
+            "other",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("hello", "[1.0.0]"),
-            new SpecFixture("other", "[1.0.0]"));
+            new SpecFixture("other", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Directory.CreateDirectory(Path.GetDirectoryName(ConfigFile(fixture))!);
@@ -94,9 +108,9 @@ public sealed class PurgeTests
         File.WriteAllText(DataFile(fixture), "data");
     }
 
-    private static string ConfigFile(Fixture fixture)
-        => Path.Combine(fixture.Root, "config", "seiko", "hello.conf");
+    private static string ConfigFile(Fixture fixture) =>
+        Path.Combine(fixture.Root, "config", "seiko", "hello.conf");
 
-    private static string DataFile(Fixture fixture)
-        => Path.Combine(fixture.Root, "data", "seiko", "hello", "state.txt");
+    private static string DataFile(Fixture fixture) =>
+        Path.Combine(fixture.Root, "data", "seiko", "hello", "state.txt");
 }

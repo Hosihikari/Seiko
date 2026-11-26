@@ -5,8 +5,8 @@ namespace Seiko;
 
 public static class ConfigWriter
 {
-    public static void WriteSpecs(string root, string section, IReadOnlyList<SeiSpec> specs)
-        => WriteDeclarations(root, section, specs, []);
+    public static void WriteSpecs(string root, string section, IReadOnlyList<SeiSpec> specs) =>
+        WriteDeclarations(root, section, specs, []);
 
     // `origin` is written with `sei` because the two form one direct
     // declaration set and must change in the same atomic edit (ADR-0044).
@@ -14,7 +14,8 @@ public static class ConfigWriter
         string root,
         string section,
         IReadOnlyList<SeiSpec> specs,
-        IReadOnlyList<OriginSpec> origins)
+        IReadOnlyList<OriginSpec> origins
+    )
     {
         if (section is not "sei")
         {
@@ -66,7 +67,8 @@ public static class ConfigWriter
             }
             else
             {
-                var insertAt = FindSection(lines, "sources")?.Start
+                var insertAt =
+                    FindSection(lines, "sources")?.Start
                     ?? FindSection(lines, "sei")?.Start
                     ?? lines.Count;
                 lines.Insert(insertAt, expected);
@@ -100,7 +102,8 @@ public static class ConfigWriter
         List<string> edited,
         string key,
         string? expectedBlock,
-        params string[] alsoSkipped)
+        params string[] alsoSkipped
+    )
     {
         HoconRoot before;
         HoconRoot after;
@@ -128,7 +131,8 @@ public static class ConfigWriter
             throw new SeikoException(
                 $"cannot safely edit seiko.conf; keep each top-level field on its own line ({ex.Message})",
                 "config",
-                ex);
+                ex
+            );
         }
 
         if (expected is null)
@@ -138,8 +142,10 @@ public static class ConfigWriter
                 throw UnsafeLayout(key);
             }
         }
-        else if (!after.TryGetValue(key, out var actual)
-            || !string.Equals(actual.Raw, expected.Raw, StringComparison.Ordinal))
+        else if (
+            !after.TryGetValue(key, out var actual)
+            || !string.Equals(actual.Raw, expected.Raw, StringComparison.Ordinal)
+        )
         {
             throw UnsafeLayout(key);
         }
@@ -153,27 +159,35 @@ public static class ConfigWriter
 
         foreach (var (name, value) in beforeFields)
         {
-            if (!afterFields.TryGetValue(name, out var other)
-                || !string.Equals(value, other, StringComparison.Ordinal))
+            if (
+                !afterFields.TryGetValue(name, out var other)
+                || !string.Equals(value, other, StringComparison.Ordinal)
+            )
             {
                 throw UnsafeLayout(key);
             }
         }
     }
 
-    private static HoconRoot Parse(string text)
-        => HoconParser.Parse(text, null);
+    private static HoconRoot Parse(string text) => HoconParser.Parse(text, null);
 
-    private static Dictionary<string, string> TopLevel(HoconRoot root, string skip, string[] alsoSkip)
-        => root.AsEnumerable()
-            .Where(pair => !string.Equals(pair.Key, skip, StringComparison.Ordinal)
-                && !alsoSkip.Contains(pair.Key, StringComparer.Ordinal))
+    private static Dictionary<string, string> TopLevel(
+        HoconRoot root,
+        string skip,
+        string[] alsoSkip
+    ) =>
+        root.AsEnumerable()
+            .Where(pair =>
+                !string.Equals(pair.Key, skip, StringComparison.Ordinal)
+                && !alsoSkip.Contains(pair.Key, StringComparer.Ordinal)
+            )
             .ToDictionary(pair => pair.Key, pair => pair.Value.Value.Raw, StringComparer.Ordinal);
 
-    private static SeikoException UnsafeLayout(string key)
-        => new(
+    private static SeikoException UnsafeLayout(string key) =>
+        new(
             $"cannot safely edit {key} in seiko.conf; keep each top-level field on its own line",
-            "config");
+            "config"
+        );
 
     private static void WriteLines(string root, List<string> lines)
     {
@@ -199,9 +213,9 @@ public static class ConfigWriter
             return;
         }
 
-        var insertAt = FindSection(lines, "sei")?.Start
-            ?? FindSection(lines, "sources")?.Start
-            ?? lines.Count;        if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)
+        var insertAt =
+            FindSection(lines, "sei")?.Start ?? FindSection(lines, "sources")?.Start ?? lines.Count;
+        if (insertAt == lines.Count && lines.Count > 0 && lines[^1].Length > 0)
         {
             lines.Add("");
         }
@@ -220,8 +234,10 @@ public static class ConfigWriter
         foreach (var origin in origins)
         {
             var paths = origin.Paths.Select(path => $"\"{Escape(path)}\"");
-            lines.Add($"  {{ name = \"{Escape(origin.Name)}\", paths = [{string.Join(", ", paths)}], "
-                + $"selectors = [{string.Join(", ", origin.Selectors.Select(SelectorText))}] }},");
+            lines.Add(
+                $"  {{ name = \"{Escape(origin.Name)}\", paths = [{string.Join(", ", paths)}], "
+                    + $"selectors = [{string.Join(", ", origin.Selectors.Select(SelectorText))}] }},"
+            );
         }
 
         lines.Add("]");
@@ -239,10 +255,11 @@ public static class ConfigWriter
 
         if (selector.Prerequisites.Count > 0)
         {
-            var items = selector.Prerequisites.Select(
-                prerequisite => prerequisite.Version is null
+            var items = selector.Prerequisites.Select(prerequisite =>
+                prerequisite.Version is null
                     ? $"{{ name = \"{Escape(prerequisite.Name)}\" }}"
-                    : $"{{ name = \"{Escape(prerequisite.Name)}\", version = \"{Escape(prerequisite.Version)}\" }}");
+                    : $"{{ name = \"{Escape(prerequisite.Name)}\", version = \"{Escape(prerequisite.Version)}\" }}"
+            );
             parts.Add($"prerequisites = [{string.Join(", ", items)}]");
         }
 
@@ -302,8 +319,9 @@ public static class ConfigWriter
         return lines;
     }
 
-    private static string Escape(string value)
-        => value.Replace("\\", "\\\\", StringComparison.Ordinal)
+    private static string Escape(string value) =>
+        value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("\"", "\\\"", StringComparison.Ordinal);
 
     private static int FindScalar(List<string> lines, string key)
@@ -383,7 +401,11 @@ public static class ConfigWriter
                     {
                         break;
                     }
-                    else if (ch == '/' && i + 1 < lines[current].Length && lines[current][i + 1] == '/')
+                    else if (
+                        ch == '/'
+                        && i + 1 < lines[current].Length
+                        && lines[current][i + 1] == '/'
+                    )
                     {
                         break;
                     }

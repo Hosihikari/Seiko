@@ -11,7 +11,11 @@ internal static class OfflineMetadata
     // both set when both happened). The caller throws once the whole
     // operation has been checked, so two pre-checks cannot hide each other's
     // gaps behind the first exception.
-    public sealed record VerifyResult(SortedSet<string> Missing, SeikoException? Failure, bool Incomplete)
+    public sealed record VerifyResult(
+        SortedSet<string> Missing,
+        SeikoException? Failure,
+        bool Incomplete
+    )
     {
         public void ThrowIfAny()
         {
@@ -44,7 +48,8 @@ internal static class OfflineMetadata
         SeikoLock? existing = null,
         string rid = "",
         IReadOnlySet<string>? updateNames = null,
-        bool latestInstallable = false)
+        bool latestInstallable = false
+    )
     {
         var missing = new SortedSet<string>(StringComparer.Ordinal);
 
@@ -98,7 +103,8 @@ internal static class OfflineMetadata
             latestInstallable,
             allowCritical,
             probe.OnSolution,
-            collectAll: true);
+            collectAll: true
+        );
         SeikoException? failure = null;
         try
         {
@@ -123,13 +129,18 @@ internal static class OfflineMetadata
         // along, as everywhere else.
         if (probe.SourceFailures.FirstOrDefault() is { } built)
         {
-            failure = failure is null || ReferenceEquals(failure, built)
-                ? built
-                : new SeikoException($"{built.Message}; also: {failure.Message}", built.Code ?? "source", built)
-                {
-                    Hint = built.Hint,
-                    HintKey = built.HintKey,
-                };
+            failure =
+                failure is null || ReferenceEquals(failure, built)
+                    ? built
+                    : new SeikoException(
+                        $"{built.Message}; also: {failure.Message}",
+                        built.Code ?? "source",
+                        built
+                    )
+                    {
+                        Hint = built.Hint,
+                        HintKey = built.HintKey,
+                    };
         }
 
         return new VerifyResult(missing, failure, resolver.Incomplete);
@@ -141,26 +152,35 @@ internal static class OfflineMetadata
     private static SeikoException Combined(
         SeikoException failure,
         IEnumerable<string> gaps,
-        bool incomplete)
-        => new(
+        bool incomplete
+    ) =>
+        new(
             $"{failure.Message} (offline: missing cached metadata: {string.Join("; ", gaps)}"
-            + (incomplete ? "; the probe hit a search limit, so the list may be incomplete" : "")
-            + ")",
-            failure.Code ?? "source")
+                + (
+                    incomplete
+                        ? "; the probe hit a search limit, so the list may be incomplete"
+                        : ""
+                )
+                + ")",
+            failure.Code ?? "source"
+        )
         {
             // The hint belongs to the failure and still applies.
             Hint = failure.Hint,
             HintKey = failure.HintKey,
         };
 
-    private static SeikoException MissingError(IEnumerable<string> missing, bool incomplete)
-        => new(
+    private static SeikoException MissingError(IEnumerable<string> missing, bool incomplete) =>
+        new(
             $"offline: missing cached metadata: {string.Join("; ", missing)}. "
-            + (incomplete
-                ? "The probe hit a search limit, so the list may be incomplete. "
-                : "")
-            + "Run the command once online, then retry offline",
-            "source");
+                + (
+                    incomplete
+                        ? "The probe hit a search limit, so the list may be incomplete. "
+                        : ""
+                )
+                + "Run the command once online, then retry offline",
+            "source"
+        );
 
     // The sources the probe resolves against, plus the gap log. Every read
     // goes to the real list in order; a source whose cache has no answer is
@@ -197,13 +217,20 @@ internal static class OfflineMetadata
                             _real.Add(new LocalSource(source, root));
                         }
                     }
-                    catch (Exception ex) when (ex is SeikoException or System.Text.Json.JsonException)
+                    catch (Exception ex)
+                        when (ex is SeikoException or System.Text.Json.JsonException)
                     {
                         // A source that will not open fails the real run, but
                         // the rest of the graph can still be walked; the
                         // failure is kept and reported with the gaps.
-                        SourceFailures.Add(ex as SeikoException
-                            ?? new SeikoException($"source '{source.Id}': invalid index ({ex.Message})", "source", ex));
+                        SourceFailures.Add(
+                            ex as SeikoException
+                                ?? new SeikoException(
+                                    $"source '{source.Id}': invalid index ({ex.Message})",
+                                    "source",
+                                    ex
+                                )
+                        );
                     }
                 }
             }
@@ -256,8 +283,8 @@ internal static class OfflineMetadata
 
         // The real sources one by one, for a caller that matches by id (the
         // replay does). Each read still goes through the gap log.
-        public IReadOnlyList<ISeiSource> Real
-            => _forward ??= _real
+        public IReadOnlyList<ISeiSource> Real =>
+            _forward ??= _real
                 .Select((source, index) => (ISeiSource)new Forwarder(this, source, index))
                 .ToList();
 
@@ -308,15 +335,16 @@ internal static class OfflineMetadata
                 return read;
             }
 
-            public string ResolveArtifact(ArtifactLocation source) => _source.ResolveArtifact(source);
+            public string ResolveArtifact(ArtifactLocation source) =>
+                _source.ResolveArtifact(source);
 
             public Task DownloadAsync(
                 string name,
                 ArtifactLocation source,
                 string directory,
                 DownloadSession session,
-                CancellationToken cancellationToken)
-                => _source.DownloadAsync(name, source, directory, session, cancellationToken);
+                CancellationToken cancellationToken
+            ) => _source.DownloadAsync(name, source, directory, session, cancellationToken);
         }
 
         // The graph the rest of the run would cross-check. The check inside
@@ -335,8 +363,14 @@ internal static class OfflineMetadata
             // The check matches the owner by identity, and the entries name
             // the probe as their source; restamp them with the real one.
             var owned = resolved
-                .Where(sei => _owner.TryGetValue(sei.Name, out var index)
-                    && !string.Equals(_real[index].Id, OriginPaths.SourceId, StringComparison.Ordinal))
+                .Where(sei =>
+                    _owner.TryGetValue(sei.Name, out var index)
+                    && !string.Equals(
+                        _real[index].Id,
+                        OriginPaths.SourceId,
+                        StringComparison.Ordinal
+                    )
+                )
                 .Select(sei => new ResolvedSei
                 {
                     Name = sei.Name,
@@ -353,14 +387,19 @@ internal static class OfflineMetadata
                 return;
             }
 
-            CrossSourceCheck.Verify(_real, owned, "checksum", (source, name) =>
-            {
-                var index = _real.IndexOf(source);
-                if (index >= 0 && index != _owner.GetValueOrDefault(name, -1))
+            CrossSourceCheck.Verify(
+                _real,
+                owned,
+                "checksum",
+                (source, name) =>
                 {
-                    Read(index, name);
+                    var index = _real.IndexOf(source);
+                    if (index >= 0 && index != _owner.GetValueOrDefault(name, -1))
+                    {
+                        Read(index, name);
+                    }
                 }
-            });
+            );
         }
 
         private SeiIndex? Read(int index, string name)
@@ -381,8 +420,8 @@ internal static class OfflineMetadata
             ArtifactLocation source,
             string directory,
             DownloadSession session,
-            CancellationToken cancellationToken)
-            => Task.CompletedTask;
+            CancellationToken cancellationToken
+        ) => Task.CompletedTask;
 
         public void Dispose()
         {
@@ -396,8 +435,8 @@ internal static class OfflineMetadata
         // version is invented, so no range, artifact or relation check may
         // reject it). It carries no dependencies: the missing document's own
         // relations cannot be known from here.
-        private static SeiIndex Placeholder(string name)
-            => new()
+        private static SeiIndex Placeholder(string name) =>
+            new()
             {
                 Name = name,
                 Versions =
@@ -406,10 +445,18 @@ internal static class OfflineMetadata
                     {
                         ProbeUnknown = true,
                         Version = "1.0.0",
-                        Artifacts = [new ArtifactEntry
-                        {
-                            Source = new ArtifactLocation { Url = "", Sha256 = new string('0', 64), Size = 1 },
-                        }],
+                        Artifacts =
+                        [
+                            new ArtifactEntry
+                            {
+                                Source = new ArtifactLocation
+                                {
+                                    Url = "",
+                                    Sha256 = new string('0', 64),
+                                    Size = 1,
+                                },
+                            },
+                        ],
                     },
                 ],
             };
@@ -427,7 +474,8 @@ internal static class OfflineMetadata
         SeikoConfig config,
         string storePath,
         string root,
-        IEnumerable<string> names)
+        IEnumerable<string> names
+    )
     {
         foreach (var name in names)
         {
@@ -436,7 +484,15 @@ internal static class OfflineMetadata
                 if (!IsHttp(source))
                 {
                     var index = LocalSource.ResolvePath(source.Index, root);
-                    if (File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json")))
+                    if (
+                        File.Exists(
+                            Path.Combine(
+                                Path.GetDirectoryName(index) ?? root,
+                                "sei",
+                                name + ".json"
+                            )
+                        )
+                    )
                     {
                         break;
                     }
@@ -446,7 +502,8 @@ internal static class OfflineMetadata
 
                 var path = MetadataCache.PathFor(
                     storePath,
-                    new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
+                    new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri
+                );
                 if (MetadataCache.IsMissing(path))
                 {
                     continue;
@@ -481,8 +538,9 @@ internal static class OfflineMetadata
 
         // The real source list starts with the origin declarations, and the
         // command stops at the first answer; an origin entry answers first.
-        var origin = config.Origin.FirstOrDefault(
-            item => string.Equals(item.Name, name, StringComparison.Ordinal));
+        var origin = config.Origin.FirstOrDefault(item =>
+            string.Equals(item.Name, name, StringComparison.Ordinal)
+        );
         if (origin is not null)
         {
             return;
@@ -493,7 +551,11 @@ internal static class OfflineMetadata
             if (!IsHttp(source))
             {
                 var index = LocalSource.ResolvePath(source.Index, root);
-                if (!File.Exists(Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json")))
+                if (
+                    !File.Exists(
+                        Path.Combine(Path.GetDirectoryName(index) ?? root, "sei", name + ".json")
+                    )
+                )
                 {
                     continue;
                 }
@@ -503,7 +565,8 @@ internal static class OfflineMetadata
 
             var path = MetadataCache.PathFor(
                 storePath,
-                new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri);
+                new Uri(new Uri(source.Index), $"sei/{name}.json").AbsoluteUri
+            );
             if (MetadataCache.IsMissing(path))
             {
                 continue;
@@ -559,9 +622,11 @@ internal static class OfflineMetadata
 
                 var catalogPath = MetadataCache.PathFor(
                     storePath,
-                    new Uri(indexUri, CatalogFile.FileName).AbsoluteUri);
-                var catalogNames = CatalogFile.TryRead(catalogPath)?.Sei
-                    .Select(entry => entry.Name)
+                    new Uri(indexUri, CatalogFile.FileName).AbsoluteUri
+                );
+                var catalogNames = CatalogFile
+                    .TryRead(catalogPath)
+                    ?.Sei.Select(entry => entry.Name)
                     .ToHashSet(StringComparer.Ordinal);
 
                 foreach (var name in index.Sei ?? [])
@@ -579,7 +644,8 @@ internal static class OfflineMetadata
 
                     var namePath = MetadataCache.PathFor(
                         storePath,
-                        new Uri(indexUri, $"sei/{name}.json").AbsoluteUri);
+                        new Uri(indexUri, $"sei/{name}.json").AbsoluteUri
+                    );
                     // A recorded 404 is an answer, not a missing entry; a later
                     // source may still own the name.
                     if (MetadataCache.IsMissing(namePath))
@@ -608,7 +674,10 @@ internal static class OfflineMetadata
             // Local sources read directly; a missing file simply lets a later
             // source answer, matching the online walk.
             var localIndexPath = LocalSource.ResolvePath(source.Index, root);
-            var localIndex = MetadataCache.TryRead(localIndexPath, SeikoJsonContext.Default.IndexRoot);
+            var localIndex = MetadataCache.TryRead(
+                localIndexPath,
+                SeikoJsonContext.Default.IndexRoot
+            );
             if (localIndex is null)
             {
                 continue;
@@ -617,9 +686,9 @@ internal static class OfflineMetadata
             var baseDirectory = Path.GetDirectoryName(localIndexPath) ?? root;
             // Search asks the local catalog before the per-name file, so a
             // catalog hit answers the name and later sources need no cache.
-            var localCatalogNames = CatalogFile.TryRead(
-                    Path.Combine(baseDirectory, CatalogFile.FileName))?
-                .Sei.Select(entry => entry.Name)
+            var localCatalogNames = CatalogFile
+                .TryRead(Path.Combine(baseDirectory, CatalogFile.FileName))
+                ?.Sei.Select(entry => entry.Name)
                 .ToHashSet(StringComparer.Ordinal);
             foreach (var name in localIndex.Sei ?? [])
             {
@@ -628,8 +697,10 @@ internal static class OfflineMetadata
                     continue;
                 }
 
-                if (localCatalogNames?.Contains(name) == true
-                    || File.Exists(Path.Combine(baseDirectory, "sei", name + ".json")))
+                if (
+                    localCatalogNames?.Contains(name) == true
+                    || File.Exists(Path.Combine(baseDirectory, "sei", name + ".json"))
+                )
                 {
                     seen.Add(name);
                 }
@@ -640,8 +711,9 @@ internal static class OfflineMetadata
         {
             throw new SeikoException(
                 $"offline: missing cached metadata: {string.Join("; ", missing)}. "
-                + "Run the command once online, then retry offline",
-                "source");
+                    + "Run the command once online, then retry offline",
+                "source"
+            );
         }
     }
 
@@ -653,10 +725,12 @@ internal static class OfflineMetadata
             try
             {
                 var stored = store.TryGet(sei.Artifact.Source.Sha256);
-                if (stored is null
+                if (
+                    stored is null
                     || !string.Equals(stored.Manifest.Name, sei.Name, StringComparison.Ordinal)
                     || !NuGetVersion.TryParse(stored.Manifest.Version, out var version)
-                    || !version.Equals(sei.ParsedVersion))
+                    || !version.Equals(sei.ParsedVersion)
+                )
                 {
                     missing.Add($"{sei.Name} {sei.Version}");
                 }
@@ -671,16 +745,17 @@ internal static class OfflineMetadata
         {
             throw new SeikoException(
                 $"offline: missing cached artifacts: {string.Join(", ", missing)}. "
-                + "Run `sk sync` while online to download them",
-                "source");
+                    + "Run `sk sync` while online to download them",
+                "source"
+            );
         }
     }
 
     private static bool IsHttp(SourceConfig source) => IsHttpUri(source.Index);
 
-    private static bool IsHttpUri(string value)
-        => value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    private static bool IsHttpUri(string value) =>
+        value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsHttpUri(ISeiSource source) => source is HttpSource;
 }

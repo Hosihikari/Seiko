@@ -9,11 +9,14 @@ public sealed class StateValidationTests
     public void Sync_ReportsANullFileRecordInsteadOfCrashing()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -22,8 +25,9 @@ public sealed class StateValidationTests
         node["files"]!["hello.txt"] = null;
         File.WriteAllText(statePath, node.ToJsonString());
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("no record", error.Message);
@@ -34,11 +38,14 @@ public sealed class StateValidationTests
     public void Frozen_ReportsANullLockRelationInsteadOfCrashing()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -47,8 +54,9 @@ public sealed class StateValidationTests
         node["sei"]![0]!["dependencies"] = new JsonArray((JsonNode?)null);
         File.WriteAllText(lockPath, node.ToJsonString());
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Contains("invalid lock file", error.Message);
@@ -58,11 +66,14 @@ public sealed class StateValidationTests
     public void Frozen_ReportsAnUnknownLockFieldInsteadOfIgnoringIt()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -72,8 +83,9 @@ public sealed class StateValidationTests
         node["sei"]![0]!["dependecies"] = new JsonArray();
         File.WriteAllText(lockPath, node.ToJsonString());
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Contains("dependecies", error.Message);

@@ -17,7 +17,9 @@ public sealed class R4ProbeTests
         };
         for (var i = 0; i < 300; i++)
         {
-            lines.Add($"  {{ id = \"filler{i}\", index = \"https://example.invalid/{new string('a', 20)}/index.json\" }},");
+            lines.Add(
+                $"  {{ id = \"filler{i}\", index = \"https://example.invalid/{new string('a', 20)}/index.json\" }},"
+            );
         }
 
         lines.Add("]");
@@ -25,11 +27,17 @@ public sealed class R4ProbeTests
         lines.Add("sei = []");
         File.WriteAllText(Path.Combine(fixture.Root, "seiko.conf"), string.Join('\n', lines));
         var audit = Path.Combine(fixture.Root, "audit.jsonl");
-        var server = new Seiko.McpServer.SeikoMcpServer(fixture.Root, allowMutations: false, auditLog: audit);
+        var server = new Seiko.McpServer.SeikoMcpServer(
+            fixture.Root,
+            allowMutations: false,
+            auditLog: audit
+        );
 
         var r = server.Handle(
             "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"source_list\",\"arguments\":{\"root\":\""
-            + fixture.Root.Replace("\\", "\\\\") + "\"}}}");
+                + fixture.Root.Replace("\\", "\\\\")
+                + "\"}}}"
+        );
 
         Assert.NotNull(r);
         var text = File.ReadAllText(audit);
@@ -43,12 +51,17 @@ public sealed class R4ProbeTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
         var audit = Path.Combine(fixture.Root, "audit.jsonl");
-        var server = new Seiko.McpServer.SeikoMcpServer(fixture.Root, allowMutations: true, auditLog: audit);
+        var server = new Seiko.McpServer.SeikoMcpServer(
+            fixture.Root,
+            allowMutations: true,
+            auditLog: audit
+        );
 
         server.Handle(
             "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"source_add\",\"arguments\":{\"root\":\""
-            + fixture.Root.Replace("\\", "\\\\")
-            + "\",\"id\":\"demo\",\"index\":\"http://demo:密码SECRET_SENTINEL@[\"}}}");
+                + fixture.Root.Replace("\\", "\\\\")
+                + "\",\"id\":\"demo\",\"index\":\"http://demo:密码SECRET_SENTINEL@[\"}}}"
+        );
 
         var text = File.ReadAllText(audit);
         Assert.DoesNotContain("SECRET_SENTINEL", text);
@@ -62,22 +75,34 @@ public sealed class R4ProbeTests
             using var fixture = new Fixture();
             fixture.AddSei(
                 "marker",
-                new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["m1.txt"] = "1" } }] },
-                new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture { Files = { ["m2.txt"] = "2" } }] });
-            fixture.AddSei("aaa", new VersionFixture
-            {
-                Version = "1.0.0",
-                Artifacts =
-                [
-                    new ArtifactFixture { Files = { ["a.txt"] = "plain" } },
-                    new ArtifactFixture
-                    {
-                        Dependencies = [new DepFixture("marker", "[1.0.0]")],
-                        Prerequisites = [new DepFixture("marker", "[1.0.0]")],
-                        Files = { ["a.txt"] = "specific" },
-                    },
-                ],
-            });
+                new VersionFixture
+                {
+                    Version = "1.0.0",
+                    Artifacts = [new ArtifactFixture { Files = { ["m1.txt"] = "1" } }],
+                },
+                new VersionFixture
+                {
+                    Version = "2.0.0",
+                    Artifacts = [new ArtifactFixture { Files = { ["m2.txt"] = "2" } }],
+                }
+            );
+            fixture.AddSei(
+                "aaa",
+                new VersionFixture
+                {
+                    Version = "1.0.0",
+                    Artifacts =
+                    [
+                        new ArtifactFixture { Files = { ["a.txt"] = "plain" } },
+                        new ArtifactFixture
+                        {
+                            Dependencies = [new DepFixture("marker", "[1.0.0]")],
+                            Prerequisites = [new DepFixture("marker", "[1.0.0]")],
+                            Files = { ["a.txt"] = "specific" },
+                        },
+                    ],
+                }
+            );
             SpecFixture[] specs = markerFirst
                 ? [new SpecFixture("marker", "*"), new SpecFixture("aaa", "[1.0.0]")]
                 : [new SpecFixture("aaa", "[1.0.0]"), new SpecFixture("marker", "*")];

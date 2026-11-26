@@ -8,18 +8,24 @@ public sealed class CycleAndReachabilityTests
     public void Resolve_AllowsACycleBetweenSei()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("b", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
-        fixture.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("a", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("b", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("a", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
 
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -31,12 +37,15 @@ public sealed class CycleAndReachabilityTests
     public void Resolve_AllowsOptionalPeerToBeMissing()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            OptionalPeers = [new DepFixture("absent", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                OptionalPeers = [new DepFixture("absent", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -48,30 +57,46 @@ public sealed class CycleAndReachabilityTests
     public void Resolve_ReclaimsUnreachableCycleAfterRemove()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("root", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("a", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["root.txt"] = "root" } }],
-        });
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("b", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
-        fixture.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("a", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
-        });
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("root", "[1.0.0]"), new SpecFixture("other", "[1.0.0]"));
+        fixture.AddSei(
+            "root",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("a", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["root.txt"] = "root" } }],
+            }
+        );
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("b", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("a", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+            }
+        );
+        fixture.AddSei(
+            "other",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
+            }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("root", "[1.0.0]"),
+            new SpecFixture("other", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -87,18 +112,24 @@ public sealed class CycleAndReachabilityTests
     public void Resolve_KeepsACycleReachableFromAnotherRoot()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("b", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
-        fixture.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("a", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("b", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("a", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);

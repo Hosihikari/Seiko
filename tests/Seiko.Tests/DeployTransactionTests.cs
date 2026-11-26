@@ -9,33 +9,31 @@ public sealed class DeployTransactionTests
     public void Sync_RollsBackPartialDeployment()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
             {
-                Files =
-                {
-                    ["a.txt"] = "one-a",
-                    ["b.txt"] = "one-b",
-                },
-            }],
-        });
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture { Files = { ["a.txt"] = "one-a", ["b.txt"] = "one-b" } },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
             {
-                Files =
-                {
-                    ["a.txt"] = "two-a",
-                    ["b.txt"] = "two-b",
-                },
-            }],
-        });
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture { Files = { ["a.txt"] = "two-a", ["b.txt"] = "two-b" } },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
 
         try
@@ -47,8 +45,9 @@ public sealed class DeployTransactionTests
                     throw new IOException("injected deployment failure");
                 }
             };
-            Assert.Throws<IOException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Throws<IOException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
         }
         finally
         {
@@ -60,7 +59,8 @@ public sealed class DeployTransactionTests
         Assert.Equal("1.0.0", new SeikoClient().ReadLock(fixture.Root)!.Sei.Single().Version);
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
-            SeikoJsonContext.Default.LocalState);
+            SeikoJsonContext.Default.LocalState
+        );
         Assert.Equal(1, state!.Generation);
         Assert.False(File.Exists(Path.Combine(fixture.Root, ".seiko", "transaction.json")));
         Assert.False(Directory.Exists(Path.Combine(fixture.Root, ".seiko", "transaction")));
@@ -79,8 +79,9 @@ public sealed class DeployTransactionTests
                 return;
             }
 
-            var pending = new[] { "a.txt", "b.txt" }
-                .First(name => !File.Exists(Path.Combine(fixture.Root, name)));
+            var pending = new[] { "a.txt", "b.txt" }.First(name =>
+                !File.Exists(Path.Combine(fixture.Root, name))
+            );
             File.WriteAllText(Path.Combine(fixture.Root, pending), "external-user-content");
             target[0] = pending;
         };
@@ -89,23 +90,26 @@ public sealed class DeployTransactionTests
 
     private static string Other(string name) => name == "a.txt" ? "b.txt" : "a.txt";
 
-    private static string PackageContent(string name) => name == "a.txt" ? "package-a" : "package-b";
+    private static string PackageContent(string name) =>
+        name == "a.txt" ? "package-a" : "package-b";
 
     private static Fixture TwoFileFixture()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
             {
-                Files =
-                {
-                    ["a.txt"] = "package-a",
-                    ["b.txt"] = "package-b",
-                },
-            }],
-        });
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["a.txt"] = "package-a", ["b.txt"] = "package-b" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         return fixture;
     }
@@ -117,9 +121,14 @@ public sealed class DeployTransactionTests
         var injected = InjectAfterFirstFile(fixture);
         try
         {
-            var error = Assert.Throws<SeikoException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
-            Assert.Contains("appeared during the deployment", error.Message, StringComparison.Ordinal);
+            var error = Assert.Throws<SeikoException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
+            Assert.Contains(
+                "appeared during the deployment",
+                error.Message,
+                StringComparison.Ordinal
+            );
         }
         finally
         {
@@ -129,7 +138,10 @@ public sealed class DeployTransactionTests
         // Rollback keeps the racing content; the new file is the deployer's
         // leftover and goes away with the transaction.
         Assert.True(injected[0] is not null, "callback did not run");
-        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected[0])));
+        Assert.Equal(
+            "external-user-content",
+            File.ReadAllText(Path.Combine(fixture.Root, injected[0]))
+        );
         Assert.False(File.Exists(Path.Combine(fixture.Root, Other(injected[0]))));
         Assert.Null(new SeikoClient().ReadLock(fixture.Root));
     }
@@ -170,11 +182,16 @@ public sealed class DeployTransactionTests
 
         Assert.Equal(
             PackageContent(Other(injected[0])),
-            File.ReadAllText(Path.Combine(fixture.Root, Other(injected[0]))));
-        Assert.Equal("external-user-content", File.ReadAllText(Path.Combine(fixture.Root, injected[0])));
+            File.ReadAllText(Path.Combine(fixture.Root, Other(injected[0])))
+        );
+        Assert.Equal(
+            "external-user-content",
+            File.ReadAllText(Path.Combine(fixture.Root, injected[0]))
+        );
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
-            SeikoJsonContext.Default.LocalState)!;
+            SeikoJsonContext.Default.LocalState
+        )!;
         Assert.True(state.Files[injected[0]].Adopted);
 
         // The adopted content is in the generation snapshot for rollback.
@@ -184,7 +201,8 @@ public sealed class DeployTransactionTests
             "generations",
             state.Generation.ToString(),
             "adopted",
-            injected[0]);
+            injected[0]
+        );
         Assert.Equal("external-user-content", File.ReadAllText(snapshot));
     }
 
@@ -192,20 +210,27 @@ public sealed class DeployTransactionTests
     public void Sync_RejectsFileAndDirectoryPrefixConflictBeforeWriting()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["bin/tool"] = "tool" } }],
-        });
-        fixture.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["bin"] = "flat" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["bin/tool"] = "tool" } }],
+            }
+        );
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["bin"] = "flat" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a"), new SpecFixture("b"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("path conflict", error.Message);
@@ -221,20 +246,26 @@ public sealed class DeployTransactionTests
     public void Rollback_RestoresFileAfterDirectoryUpgrade()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -250,27 +281,34 @@ public sealed class DeployTransactionTests
     public void Rollback_RejectsUnmanagedFilesInConvertedDirectory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var keep = Path.Combine(fixture.Root, "tool", "keep.txt");
         File.WriteAllText(keep, "keep");
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("unmanaged", error.Message);
@@ -281,27 +319,34 @@ public sealed class DeployTransactionTests
     public void Rollback_RejectsUnmanagedEmptyDirectoriesInConvertedDirectory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var nested = Path.Combine(fixture.Root, "tool", "user-empty", "nested");
         Directory.CreateDirectory(nested);
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.True(Directory.Exists(nested));
@@ -312,20 +357,26 @@ public sealed class DeployTransactionTests
     public void Sync_DowngradesDirectoryToFile()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/x"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -341,19 +392,25 @@ public sealed class DeployTransactionTests
     public void Sync_UpgradesManagedFileToDirectory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/data"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/data"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -365,19 +422,25 @@ public sealed class DeployTransactionTests
     public void Sync_RollsBackFileToDirectoryConversion()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/data"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/data"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         try
         {
@@ -388,8 +451,9 @@ public sealed class DeployTransactionTests
                     throw new IOException("injected deployment failure");
                 }
             };
-            Assert.Throws<IOException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Throws<IOException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
         }
         finally
         {
@@ -410,19 +474,25 @@ public sealed class DeployTransactionTests
     public void Sync_RollsBackNestedFileToDirectoryConversion()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["tool/sub/data"] = "new" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["tool/sub/data"] = "new" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         try
         {
@@ -433,8 +503,9 @@ public sealed class DeployTransactionTests
                     throw new IOException("injected deployment failure");
                 }
             };
-            Assert.Throws<IOException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Throws<IOException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
         }
         finally
         {
@@ -466,7 +537,8 @@ public sealed class DeployTransactionTests
 
         var journal = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(stateDirectory, "transaction.json")),
-            SeikoJsonContext.Default.DeploymentJournal)!;
+            SeikoJsonContext.Default.DeploymentJournal
+        )!;
 
         Assert.Contains(name, journal.TemporaryPaths!);
     }
@@ -555,14 +627,16 @@ public sealed class DeployTransactionTests
         Directory.CreateDirectory(Path.Combine(fixture.Root, "extra"));
         File.WriteAllText(
             Path.Combine(fixture.Root, "extra", "index.json"),
-            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}"""
+        );
 
         new SeikoClient().SourceAdd(fixture.Root, "extra", "extra/index.json");
         DeploymentTransaction.Recover(fixture.Root, stateDirectory);
 
         Assert.Contains(
             new SeikoClient().ListSources(fixture.Root),
-            source => source.Id == "extra");
+            source => source.Id == "extra"
+        );
     }
 
     [Fact]
@@ -572,12 +646,13 @@ public sealed class DeployTransactionTests
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             "schemaVersion = 2\n"
-            + "sources = [\n"
-            + "  { id = \"a\", index = \"a/index.json\" },\n"
-            + "  { id = \"b\", index = \"b/index.json\" }\n"
-            + "]\n"
-            + "rid = \"win-x64\"\n"
-            + "sei = []\n");
+                + "sources = [\n"
+                + "  { id = \"a\", index = \"a/index.json\" },\n"
+                + "  { id = \"b\", index = \"b/index.json\" }\n"
+                + "]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = []\n"
+        );
         var stateDirectory = Path.Combine(fixture.Root, ".seiko");
         Directory.CreateDirectory(stateDirectory);
         var transaction = DeploymentTransaction.Begin(fixture.Root, stateDirectory);
@@ -587,18 +662,24 @@ public sealed class DeployTransactionTests
         new SeikoClient().SourceRemove(fixture.Root, "b");
         DeploymentTransaction.Recover(fixture.Root, stateDirectory);
 
-        Assert.Equal(["a"], new SeikoClient().ListSources(fixture.Root).Select(source => source.Id));
+        Assert.Equal(
+            ["a"],
+            new SeikoClient().ListSources(fixture.Root).Select(source => source.Id)
+        );
     }
 
     [Fact]
     public void DryRun_DoesNotRecoverAPendingTransaction()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -621,11 +702,14 @@ public sealed class DeployTransactionTests
     public void AddDryRun_DoesNotRecoverAPendingTransaction()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "old" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "old" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -641,7 +725,8 @@ public sealed class DeployTransactionTests
             fixture.Root,
             "hello@[1.0.0]",
             fixture.StoreDirectory,
-            dryRun: true);
+            dryRun: true
+        );
 
         Assert.Contains(SeikoClient.PendingTransactionWarning, result.Preview!.Warnings);
         Assert.Equal("changed", File.ReadAllText(deployed));
@@ -698,8 +783,9 @@ public sealed class DeployTransactionTests
         File.WriteAllText(Path.Combine(tool, temporary), "partial");
         File.WriteAllText(Path.Combine(tool, "other.seiko-tmp-crash"), "keep");
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("non-empty directory", error.Message);
         Assert.True(File.Exists(Path.Combine(tool, "other.seiko-tmp-crash")));
@@ -726,8 +812,9 @@ public sealed class DeployTransactionTests
         File.WriteAllText(Path.Combine(tool, "sub", "data"), "new");
         File.WriteAllText(Path.Combine(tool, "keep.txt"), "keep");
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("non-empty directory", error.Message);
         Assert.True(Directory.Exists(tool));
@@ -766,11 +853,14 @@ public sealed class DeployTransactionTests
     public void Sync_CleansUpCreatedDirectoriesOnFailure()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["sub/hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["sub/hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         try
@@ -782,8 +872,9 @@ public sealed class DeployTransactionTests
                     throw new IOException("injected deployment failure");
                 }
             };
-            Assert.Throws<IOException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Throws<IOException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
         }
         finally
         {
@@ -791,10 +882,9 @@ public sealed class DeployTransactionTests
         }
 
         Assert.False(Directory.Exists(Path.Combine(fixture.Root, "sub")));
-        Assert.Empty(Directory.EnumerateFiles(
-            fixture.Root,
-            "*.seiko-tmp-*",
-            SearchOption.AllDirectories));
+        Assert.Empty(
+            Directory.EnumerateFiles(fixture.Root, "*.seiko-tmp-*", SearchOption.AllDirectories)
+        );
     }
 
     [Fact]
@@ -837,13 +927,15 @@ public sealed class DeployTransactionTests
 
         // Make the rollback stop after restoring a.txt.
         File.Delete(backupB);
-        var rollback = Assert.Throws<SeikoException>(
-            () => transaction.RollbackAfterFailure(new IOException("commit failed")));
+        var rollback = Assert.Throws<SeikoException>(() =>
+            transaction.RollbackAfterFailure(new IOException("commit failed"))
+        );
         Assert.Contains("rollback also failed", rollback.Message);
 
         var persisted = JsonSerializer.Deserialize(
             File.ReadAllBytes(journalPath),
-            SeikoJsonContext.Default.DeploymentJournal)!;
+            SeikoJsonContext.Default.DeploymentJournal
+        )!;
         Assert.False(persisted.Committed);
         Assert.Equal("OLD-A", File.ReadAllText(a));
         Assert.Equal("NEW-B", File.ReadAllText(b));
@@ -872,10 +964,12 @@ public sealed class DeployTransactionTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("not a file created", error.Message);
@@ -905,10 +999,12 @@ public sealed class DeployTransactionTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("not a file created", error.Message);
         Assert.Equal("victim", File.ReadAllText(victim));
@@ -929,10 +1025,12 @@ public sealed class DeployTransactionTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("not a file created", error.Message);
         Assert.Equal("keep", File.ReadAllText(lockFile));
@@ -999,8 +1097,9 @@ public sealed class DeployTransactionTests
         File.WriteAllText(created, "changed");
         File.SetUnixFileMode(created, UnixFileMode.None);
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("not a file created", error.Message);
         Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(created));
@@ -1021,8 +1120,9 @@ public sealed class DeployTransactionTests
         transaction.WriteJournal();
         File.WriteAllText(created, "changed");
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("not a file created", error.Message);
         Assert.Equal("changed", File.ReadAllText(created));
@@ -1038,7 +1138,8 @@ public sealed class DeployTransactionTests
         var state = new LocalState { Generation = 1, Files = [] };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "state.json"),
-            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.LocalState));
+            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.LocalState)
+        );
         var generation = Path.Combine(stateDirectory, "generations", "1");
         Directory.CreateDirectory(generation);
         File.WriteAllText(Path.Combine(generation, "keep.txt"), "keep");
@@ -1049,10 +1150,12 @@ public sealed class DeployTransactionTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("generation directory", error.Message);
         Assert.True(Directory.Exists(generation));
@@ -1069,7 +1172,8 @@ public sealed class DeployTransactionTests
         var state = new LocalState { Generation = 1, Files = [] };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "state.json"),
-            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.LocalState));
+            JsonSerializer.SerializeToUtf8Bytes(state, SeikoJsonContext.Default.LocalState)
+        );
         var generation = Path.Combine(stateDirectory, "generations", "2");
         Directory.CreateDirectory(generation);
         File.WriteAllText(Path.Combine(generation, "keep.txt"), "keep");
@@ -1080,10 +1184,12 @@ public sealed class DeployTransactionTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("generation directory", error.Message);
         Assert.True(Directory.Exists(generation));
@@ -1106,10 +1212,12 @@ public sealed class DeployTransactionTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Contains("not owned", error.Message);
         Assert.Equal("keep", File.ReadAllText(temporary));
@@ -1124,17 +1232,15 @@ public sealed class DeployTransactionTests
         Directory.CreateDirectory(stateDirectory);
         var victim = Path.Combine(root, "victim.txt");
         File.WriteAllText(victim, "keep");
-        var journal = new DeploymentJournal
-        {
-            TemporaryPaths = ["victim.txt"],
-            Entries = [],
-        };
+        var journal = new DeploymentJournal { TemporaryPaths = ["victim.txt"], Entries = [] };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("temporary", error.Message);
@@ -1151,17 +1257,15 @@ public sealed class DeployTransactionTests
         var victimDirectory = Path.Combine(root, "victim");
         Directory.CreateDirectory(victimDirectory);
         File.WriteAllText(Path.Combine(victimDirectory, "keep.txt"), "keep");
-        var journal = new DeploymentJournal
-        {
-            NewGenerationPath = "victim",
-            Entries = [],
-        };
+        var journal = new DeploymentJournal { NewGenerationPath = "victim", Entries = [] };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => DeploymentTransaction.Recover(root, stateDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(root, stateDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("generation", error.Message);
@@ -1237,7 +1341,9 @@ public sealed class DeployTransactionTests
 
         Assert.Equal("old-foo", File.ReadAllText(file));
         Assert.Equal("old-suffix", File.ReadAllText(suffix));
-        Assert.Empty(Directory.EnumerateFiles(root, "*.seiko-restore-*", SearchOption.AllDirectories));
+        Assert.Empty(
+            Directory.EnumerateFiles(root, "*.seiko-restore-*", SearchOption.AllDirectories)
+        );
     }
 
     [Fact]

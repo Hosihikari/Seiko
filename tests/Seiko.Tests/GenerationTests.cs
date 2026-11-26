@@ -11,11 +11,14 @@ public sealed class GenerationTests
     private static Fixture Installed(string content = "one")
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = content } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = content } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         return fixture;
@@ -23,11 +26,14 @@ public sealed class GenerationTests
 
     private static void Upgrade(Fixture fixture)
     {
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
     }
@@ -51,13 +57,18 @@ public sealed class GenerationTests
     public void Generations_ReportsAnIncompleteSnapshotWithoutFailing()
     {
         using var fixture = Installed();
-        var generation = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory).Single();
-        File.Delete(Path.Combine(
-            fixture.Root,
-            ".seiko",
-            "generations",
-            generation.Generation.ToString(),
-            "seiko.conf"));
+        var generation = new SeikoClient()
+            .Generations(fixture.Root, fixture.StoreDirectory)
+            .Single();
+        File.Delete(
+            Path.Combine(
+                fixture.Root,
+                ".seiko",
+                "generations",
+                generation.Generation.ToString(),
+                "seiko.conf"
+            )
+        );
 
         var generations = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory);
 
@@ -86,13 +97,18 @@ public sealed class GenerationTests
     public void Generations_ShowsUnknownTimeForOldSnapshots()
     {
         using var fixture = Installed();
-        var generation = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory).Single();
-        File.Delete(Path.Combine(
-            fixture.Root,
-            ".seiko",
-            "generations",
-            generation.Generation.ToString(),
-            "meta.json"));
+        var generation = new SeikoClient()
+            .Generations(fixture.Root, fixture.StoreDirectory)
+            .Single();
+        File.Delete(
+            Path.Combine(
+                fixture.Root,
+                ".seiko",
+                "generations",
+                generation.Generation.ToString(),
+                "meta.json"
+            )
+        );
 
         var generations = new SeikoClient().Generations(fixture.Root, fixture.StoreDirectory);
 
@@ -106,12 +122,18 @@ public sealed class GenerationTests
         Upgrade(fixture);
         var before = File.ReadAllText(Path.Combine(fixture.Root, "hello.txt"));
 
-        var preview = new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory);
+        var preview = new SeikoClient().PreviewRollback(
+            fixture.Root,
+            storeRoot: fixture.StoreDirectory
+        );
 
         Assert.Equal(2, preview.FromGeneration);
         Assert.Equal(1, preview.ToGeneration);
         Assert.Contains(preview.LockChanges, change => change.Contains("hello 2.0.0 -> 1.0.0"));
-        Assert.Contains(preview.ConfigChanges, change => change.StartsWith("- config:", StringComparison.Ordinal));
+        Assert.Contains(
+            preview.ConfigChanges,
+            change => change.StartsWith("- config:", StringComparison.Ordinal)
+        );
         Assert.Equal("two", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
         Assert.Equal(before, File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
@@ -122,7 +144,10 @@ public sealed class GenerationTests
         using var fixture = Installed();
         Upgrade(fixture);
 
-        var preview = new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory);
+        var preview = new SeikoClient().PreviewRollback(
+            fixture.Root,
+            storeRoot: fixture.StoreDirectory
+        );
 
         // hello.txt exists in both, so it is replaced rather than added/removed.
         Assert.Contains("hello.txt", preview.Replaced);
@@ -140,8 +165,9 @@ public sealed class GenerationTests
         node["schemaVersion"] = 999;
         File.WriteAllText(path, node.ToJsonString());
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
     }
@@ -160,8 +186,9 @@ public sealed class GenerationTests
         node["schemaVersion"] = 999;
         File.WriteAllText(path, node.ToJsonString());
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
     }
@@ -182,10 +209,9 @@ public sealed class GenerationTests
 
         // The plan describes a run that rejects the same file, so it has to
         // fail too (ADR-0040's "not greener than the operation").
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            dryRun: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+        );
 
         Assert.Equal("io", error.Code);
     }
@@ -194,7 +220,8 @@ public sealed class GenerationTests
     [InlineData("null-list")]
     [InlineData("null-record")]
     public void EveryStateShapeTheRunRejectsAlsoFailsThePreviewsAndMarksTheCurrentGeneration(
-        string shape)
+        string shape
+    )
     {
         using var fixture = Installed();
         Upgrade(fixture);
@@ -216,16 +243,14 @@ public sealed class GenerationTests
         Assert.False(generations.Single(item => item.Current).Valid);
 
         // Both plans describe a run that rejects the same file.
-        var syncError = Assert.Throws<SeikoException>(() => new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            dryRun: true));
+        var syncError = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+        );
         Assert.Equal("io", syncError.Code);
 
-        var rollbackError = Assert.Throws<SeikoException>(
-            () => new SeikoClient().PreviewRollback(
-                fixture.Root,
-                storeRoot: fixture.StoreDirectory));
+        var rollbackError = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
         Assert.Equal("io", rollbackError.Code);
     }
 
@@ -239,14 +264,16 @@ public sealed class GenerationTests
 
         // The current side already reports `io`; the target must not surface a
         // raw parse failure as an internal error, and it names the generation.
-        var preview = Assert.Throws<SeikoException>(
-            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+        var preview = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", preview.Code);
         Assert.Contains("generation 1", preview.Message);
 
-        var rollback = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1));
+        var rollback = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 1)
+        );
 
         Assert.Equal("io", rollback.Code);
     }
@@ -258,8 +285,9 @@ public sealed class GenerationTests
         Upgrade(fixture);
         File.Delete(Path.Combine(fixture.Root, ".seiko", "generations", "1", "lock.json"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("lock", error.Code);
     }
@@ -269,8 +297,9 @@ public sealed class GenerationTests
     {
         using var fixture = Installed();
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().PreviewRollback(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Contains("no previous generation", error.Message);

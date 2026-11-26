@@ -110,8 +110,8 @@ internal static class SpdxExpression
         return true;
     }
 
-    private static string? Peek(List<string> tokens, int position)
-        => position < tokens.Count ? tokens[position] : null;
+    private static string? Peek(List<string> tokens, int position) =>
+        position < tokens.Count ? tokens[position] : null;
 
     private static List<string>? Tokenize(string value)
     {
@@ -134,9 +134,11 @@ internal static class SpdxExpression
             }
 
             var start = index;
-            while (index < value.Length
+            while (
+                index < value.Length
                 && !char.IsWhiteSpace(value[index])
-                && value[index] is not ('(' or ')'))
+                && value[index] is not ('(' or ')')
+            )
             {
                 index++;
             }
@@ -159,6 +161,6 @@ internal static class SpdxExpression
         return tokens;
     }
 
-    private static bool IsIdentifierChar(char value)
-        => char.IsAsciiLetterOrDigit(value) || value is '.' or '-' or '+' or ':';
+    private static bool IsIdentifierChar(char value) =>
+        char.IsAsciiLetterOrDigit(value) || value is '.' or '-' or '+' or ':';
 }

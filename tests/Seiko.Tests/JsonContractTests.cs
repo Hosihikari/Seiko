@@ -26,7 +26,10 @@ public sealed class JsonContractTests
     public void SearchDataAdditionsKeepVersionOne()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
 
         var (stdout, _, _) = Cli.Run(["search", "hello", "--json", "--root", fixture.Root]);

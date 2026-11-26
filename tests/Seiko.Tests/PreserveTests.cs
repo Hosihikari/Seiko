@@ -9,13 +9,14 @@ public sealed class PreserveTests
 {
     private const string ConfigPath = "config/server.properties";
 
-    private static string Config(Fixture fixture)
-        => Path.Combine(fixture.Root, "config", "server.properties");
+    private static string Config(Fixture fixture) =>
+        Path.Combine(fixture.Root, "config", "server.properties");
 
-    private static LocalState ReadState(Fixture fixture)
-        => JsonSerializer.Deserialize(
+    private static LocalState ReadState(Fixture fixture) =>
+        JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
-            SeikoJsonContext.Default.LocalState)!;
+            SeikoJsonContext.Default.LocalState
+        )!;
 
     // Rewrites the stored manifest and re-points the index at the new bytes,
     // so the artifact stays self-consistent and only the intended field
@@ -24,12 +25,21 @@ public sealed class PreserveTests
         Fixture fixture,
         Action<System.Text.Json.Nodes.JsonObject> mutate,
         string name = "app",
-        string version = "1.0.0")
+        string version = "1.0.0"
+    )
     {
-        var zip = Directory.EnumerateFiles(
-            Path.Combine(fixture.SourceDirectory, "artifacts"),
-            $"{name}-{version}-*.zip").Single();
-        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Update))
+        var zip = Directory
+            .EnumerateFiles(
+                Path.Combine(fixture.SourceDirectory, "artifacts"),
+                $"{name}-{version}-*.zip"
+            )
+            .Single();
+        using (
+            var archive = System.IO.Compression.ZipFile.Open(
+                zip,
+                System.IO.Compression.ZipArchiveMode.Update
+            )
+        )
         {
             var entry = archive.GetEntry("sei.json")!;
             string text;
@@ -51,10 +61,14 @@ public sealed class PreserveTests
         var indexPath = Path.Combine(fixture.SourceDirectory, "sei", $"{name}.json");
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(indexPath),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions[0].Artifacts[0].Source.Sha256 = Hashing.Sha256File(zip);
         sei.Versions[0].Artifacts[0].Source.Size = new FileInfo(zip).Length;
-        File.WriteAllBytes(indexPath, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            indexPath,
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
     }
 
@@ -62,14 +76,13 @@ public sealed class PreserveTests
     {
         // BSD stat prints %l, GNU coreutils -c %h; the two systems this runs
         // on share neither spelling nor flag.
-        var (flag, format) = OperatingSystem.IsMacOS()
-            ? ("-f", "%l")
-            : ("-c", "%h");
+        var (flag, format) = OperatingSystem.IsMacOS() ? ("-f", "%l") : ("-c", "%h");
         using var process = System.Diagnostics.Process.Start(
             new System.Diagnostics.ProcessStartInfo("stat", [flag, format, path])
             {
                 RedirectStandardOutput = true,
-            })!;
+            }
+        )!;
         var text = process.StandardOutput.ReadToEnd().Trim();
         process.WaitForExit();
         return int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
@@ -78,18 +91,21 @@ public sealed class PreserveTests
     private static Fixture PreservingFixture(string content = "default")
     {
         var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = content },
-                    Preserve = [ConfigPath],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = content },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         return fixture;
     }
@@ -161,8 +177,9 @@ public sealed class PreserveTests
         // breaking the store link) is a deployment conflict.
         File.Delete(target);
         File.WriteAllText(target, "edited again");
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
         Assert.Equal("deploy", error.Code);
         Assert.Contains("was modified", error.Message);
     }
@@ -171,29 +188,27 @@ public sealed class PreserveTests
     public void Sync_ResetPreservedLeavesOrdinaryCollisionsAlone()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["plain.txt"] = "package",
-                        [ConfigPath] = "default",
+                        Files = { ["plain.txt"] = "package", [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
                     },
-                    Preserve = [ConfigPath],
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         File.WriteAllText(Path.Combine(fixture.Root, "plain.txt"), "user");
 
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            resetPreserved: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, resetPreserved: true)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("plain.txt", error.Message);
@@ -217,23 +232,27 @@ public sealed class PreserveTests
     public void Sync_RejectsPreserveOnAPreV4Manifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("schemaVersion 3 cannot declare preserve", error.Message);
     }
@@ -260,7 +279,8 @@ public sealed class PreserveTests
                         Preserve = [ConfigPath],
                     },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -283,19 +303,22 @@ public sealed class PreserveTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                        Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var target = Path.Combine(fixture.Root, ConfigPath);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -305,9 +328,7 @@ public sealed class PreserveTests
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("user", File.ReadAllText(target));
-        Assert.Equal(
-            (UnixFileMode)Convert.ToInt32("600", 8),
-            File.GetUnixFileMode(target));
+        Assert.Equal((UnixFileMode)Convert.ToInt32("600", 8), File.GetUnixFileMode(target));
     }
 
     [Fact]
@@ -319,26 +340,30 @@ public sealed class PreserveTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                        Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal(
             (UnixFileMode)Convert.ToInt32("755", 8),
-            File.GetUnixFileMode(Path.Combine(fixture.Root, ConfigPath)));
+            File.GetUnixFileMode(Path.Combine(fixture.Root, ConfigPath))
+        );
     }
 
     [Fact]
@@ -368,7 +393,8 @@ public sealed class PreserveTests
                         Preserve = [ConfigPath],
                     },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -377,7 +403,11 @@ public sealed class PreserveTests
         // deployed copy with a hardlink to the store.
         var target = Config(fixture);
         var storeCopy = Directory
-            .EnumerateFiles(fixture.StoreDirectory, "server.properties", SearchOption.AllDirectories)
+            .EnumerateFiles(
+                fixture.StoreDirectory,
+                "server.properties",
+                SearchOption.AllDirectories
+            )
             .OrderBy(path => path, StringComparer.Ordinal)
             .First();
         File.Delete(target);
@@ -423,14 +453,19 @@ public sealed class PreserveTests
                         Preserve = [ConfigPath],
                     },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var target = Config(fixture);
         var directory = Path.GetDirectoryName(target)!;
         var storeCopy = Directory
-            .EnumerateFiles(fixture.StoreDirectory, "server.properties", SearchOption.AllDirectories)
+            .EnumerateFiles(
+                fixture.StoreDirectory,
+                "server.properties",
+                SearchOption.AllDirectories
+            )
             .First();
         File.Delete(target);
         Assert.True(FileLink.TryHardLink(storeCopy, target));
@@ -446,11 +481,14 @@ public sealed class PreserveTests
             Deployer.BeforeFirstDetachMoveForTests.Value = () =>
             {
                 written = Directory.EnumerateFiles(directory, ".seiko-detach-*").Single();
-                journaled = JsonSerializer.Deserialize(
-                    File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "transaction.json")),
-                    SeikoJsonContext.Default.DeploymentJournal)!
-                    .TemporaryPaths!
-                    .Single(path => path.Contains(".seiko-detach-", StringComparison.Ordinal));
+                journaled = JsonSerializer
+                    .Deserialize(
+                        File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "transaction.json")),
+                        SeikoJsonContext.Default.DeploymentJournal
+                    )!
+                    .TemporaryPaths!.Single(path =>
+                        path.Contains(".seiko-detach-", StringComparison.Ordinal)
+                    );
             };
             client.Sync(fixture.Root, fixture.StoreDirectory);
         }
@@ -460,9 +498,7 @@ public sealed class PreserveTests
         }
 
         Assert.NotNull(written);
-        Assert.Equal(
-            Path.GetRelativePath(fixture.Root, written!).Replace('\\', '/'),
-            journaled);
+        Assert.Equal(Path.GetRelativePath(fixture.Root, written!).Replace('\\', '/'), journaled);
     }
 
     [Fact]
@@ -487,7 +523,8 @@ public sealed class PreserveTests
                         Preserve = [ConfigPath],
                     },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -587,7 +624,8 @@ public sealed class PreserveTests
             {
                 Version = "1.1.0",
                 Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
 
@@ -655,8 +693,9 @@ public sealed class PreserveTests
         var target = Config(fixture);
         File.WriteAllText(target, "edited");
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Rollback(fixture.Root, fixture.StoreDirectory, toGeneration: 2)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("edited", File.ReadAllText(target));
@@ -685,7 +724,8 @@ public sealed class PreserveTests
                         Preserve = [ConfigPath],
                     },
                 ],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -713,19 +753,22 @@ public sealed class PreserveTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["a.txt"] = "a", [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["a.txt"] = "a", [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                        Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var target = Path.Combine(fixture.Root, ConfigPath);
         var appeared = false;
@@ -753,9 +796,7 @@ public sealed class PreserveTests
         }
 
         Assert.Equal("user", File.ReadAllText(target));
-        Assert.Equal(
-            (UnixFileMode)Convert.ToInt32("600", 8),
-            File.GetUnixFileMode(target));
+        Assert.Equal((UnixFileMode)Convert.ToInt32("600", 8), File.GetUnixFileMode(target));
         Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
     }
 
@@ -768,19 +809,22 @@ public sealed class PreserveTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                    Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                        Modes = new Dictionary<string, string> { [ConfigPath] = "0755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var target = Path.Combine(fixture.Root, ConfigPath);
 
@@ -803,9 +847,7 @@ public sealed class PreserveTests
         }
 
         Assert.Equal("user", File.ReadAllText(target));
-        Assert.Equal(
-            (UnixFileMode)Convert.ToInt32("600", 8),
-            File.GetUnixFileMode(target));
+        Assert.Equal((UnixFileMode)Convert.ToInt32("600", 8), File.GetUnixFileMode(target));
         Assert.DoesNotContain(ConfigPath, ReadState(fixture).Files.Keys);
     }
 
@@ -835,7 +877,8 @@ public sealed class PreserveTests
             fixture.Root,
             fixture.StoreDirectory,
             dryRun: true,
-            resetPreserved: true);
+            resetPreserved: true
+        );
 
         // The real run replaces that file and takes it under management, so
         // saying "kept as-is" would describe the opposite of what happens.
@@ -871,8 +914,9 @@ public sealed class PreserveTests
         // Truncated JSON: the real run fails, so the plan must not pass it off
         // as an empty deployment.
         File.WriteAllText(statePath, "{ \"schemaVersion\": 3, \"generation\":");
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+        );
         Assert.Equal("io", error.Code);
 
         // A null file list, and a null record inside one, are both shapes the
@@ -880,9 +924,11 @@ public sealed class PreserveTests
         // reading them as "no files".
         File.WriteAllText(
             statePath,
-            $$$"""{"schemaVersion":{{{LocalState.CurrentSchemaVersion}}},"generation":1,"files":null}""");
-        var noList = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
+            $$$"""{"schemaVersion":{{{LocalState.CurrentSchemaVersion}}},"generation":1,"files":null}"""
+        );
+        var noList = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+        );
         Assert.Equal("io", noList.Code);
 
         File.WriteAllText(
@@ -890,9 +936,11 @@ public sealed class PreserveTests
             $$$"""
             {"schemaVersion":{{{LocalState.CurrentSchemaVersion}}},"generation":1,
              "files":{"{{{ConfigPath}}}":null}}
-            """);
-        var nullRecord = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true));
+            """
+        );
+        var nullRecord = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+        );
         Assert.Contains(ConfigPath, nullRecord.Message);
     }
 
@@ -901,8 +949,14 @@ public sealed class PreserveTests
     {
         using var fixture = PreservingFixture();
 
-        var (stdout, stderr, exitCode) = Cli.Run(
-            ["sync", "--dry-run", "--root", fixture.Root, "--store", fixture.StoreDirectory]);
+        var (stdout, stderr, exitCode) = Cli.Run([
+            "sync",
+            "--dry-run",
+            "--root",
+            fixture.Root,
+            "--store",
+            fixture.StoreDirectory,
+        ]);
 
         Assert.Equal(0, exitCode);
         Assert.Contains($"preserve {ConfigPath} (app)", stdout + stderr);
@@ -924,105 +978,127 @@ public sealed class PreserveTests
     public void Verify_RejectsPreserveOnAPreV4Manifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Preserve = ["hello.txt"],
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Preserve = ["hello.txt"],
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-preserve"
-            && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-preserve"
+                && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
     public void Verify_RejectsAnExplicitNullPreserveOnAPreV4Manifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
-        RewriteManifest(
-            fixture,
-            node => node["artifact"]!["preserve"] = null,
-            "hello");
+        RewriteManifest(fixture, node => node["artifact"]!["preserve"] = null, "hello");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-preserve"
-            && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-preserve"
+                && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
     public void Verify_RejectsAPreservePathTheArtifactDoesNotDeploy()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Preserve = ["nope.txt"],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Preserve = ["nope.txt"],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-preserve"
-            && finding.Message.Contains("nope.txt", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-preserve"
+                && finding.Message.Contains("nope.txt", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
     public void Sync_RejectsAnEmptyPreserveOnAPreV4Manifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
         // Empty but present: the field itself still needs 4.
-        RewriteManifest(fixture, node => node["artifact"]!["preserve"] = new System.Text.Json.Nodes.JsonArray());
+        RewriteManifest(
+            fixture,
+            node => node["artifact"]!["preserve"] = new System.Text.Json.Nodes.JsonArray()
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("schemaVersion 3 cannot declare preserve", error.Message);
     }
@@ -1031,26 +1107,30 @@ public sealed class PreserveTests
     public void Sync_RejectsAnExplicitNullPreserveOnAPreV4Manifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
         // Written but null: reads back exactly like an omitted field, yet the
         // manifest still declared a 4 field.
         RewriteManifest(fixture, node => node["artifact"]!["preserve"] = null);
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("schemaVersion 3 cannot declare preserve", error.Message);
     }
@@ -1059,18 +1139,21 @@ public sealed class PreserveTests
     public void Sync_RejectsAStateWrittenBeforeThePreservedMark()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -1090,8 +1173,9 @@ public sealed class PreserveTests
         };
         File.WriteAllText(statePath, state.ToJsonString());
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("unsupported deployment state schemaVersion 2", error.Message);
     }
@@ -1100,24 +1184,28 @@ public sealed class PreserveTests
     public void Sync_RejectsAManifestWithoutSchemaVersion()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    Preserve = [ConfigPath],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        Preserve = [ConfigPath],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
         RewriteManifest(fixture, node => node.Remove("schemaVersion"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("schemaVersion", error.Message);
     }
@@ -1126,18 +1214,21 @@ public sealed class PreserveTests
     public void Verify_RejectsIndexPreserveOfASchemaThreeManifest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ConfigPath] = "default" },
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ConfigPath] = "default" },
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         // The index alone gains the declaration; the zip and its digest stay
@@ -1145,15 +1236,21 @@ public sealed class PreserveTests
         var path = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(path),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions[0].Artifacts[0].Preserve = [ConfigPath];
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Message.Contains("preserve", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding => finding.Message.Contains("preserve", StringComparison.Ordinal)
+        );
         Assert.True(result.Errors > 0);
     }
 
@@ -1167,13 +1264,18 @@ public sealed class PreserveTests
         var path = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(path),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions[0].Artifacts[0].Preserve = [ConfigPath, "other.txt"];
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("preserve", error.Message);
     }
@@ -1184,17 +1286,22 @@ public sealed class PreserveTests
         using var fixture = PreservingFixture();
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "app.json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions[0].Artifacts[0].Preserve = null;
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "sei", "app.json"),
-            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-mismatch"
-            && finding.Message.Contains("preserve", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-mismatch"
+                && finding.Message.Contains("preserve", StringComparison.Ordinal)
+        );
     }
 }

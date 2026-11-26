@@ -18,7 +18,8 @@ public sealed class ConfigLoaderTests
             ]
             rid = "win-x64"
             sei = []
-            """);
+            """
+        );
 
         var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
 
@@ -38,7 +39,8 @@ public sealed class ConfigLoaderTests
               { id = "local", index = "https://example.invalid/index.json" }
             ]
             sei = []
-            """);
+            """
+        );
 
         var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
 
@@ -59,7 +61,8 @@ public sealed class ConfigLoaderTests
             ]
             sei = []
             components = []
-            """);
+            """
+        );
 
         var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
 
@@ -82,7 +85,8 @@ public sealed class ConfigLoaderTests
             components = [
               { name = "hello", version = "*" }
             ]
-            """);
+            """
+        );
 
         var error = Assert.Throws<SeikoException>(() => ConfigLoader.Load(fixture.Root));
 

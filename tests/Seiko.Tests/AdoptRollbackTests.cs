@@ -10,8 +10,17 @@ public sealed class AdoptRollbackTests
         using var fixture = new Fixture();
         fixture.AddSei(
             "hello",
-            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }] },
-            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }] });
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -41,11 +50,9 @@ public sealed class AdoptRollbackTests
             new VersionFixture
             {
                 Version = "2.0.0",
-                Artifacts =
-                [
-                    new ArtifactFixture { Files = { ["a.txt"] = "a", ["b.txt"] = "b" } },
-                ],
-            });
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a", ["b.txt"] = "b" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("aaa", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -65,11 +72,14 @@ public sealed class AdoptRollbackTests
     public void Sync_AfterARollbackKeepsTheRestoredAdoptedContent()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);

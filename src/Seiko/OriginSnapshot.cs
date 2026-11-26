@@ -14,8 +14,8 @@ internal static class OriginSnapshot
 
     public static string Folder(string storeRoot) => Path.Combine(storeRoot, FolderName);
 
-    public static string SnapshotPath(string storeRoot, string name, string sha256)
-        => Path.Combine(Folder(storeRoot), FileName(name, sha256));
+    public static string SnapshotPath(string storeRoot, string name, string sha256) =>
+        Path.Combine(Folder(storeRoot), FileName(name, sha256));
 
     // The sei a snapshot belongs to: everything before the digest, which is
     // last because a sei name may itself contain '-'.
@@ -26,8 +26,8 @@ internal static class OriginSnapshot
         return dash < 0 ? file : file[..dash];
     }
 
-    public static string FileName(string name, string sha256)
-        => $"{name}-{Hashing.NormalizeSha256(sha256)}.sei";
+    public static string FileName(string name, string sha256) =>
+        $"{name}-{Hashing.NormalizeSha256(sha256)}.sei";
 
     // Returns the stored snapshot path, copying the source when it is not
     // already there. The digest is verified before the copy is published.
@@ -37,8 +37,10 @@ internal static class OriginSnapshot
         var directory = Folder(storeRoot);
         Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, FileName(name, expected));
-        if (File.Exists(destination)
-            && string.Equals(Hashing.Sha256File(destination), expected, StringComparison.Ordinal))
+        if (
+            File.Exists(destination)
+            && string.Equals(Hashing.Sha256File(destination), expected, StringComparison.Ordinal)
+        )
         {
             return destination;
         }
@@ -52,8 +54,9 @@ internal static class OriginSnapshot
             {
                 throw new SeikoException(
                     $"{Path.GetFileName(sourcePath)} changed while it was being added "
-                    + $"({expected} expected, {actual} read)",
-                    "checksum");
+                        + $"({expected} expected, {actual} read)",
+                    "checksum"
+                );
             }
 
             File.Move(temp, destination, overwrite: true);

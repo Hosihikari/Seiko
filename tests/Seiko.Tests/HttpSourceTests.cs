@@ -8,11 +8,14 @@ public sealed class HttpSourceTests
     public void HttpSource_SendsAClientUserAgent()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         using var server = new TestHttpServer(fixture.SourceDirectory);
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
@@ -28,11 +31,14 @@ public sealed class HttpSourceTests
     public void HttpSource_SendsTheConfiguredUserAgentInsteadOfTheDefault()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         using var server = new TestHttpServer(fixture.SourceDirectory);
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
@@ -53,11 +59,14 @@ public sealed class HttpSourceTests
     public void Sync_DownloadsFromHttpSource()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         using var server = new TestHttpServer(fixture.SourceDirectory);
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
 
@@ -71,11 +80,10 @@ public sealed class HttpSourceTests
     public void Search_WorksWithHttpSource()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         using var server = new TestHttpServer(fixture.SourceDirectory);
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
 

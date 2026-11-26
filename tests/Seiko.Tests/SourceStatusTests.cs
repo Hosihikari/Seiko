@@ -7,11 +7,10 @@ public sealed class SourceStatusTests
     private static Fixture Healthy()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         return fixture;
     }
@@ -22,7 +21,8 @@ public sealed class SourceStatusTests
         using var fixture = Healthy();
 
         var status = Assert.Single(
-            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory));
+            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("local", status.Id);
         Assert.True(status.Reachable);
@@ -38,7 +38,8 @@ public sealed class SourceStatusTests
         File.Delete(Path.Combine(fixture.SourceDirectory, "catalog.json"));
 
         var status = Assert.Single(
-            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory));
+            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.True(status.Reachable);
         Assert.False(status.CatalogPresent);
@@ -51,12 +52,16 @@ public sealed class SourceStatusTests
         var indexPath = Path.Combine(fixture.SourceDirectory, "index.json");
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
-            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf")).Replace(
-                indexPath.Replace('\\', '/'),
-                Path.Combine(fixture.Root, "missing", "index.json").Replace('\\', '/')));
+            File.ReadAllText(Path.Combine(fixture.Root, "seiko.conf"))
+                .Replace(
+                    indexPath.Replace('\\', '/'),
+                    Path.Combine(fixture.Root, "missing", "index.json").Replace('\\', '/')
+                )
+        );
 
         var status = Assert.Single(
-            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory));
+            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.False(status.Reachable);
         Assert.NotEmpty(status.Problems);
@@ -67,15 +72,13 @@ public sealed class SourceStatusTests
     {
         using var fixture = Healthy();
 
-        Assert.Single(new SeikoClient().SourceStatus(
-            fixture.Root,
-            "local",
-            storeRoot: fixture.StoreDirectory));
+        Assert.Single(
+            new SeikoClient().SourceStatus(fixture.Root, "local", storeRoot: fixture.StoreDirectory)
+        );
 
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().SourceStatus(
-            fixture.Root,
-            "nope",
-            storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().SourceStatus(fixture.Root, "nope", storeRoot: fixture.StoreDirectory)
+        );
         Assert.Equal("config", error.Code);
     }
 
@@ -87,10 +90,9 @@ public sealed class SourceStatusTests
         new SeikoClient().Search(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
         var cached = new SeikoClient();
 
-        var status = Assert.Single(cached.SourceStatus(
-            fixture.Root,
-            offline: true,
-            storeRoot: fixture.StoreDirectory));
+        var status = Assert.Single(
+            cached.SourceStatus(fixture.Root, offline: true, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.True(status.Reachable);
     }

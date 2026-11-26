@@ -7,24 +7,35 @@ namespace Seiko.Tests;
 // rules as CI but must not require an index.json around the file.
 public sealed class IndexPackageVerifyTests
 {
-    private static string WritePackage(Fixture fixture, SeiIndex index, string fileName = "sei-index.json")
+    private static string WritePackage(
+        Fixture fixture,
+        SeiIndex index,
+        string fileName = "sei-index.json"
+    )
     {
         var path = Path.Combine(fixture.Root, fileName);
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex)
+        );
         return path;
     }
 
     private static SeiIndex Package(string name = "hello")
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         return JsonSerializer.Deserialize<SeiIndex>(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", name + ".json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
     }
 
     [Fact]
@@ -56,10 +67,14 @@ public sealed class IndexPackageVerifyTests
         var result = IndexVerifier.VerifyPath(path);
 
         Assert.Equal(2, result.Findings.Count(finding => finding.Code == "sei-side-field"));
-        Assert.Contains(result.Findings, finding =>
-            finding.Message.Contains("upstream", StringComparison.Ordinal));
-        Assert.Contains(result.Findings, finding =>
-            finding.Message.Contains("source*", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding => finding.Message.Contains("upstream", StringComparison.Ordinal)
+        );
+        Assert.Contains(
+            result.Findings,
+            finding => finding.Message.Contains("source*", StringComparison.Ordinal)
+        );
         Assert.True(result.Errors > 0);
     }
 
@@ -129,11 +144,10 @@ public sealed class IndexPackageVerifyTests
     public void VerifyPath_StillValidatesTheDirectory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.VerifyPath(fixture.SourceDirectory);

@@ -27,7 +27,8 @@ public sealed class UrlRedactionTests
     public void RedactText_KeepsTextAroundTheUrl()
     {
         var result = Urls.RedactText(
-            "source 'x' index http://demo:PASS@example.invalid/a.json?a=1 done");
+            "source 'x' index http://demo:PASS@example.invalid/a.json?a=1 done"
+        );
 
         Assert.Equal("source 'x' index http://example.invalid/a.json done", result);
     }

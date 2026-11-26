@@ -118,14 +118,16 @@ internal sealed class TestHttpServer : IDisposable
 
             lock (_userAgents)
             {
-                _userAgents.Add(
-                    headers.TryGetValue("User-Agent", out var agent) ? agent : null);
+                _userAgents.Add(headers.TryGetValue("User-Agent", out var agent) ? agent : null);
             }
 
             lock (_authorizations)
             {
                 _authorizations.Add(
-                    headers.TryGetValue("Authorization", out var authorization) ? authorization : null);
+                    headers.TryGetValue("Authorization", out var authorization)
+                        ? authorization
+                        : null
+                );
             }
 
             var parts = requestLine?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -147,10 +149,13 @@ internal sealed class TestHttpServer : IDisposable
                 _requests.Add((method, path));
             }
 
-            var relative = Uri.UnescapeDataString(path.TrimStart('/')).Replace('/', Path.DirectorySeparatorChar);
+            var relative = Uri.UnescapeDataString(path.TrimStart('/'))
+                .Replace('/', Path.DirectorySeparatorChar);
             var file = Path.GetFullPath(Path.Combine(_root, relative));
-            if (!file.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-                || !File.Exists(file))
+            if (
+                !file.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || !File.Exists(file)
+            )
             {
                 await WriteResponseAsync(stream, "404 Not Found", [], null);
                 return;
@@ -158,12 +163,13 @@ internal sealed class TestHttpServer : IDisposable
 
             var bytes = await File.ReadAllBytesAsync(file);
             var etag = "\"" + Convert.ToHexString(SHA256.HashData(bytes)) + "\"";
-            var extra = new Dictionary<string, string>
-            {
-                ["Accept-Ranges"] = "bytes",
-            };
-            if (LastModifiedOnlyPath.Length > 0
-                && relative.Replace('\\', '/').Contains(LastModifiedOnlyPath, StringComparison.Ordinal))
+            var extra = new Dictionary<string, string> { ["Accept-Ranges"] = "bytes" };
+            if (
+                LastModifiedOnlyPath.Length > 0
+                && relative
+                    .Replace('\\', '/')
+                    .Contains(LastModifiedOnlyPath, StringComparison.Ordinal)
+            )
             {
                 extra["Last-Modified"] = File.GetLastWriteTimeUtc(file).ToString("R");
             }
@@ -174,7 +180,8 @@ internal sealed class TestHttpServer : IDisposable
 
             if (method == "HEAD")
             {
-                var unknownLength = UnknownLengthPath.Length > 0
+                var unknownLength =
+                    UnknownLengthPath.Length > 0
                     && relative.Contains(UnknownLengthPath, StringComparison.Ordinal);
                 await WriteResponseAsync(
                     stream,
@@ -182,18 +189,23 @@ internal sealed class TestHttpServer : IDisposable
                     [],
                     extra,
                     bytes.Length,
-                    omitContentLength: unknownLength);
+                    omitContentLength: unknownLength
+                );
                 return;
             }
 
-            if (StallBodyPath.Length > 0
-                && relative.Replace('\\', '/').Contains(StallBodyPath, StringComparison.Ordinal))
+            if (
+                StallBodyPath.Length > 0
+                && relative.Replace('\\', '/').Contains(StallBodyPath, StringComparison.Ordinal)
+            )
             {
                 var header =
                     $"HTTP/1.1 200 OK\r\nContent-Length: {bytes.Length}\r\n"
-                    + (extra.Count > 0
-                        ? string.Concat(extra.Select(pair => $"{pair.Key}: {pair.Value}\r\n"))
-                        : "")
+                    + (
+                        extra.Count > 0
+                            ? string.Concat(extra.Select(pair => $"{pair.Key}: {pair.Value}\r\n"))
+                            : ""
+                    )
                     + "Connection: close\r\n\r\n";
                 var head = Encoding.ASCII.GetBytes(header);
                 await stream.WriteAsync(head);
@@ -203,17 +215,27 @@ internal sealed class TestHttpServer : IDisposable
                 return;
             }
 
-            if (TruncateBodyResponses > 0
+            if (
+                TruncateBodyResponses > 0
                 && relative.Replace('\\', '/').Contains(TruncateBodyPath, StringComparison.Ordinal)
-                && !headers.ContainsKey("Range"))
+                && !headers.ContainsKey("Range")
+            )
             {
                 TruncateBodyResponses--;
-                await WriteResponseAsync(stream, "200 OK", bytes[..(bytes.Length / 2)], extra, bytes.Length);
+                await WriteResponseAsync(
+                    stream,
+                    "200 OK",
+                    bytes[..(bytes.Length / 2)],
+                    extra,
+                    bytes.Length
+                );
                 return;
             }
 
-            if (headers.TryGetValue("Range", out var range)
-                && TryParseRange(range, bytes.Length, out var start, out var end))
+            if (
+                headers.TryGetValue("Range", out var range)
+                && TryParseRange(range, bytes.Length, out var start, out var end)
+            )
             {
                 var chunk = bytes[start..(end + 1)];
                 extra["Content-Range"] = $"bytes {start}-{end}/{bytes.Length}";
@@ -276,10 +298,10 @@ internal sealed class TestHttpServer : IDisposable
         byte[] body,
         Dictionary<string, string>? extra,
         int? contentLength = null,
-        bool omitContentLength = false)
+        bool omitContentLength = false
+    )
     {
-        var builder = new StringBuilder()
-            .Append("HTTP/1.1 ").Append(status).Append("\r\n");
+        var builder = new StringBuilder().Append("HTTP/1.1 ").Append(status).Append("\r\n");
         if (!omitContentLength)
         {
             builder.Append("Content-Length: ").Append(contentLength ?? body.Length).Append("\r\n");

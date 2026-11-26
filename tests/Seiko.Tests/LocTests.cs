@@ -14,7 +14,8 @@ public sealed class LocTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "zh_TW.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "zh_TW.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);
@@ -31,7 +32,8 @@ public sealed class LocTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "ar_EG.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "ar_EG.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);
@@ -47,7 +49,8 @@ public sealed class LocTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "de_DE.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "de_DE.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);
@@ -63,7 +66,8 @@ public sealed class LocTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);
@@ -80,7 +84,8 @@ public sealed class LocTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "ar_EG.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "ar_EG.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);
@@ -99,7 +104,8 @@ public sealed class LocTests
 
         var (stdout, _, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory, "--json"],
-            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" }
+        );
 
         Assert.False(string.IsNullOrEmpty(stdout), "doctor --json produced no output");
         Assert.Equal(0, exitCode);

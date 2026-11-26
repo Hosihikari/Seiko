@@ -10,13 +10,19 @@ internal sealed class OriginSource : ISeiSource
 {
     private readonly Dictionary<string, OriginSpec> _specs;
     private readonly Dictionary<string, string> _preferred = new(StringComparer.Ordinal);
+
     // The locked replay record, keyed by name: path, digest and the artifact
     // conditions the lock pinned. A replay builds from these instead of
     // re-choosing from the current declaration.
     private readonly Dictionary<string, LockedOrigin> _locked = new(StringComparer.Ordinal);
     private readonly string _rid;
 
-    public OriginSource(IEnumerable<OriginSpec> specs, string root, string rid, string? storeRoot = null)
+    public OriginSource(
+        IEnumerable<OriginSpec> specs,
+        string root,
+        string rid,
+        string? storeRoot = null
+    )
     {
         _specs = specs.ToDictionary(spec => spec.Name, StringComparer.Ordinal);
         Root = root;
@@ -32,13 +38,11 @@ internal sealed class OriginSource : ISeiSource
 
     public SeiCatalog? Catalog => null;
 
-    public IndexRoot Index => new()
-    {
-        Sei = _specs.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList(),
-    };
+    public IndexRoot Index =>
+        new() { Sei = _specs.Keys.OrderBy(name => name, StringComparer.Ordinal).ToList() };
 
-    public SeiIndex? GetSei(string name)
-        => _specs.TryGetValue(name, out var spec) ? Build(spec) : null;
+    public SeiIndex? GetSei(string name) =>
+        _specs.TryGetValue(name, out var spec) ? Build(spec) : null;
 
     // Used by `add` before the declaration exists; reads the name only. The
     // path may name a snapshot when the original is gone.
@@ -46,7 +50,8 @@ internal sealed class OriginSource : ISeiSource
         string storedPath,
         string root,
         string? storePath = null,
-        string? declaredName = null)
+        string? declaredName = null
+    )
     {
         // A declaration pinned to this very path is the identity; a file name
         // can fit more than one sei, so it is never re-derived. A declaration
@@ -75,7 +80,8 @@ internal sealed class OriginSource : ISeiSource
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: invalid sei name '{manifest.Name}'",
-                "usage");
+                "usage"
+            );
         }
 
         return manifest.Name;
@@ -97,7 +103,8 @@ internal sealed class OriginSource : ISeiSource
         ArtifactLocation source,
         string directory,
         DownloadSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var destination = Path.Combine(directory, "artifact");
         // The original file is the first choice; the store snapshot only
@@ -108,7 +115,8 @@ internal sealed class OriginSource : ISeiSource
         {
             throw new SeikoException(
                 $"{name}: neither the origin file nor the store snapshot for {source.Sha256} exists",
-                "checksum");
+                "checksum"
+            );
         }
 
         session.Log?.Invoke($"{name}: copying {sourcePath}");
@@ -146,11 +154,11 @@ internal sealed class OriginSource : ISeiSource
         // checked exactly (digest is last; a name may contain '-').
         var directory = OriginSnapshot.Folder(StoreRoot);
         return Directory.Exists(directory)
-            ? Directory.EnumerateFiles(directory, "*.sei")
-                .Where(candidate => string.Equals(
-                    OriginSnapshot.NameOf(candidate),
-                    name,
-                    StringComparison.Ordinal))
+            ? Directory
+                .EnumerateFiles(directory, "*.sei")
+                .Where(candidate =>
+                    string.Equals(OriginSnapshot.NameOf(candidate), name, StringComparison.Ordinal)
+                )
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault()
             : null;
@@ -163,7 +171,6 @@ internal sealed class OriginSource : ISeiSource
         return _locked.TryGetValue(spec.Name, out var locked)
             ? BuildLocked(spec, locked)
             : BuildChosen(spec);
-
     }
 
     // A replay uses exactly what the lock pinned: the stored path, its digest
@@ -178,7 +185,8 @@ internal sealed class OriginSource : ISeiSource
         // The lock records the merged artifact scope. Rebuild the entry's
         // artifact-level relations by removing the selected group's share, so
         // the resolver merges exactly the same lists again (ADR-0045).
-        var selected = locked.Artifact.Group is { } groupIndex
+        var selected =
+            locked.Artifact.Group is { } groupIndex
             && artifact.DependencyGroups is { } groups
             && groupIndex < groups.Count
                 ? groups[groupIndex]
@@ -201,8 +209,8 @@ internal sealed class OriginSource : ISeiSource
         // file's declaration. A path may carry more than one selector, and the
         // lock names only the path, so each candidate is tried; the one that
         // leaves exactly the declaration is the selector that was locked.
-        var candidates = spec.Paths
-            .Select((candidate, index) => (Path: candidate, Index: index))
+        var candidates = spec
+            .Paths.Select((candidate, index) => (Path: candidate, Index: index))
             .Where(item => string.Equals(item.Path, locked.Path, StringComparison.Ordinal))
             .Select(item => item.Index < spec.Selectors.Count ? spec.Selectors[item.Index] : null)
             .ToList();
@@ -220,11 +228,16 @@ internal sealed class OriginSource : ISeiSource
         var matched = false;
         foreach (var candidate in candidates)
         {
-            var expectedPrerequisites = Merge(artifact.Prerequisites, candidate?.Prerequisites ?? []);
-            if (SameRelations(recovered.Dependencies, artifact.Dependencies)
+            var expectedPrerequisites = Merge(
+                artifact.Prerequisites,
+                candidate?.Prerequisites ?? []
+            );
+            if (
+                SameRelations(recovered.Dependencies, artifact.Dependencies)
                 && SameRelations(recovered.Prerequisites, expectedPrerequisites)
                 && SameRelations(recovered.OptionalPeers, artifact.OptionalPeers)
-                && SameRelations(recovered.Conflicts, artifact.Conflicts))
+                && SameRelations(recovered.Conflicts, artifact.Conflicts)
+            )
             {
                 selector = candidate;
                 matched = true;
@@ -236,8 +249,9 @@ internal sealed class OriginSource : ISeiSource
         {
             throw new SeikoException(
                 $"{spec.Name}: the locked dependency group does not match the file's groups "
-                + "(the file changed since it was locked)",
-                "checksum");
+                    + "(the file changed since it was locked)",
+                "checksum"
+            );
         }
 
         return new SeiIndex
@@ -297,8 +311,9 @@ internal sealed class OriginSource : ISeiSource
 
             throw new SeikoException(
                 $"{name}: the origin file changed since it was locked "
-                + $"({digest} locked, {actual} read)",
-                "checksum")
+                    + $"({digest} locked, {actual} read)",
+                "checksum"
+            )
             {
                 Hint = "rebuild under a new version, or run `sk remove` and add the file again",
                 HintKey = "hint.origin-changed",
@@ -316,7 +331,8 @@ internal sealed class OriginSource : ISeiSource
 
         throw new SeikoException(
             $"{name}: the origin file is gone and {digest} has no snapshot",
-            "checksum");
+            "checksum"
+        );
     }
 
     private SeiIndex BuildChosen(OriginSpec spec)
@@ -338,10 +354,13 @@ internal sealed class OriginSource : ISeiSource
             {
                 throw new SeikoException(
                     $"{spec.Name}: the origin file is gone and no snapshot matches"
-                    + (_preferred.TryGetValue(spec.Name, out var wanted)
-                        ? $"; {wanted} has no snapshot"
-                        : "; add it again"),
-                    "checksum");
+                        + (
+                            _preferred.TryGetValue(spec.Name, out var wanted)
+                                ? $"; {wanted} has no snapshot"
+                                : "; add it again"
+                        ),
+                    "checksum"
+                );
             }
 
             var manifest = ReadManifest(path, spec.Name);
@@ -349,7 +368,8 @@ internal sealed class OriginSource : ISeiSource
             {
                 throw new SeikoException(
                     $"{manifest.Name}: a local file cannot serve external files",
-                    "source");
+                    "source"
+                );
             }
 
             if (first is null)
@@ -360,32 +380,35 @@ internal sealed class OriginSource : ISeiSource
             {
                 throw new SeikoException(
                     $"{spec.Name}: origin files declare different versions "
-                    + $"('{first.Version}' and '{manifest.Version}')",
-                    "resolve");
+                        + $"('{first.Version}' and '{manifest.Version}')",
+                    "resolve"
+                );
             }
 
             var artifact = manifest.Artifact!;
-            artifacts.Add(new ArtifactEntry
-            {
-                // The selector already filtered by rid; this is the manifest's
-                // own field, so the store's index cross-check still holds.
-                Rid = artifact.Rid,
-                Prerequisites = Merge(artifact.Prerequisites, selector.Prerequisites),
-                Dependencies = artifact.Dependencies,
-                OptionalPeers = artifact.OptionalPeers,
-                Conflicts = artifact.Conflicts,
-                Layout = artifact.Layout,
-                Modes = artifact.Modes,
-                Preserve = artifact.Preserve,
-                DependencyGroups = artifact.DependencyGroups,
-                Source = new ArtifactLocation
+            artifacts.Add(
+                new ArtifactEntry
                 {
-                    Url = path,
-                    Sha256 = Hashing.Sha256File(path),
-                    Size = new FileInfo(path).Length,
-                },
-                OriginPath = stored,
-            });
+                    // The selector already filtered by rid; this is the manifest's
+                    // own field, so the store's index cross-check still holds.
+                    Rid = artifact.Rid,
+                    Prerequisites = Merge(artifact.Prerequisites, selector.Prerequisites),
+                    Dependencies = artifact.Dependencies,
+                    OptionalPeers = artifact.OptionalPeers,
+                    Conflicts = artifact.Conflicts,
+                    Layout = artifact.Layout,
+                    Modes = artifact.Modes,
+                    Preserve = artifact.Preserve,
+                    DependencyGroups = artifact.DependencyGroups,
+                    Source = new ArtifactLocation
+                    {
+                        Url = path,
+                        Sha256 = Hashing.Sha256File(path),
+                        Size = new FileInfo(path).Length,
+                    },
+                    OriginPath = stored,
+                }
+            );
         }
 
         return new SeiIndex
@@ -413,7 +436,8 @@ internal sealed class OriginSource : ISeiSource
     // both keeps both ranges: dropping one would silently widen the condition.
     private static bool SameRelations(
         IReadOnlyList<SeiDependency>? left,
-        IReadOnlyList<SeiDependency>? right)
+        IReadOnlyList<SeiDependency>? right
+    )
     {
         var a = (left ?? [])
             .OrderBy(item => item.Name, StringComparer.Ordinal)
@@ -424,16 +448,23 @@ internal sealed class OriginSource : ISeiSource
             .ThenBy(item => item.Version ?? "", StringComparer.Ordinal)
             .ToList();
         return a.Count == b.Count
-            && a.Zip(b).All(pair =>
-                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
-                && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
+            && a.Zip(b)
+                .All(pair =>
+                    string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                    && string.Equals(
+                        pair.First.Version ?? "",
+                        pair.Second.Version ?? "",
+                        StringComparison.Ordinal
+                    )
+                );
     }
 
     // Multiset subtraction: each group relation removes one matching entry
     // from the merged lock lists, leaving the artifact-level share.
     private static List<SeiDependency> Without(
         List<SeiDependency> merged,
-        List<SeiDependency>? scoped)
+        List<SeiDependency>? scoped
+    )
     {
         var result = merged
             .Select(item => new SeiDependency { Name = item.Name, Version = item.Version })
@@ -442,7 +473,8 @@ internal sealed class OriginSource : ISeiSource
         {
             var index = result.FindIndex(candidate =>
                 string.Equals(candidate.Name, relation.Name, StringComparison.Ordinal)
-                && string.Equals(candidate.Version, relation.Version, StringComparison.Ordinal));
+                && string.Equals(candidate.Version, relation.Version, StringComparison.Ordinal)
+            );
             if (index >= 0)
             {
                 result.RemoveAt(index);
@@ -454,13 +486,19 @@ internal sealed class OriginSource : ISeiSource
 
     private static List<SeiDependency> Merge(
         List<SeiDependency> intrinsic,
-        List<SeiDependency> fromSelector)
+        List<SeiDependency> fromSelector
+    )
     {
         var merged = intrinsic
             .Select(item => new SeiDependency { Name = item.Name, Version = item.Version })
             .ToList();
-        merged.AddRange(fromSelector.Select(
-            item => new SeiDependency { Name = item.Name, Version = item.Version }));
+        merged.AddRange(
+            fromSelector.Select(item => new SeiDependency
+            {
+                Name = item.Name,
+                Version = item.Version,
+            })
+        );
         return merged;
     }
 
@@ -474,9 +512,11 @@ internal sealed class OriginSource : ISeiSource
         for (var i = 0; i < spec.Paths.Count; i++)
         {
             var selector = spec.Selectors[i];
-            if (string.IsNullOrWhiteSpace(selector.Rid)
+            if (
+                string.IsNullOrWhiteSpace(selector.Rid)
                 || string.Equals(selector.Rid, "*", StringComparison.Ordinal)
-                || string.Equals(selector.Rid, _rid, StringComparison.OrdinalIgnoreCase))
+                || string.Equals(selector.Rid, _rid, StringComparison.OrdinalIgnoreCase)
+            )
             {
                 matches.Add((spec.Paths[i], selector));
             }
@@ -486,19 +526,30 @@ internal sealed class OriginSource : ISeiSource
         {
             throw new SeikoException(
                 $"{spec.Name}: no origin file matches rid '{_rid}'",
-                "resolve");
+                "resolve"
+            );
         }
 
         for (var i = 1; i < matches.Count; i++)
         {
-            if (string.Equals(
-                ArtifactConditions.Key(matches[0].Selector.Rid, matches[0].Selector.Prerequisites),
-                ArtifactConditions.Key(matches[i].Selector.Rid, matches[i].Selector.Prerequisites),
-                StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    ArtifactConditions.Key(
+                        matches[0].Selector.Rid,
+                        matches[0].Selector.Prerequisites
+                    ),
+                    ArtifactConditions.Key(
+                        matches[i].Selector.Rid,
+                        matches[i].Selector.Prerequisites
+                    ),
+                    StringComparison.Ordinal
+                )
+            )
             {
                 throw new SeikoException(
                     $"{spec.Name}: origin paths '{matches[0].Path}' and '{matches[i].Path}' have the same condition",
-                    "resolve");
+                    "resolve"
+                );
             }
         }
 
@@ -510,11 +561,16 @@ internal sealed class OriginSource : ISeiSource
     // Whether the 4-only fields were written at all. The deserialized object
     // cannot say: an explicit null reads back like an omitted field, but a 3
     // manifest that wrote it still declared it (ADR-0045).
-    private sealed record ManifestHeader(SeiManifest? Manifest, bool Preserve, bool DependencyGroups);
+    private sealed record ManifestHeader(
+        SeiManifest? Manifest,
+        bool Preserve,
+        bool DependencyGroups
+    );
 
     private SeiManifest ReadManifest(string path, string name)
     {
-        var header = ReadManifestHeader(path)
+        var header =
+            ReadManifestHeader(path)
             ?? throw new SeikoException($"{Path.GetFileName(path)}: sei.json is empty", "io");
         var manifest = header.Manifest;
 
@@ -524,45 +580,54 @@ internal sealed class OriginSource : ISeiSource
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: unsupported sei.json schemaVersion {manifest.SchemaVersion}",
-                "io");
+                "io"
+            );
         }
 
-        if (manifest.SchemaVersion < 4
-            && (header.Preserve || header.DependencyGroups))
+        if (manifest.SchemaVersion < 4 && (header.Preserve || header.DependencyGroups))
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare {ManifestFields.GatedText(header.Preserve, header.DependencyGroups)}",
-                "io");
+                "io"
+            );
         }
 
         if (manifest.Artifact is null)
         {
-            throw new SeikoException($"{Path.GetFileName(path)}: sei.json has no artifact object", "io");
+            throw new SeikoException(
+                $"{Path.GetFileName(path)}: sei.json has no artifact object",
+                "io"
+            );
         }
 
         // A local file follows the same packaging rule as an index entry:
         // identically gated groups with different relations can only be told
         // apart by luck (ADR-0045).
-        if (manifest.Artifact.DependencyGroups is { } groups
-            && DependencyGroups.FindAmbiguousPair(groups) is { } ambiguous)
+        if (
+            manifest.Artifact.DependencyGroups is { } groups
+            && DependencyGroups.FindAmbiguousPair(groups) is { } ambiguous
+        )
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: dependency groups {ambiguous} and an earlier one have the same conditions but different relations",
-                "usage");
+                "usage"
+            );
         }
 
         if (!string.Equals(manifest.Name, name, StringComparison.Ordinal))
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: sei.json declares name '{manifest.Name}', expected '{name}'",
-                "usage");
+                "usage"
+            );
         }
 
         if (!OriginPaths.StemMatches(path, manifest.Name))
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)}: file name must start with '{manifest.Name}'",
-                "usage");
+                "usage"
+            );
         }
 
         return manifest;
@@ -613,25 +678,29 @@ internal sealed class OriginSource : ISeiSource
         // for hello-tools-win). Picking the longer one is still a guess, so an
         // unknown path with more than one candidate is refused; snapshots of
         // the same name are not ambiguous and collapse to the newest.
-        var names = matches
-            .ToDictionary(
-                candidate => candidate,
-                candidate => ReadManifestHeader(candidate)!.Manifest!.Name,
-                StringComparer.Ordinal);
-        var distinct = names.Values.Distinct(StringComparer.Ordinal).OrderBy(
-            value => value,
-            StringComparer.Ordinal).ToList();
+        var names = matches.ToDictionary(
+            candidate => candidate,
+            candidate => ReadManifestHeader(candidate)!.Manifest!.Name,
+            StringComparer.Ordinal
+        );
+        var distinct = names
+            .Values.Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToList();
         if (distinct.Count > 1)
         {
             throw new SeikoException(
                 $"{Path.GetFileName(path)} matches several origin names ({string.Join(", ", distinct)}); "
-                + "name the file after the sei, or add it while its declaration exists",
-                "usage");
+                    + "name the file after the sei, or add it while its declaration exists",
+                "usage"
+            );
         }
 
         var chosenName = distinct[0];
         return matches
-            .Where(candidate => string.Equals(names[candidate], chosenName, StringComparison.Ordinal))
+            .Where(candidate =>
+                string.Equals(names[candidate], chosenName, StringComparison.Ordinal)
+            )
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .First();
     }
@@ -652,21 +721,23 @@ internal sealed class OriginSource : ISeiSource
 
         using (archive)
         {
-            var manifests = archive.Entries
-                .Where(entry => ArchiveLimits.NormalizeName(entry.FullName) == "sei.json")
+            var manifests = archive
+                .Entries.Where(entry => ArchiveLimits.NormalizeName(entry.FullName) == "sei.json")
                 .ToList();
             if (manifests.Count != 1)
             {
                 throw new SeikoException(
                     $"{Path.GetFileName(path)}: artifact must have exactly one root sei.json",
-                    "io");
+                    "io"
+                );
             }
 
             if (manifests[0].Length > ArchiveLimits.MaxManifestBytes)
             {
                 throw new SeikoException(
                     $"{Path.GetFileName(path)}: sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
-                    "checksum");
+                    "checksum"
+                );
             }
 
             try
@@ -675,7 +746,10 @@ internal sealed class OriginSource : ISeiSource
                 using var buffer = new MemoryStream();
                 stream.CopyTo(buffer);
                 var bytes = buffer.ToArray();
-                var manifest = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiManifest);
+                var manifest = JsonSerializer.Deserialize(
+                    bytes,
+                    SeikoJsonContext.Default.SeiManifest
+                );
                 if (manifest is null)
                 {
                     return null;
@@ -686,7 +760,10 @@ internal sealed class OriginSource : ISeiSource
             }
             catch (JsonException ex)
             {
-                throw new SeikoException($"{Path.GetFileName(path)}: invalid sei.json ({ex.Message})", "io");
+                throw new SeikoException(
+                    $"{Path.GetFileName(path)}: invalid sei.json ({ex.Message})",
+                    "io"
+                );
             }
         }
     }

@@ -8,16 +8,20 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsSelfDependency()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("hello", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("hello", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("self relation", error.Message);
@@ -30,20 +34,26 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsOtherSelfRelations(string kind)
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         var index = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
-        var json = File.ReadAllText(index).Replace(
-            "\"artifacts\"",
-            $"\"{kind}\":[{{\"name\":\"hello\",\"version\":\"*\"}}],\"artifacts\"");
+        var json = File.ReadAllText(index)
+            .Replace(
+                "\"artifacts\"",
+                $"\"{kind}\":[{{\"name\":\"hello\",\"version\":\"*\"}}],\"artifacts\""
+            );
         File.WriteAllText(index, json);
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("self relation", error.Message);
@@ -53,18 +63,23 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsNullDependencyListFromSourceJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":null,"artifacts":[]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":null,"artifacts":[]}]}"""
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("dependency list", error.Message);
@@ -74,18 +89,23 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsNullArtifactListFromSourceJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":null}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":null}]}"""
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("artifact list", error.Message);
@@ -95,18 +115,23 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsEmptyRidFromSourceJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"rid":"","layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"rid":"","layout":"root","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}"""
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("empty rid", error.Message);
@@ -116,18 +141,23 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsUnknownArtifactLayoutFromSourceJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"layout":"subdir","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"artifacts":[{"layout":"subdir","source":{"url":"artifacts/x.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000","size":1}}]}]}"""
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("unsupported layout", error.Message);
@@ -138,18 +168,23 @@ public sealed class ResolverValidationTests
     public void Sync_RejectsNullRelationListFromSourceJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"prerequisites":null,"artifacts":[]}]}""");
+            """{"schemaVersion":2,"name":"hello","versions":[{"version":"1.0.0","dependencies":[],"prerequisites":null,"artifacts":[]}]}"""
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("relation list", error.Message);
@@ -161,8 +196,9 @@ public sealed class ResolverValidationTests
         var source = new SingleSource(new SeiIndex { Name = "hello", Versions = [] });
         var resolver = new Resolver([source], null, "win-x64", false);
 
-        var error = Assert.Throws<SeikoException>(
-            () => resolver.Resolve([new SeiSpec { Name = "hello" }]));
+        var error = Assert.Throws<SeikoException>(() =>
+            resolver.Resolve([new SeiSpec { Name = "hello" }])
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("has no versions", error.Message);
@@ -174,8 +210,9 @@ public sealed class ResolverValidationTests
         var source = new SingleSource(new SeiIndex { Name = "hello", Versions = [null!] });
         var resolver = new Resolver([source], null, "win-x64", false);
 
-        var error = Assert.Throws<SeikoException>(
-            () => resolver.Resolve([new SeiSpec { Name = "hello" }]));
+        var error = Assert.Throws<SeikoException>(() =>
+            resolver.Resolve([new SeiSpec { Name = "hello" }])
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("invalid version entry", error.Message);
@@ -196,11 +233,13 @@ public sealed class ResolverValidationTests
             {
                 Version = "1.0.0",
                 Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "second" } }],
-            });
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("duplicate version", error.Message);
@@ -223,15 +262,14 @@ public sealed class ResolverValidationTests
 
         public SeiCatalog? Catalog => null;
 
-        public string ResolveArtifact(ArtifactLocation source)
-            => throw new NotSupportedException();
+        public string ResolveArtifact(ArtifactLocation source) => throw new NotSupportedException();
 
         public Task DownloadAsync(
             string name,
             ArtifactLocation source,
             string directory,
             DownloadSession session,
-            CancellationToken cancellationToken)
-            => throw new NotSupportedException();
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
     }
 }

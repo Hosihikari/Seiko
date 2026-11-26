@@ -86,15 +86,19 @@ public sealed class PathResolutionTests
             {
                 Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "link"), outside);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
 
-            Assert.Throws<SeikoException>(
-                () => RootedPath.Resolve(fixture.Root, RelativePath.Parse("link/canary")));
+            Assert.Throws<SeikoException>(() =>
+                RootedPath.Resolve(fixture.Root, RelativePath.Parse("link/canary"))
+            );
         }
         finally
         {

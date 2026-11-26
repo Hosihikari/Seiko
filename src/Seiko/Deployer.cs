@@ -8,7 +8,8 @@ public sealed record DeployedSei(
     string Version,
     string Directory,
     SeiManifest Manifest,
-    IReadOnlyDictionary<string, StoreFileDigest> Digests);
+    IReadOnlyDictionary<string, StoreFileDigest> Digests
+);
 
 public sealed class DeployResult
 {
@@ -28,8 +29,8 @@ public static class Deployer
     // the path: the moment a kill would leave the temporary behind.
     internal static AsyncLocal<Action?> BeforeFirstDetachMoveForTests { get; } = new();
 
-    public static void Recover(string root, string stateDirectory)
-        => DeploymentTransaction.Recover(root, stateDirectory);
+    public static void Recover(string root, string stateDirectory) =>
+        DeploymentTransaction.Recover(root, stateDirectory);
 
     public static DeployResult Deploy(
         string root,
@@ -43,8 +44,9 @@ public static class Deployer
         bool force = false,
         IReadOnlyDictionary<string, string>? adoptedSnapshots = null,
         bool resetPreserved = false,
-        IReadOnlyDictionary<string, DeployedFile>? targetFiles = null)
-        => DeployCore(
+        IReadOnlyDictionary<string, DeployedFile>? targetFiles = null
+    ) =>
+        DeployCore(
             root,
             sei,
             stateDirectory,
@@ -57,7 +59,8 @@ public static class Deployer
             force,
             adoptedSnapshots,
             resetPreserved,
-            targetFiles);
+            targetFiles
+        );
 
     internal static DeployResult DeployInTransaction(
         string root,
@@ -71,8 +74,9 @@ public static class Deployer
         bool adopt = false,
         bool force = false,
         IReadOnlyDictionary<string, string>? adoptedSnapshots = null,
-        bool resetPreserved = false)
-        => DeployCore(
+        bool resetPreserved = false
+    ) =>
+        DeployCore(
             root,
             sei,
             stateDirectory,
@@ -85,7 +89,8 @@ public static class Deployer
             force,
             adoptedSnapshots,
             resetPreserved,
-            targetFiles: null);
+            targetFiles: null
+        );
 
     private static DeployResult DeployCore(
         string root,
@@ -100,7 +105,8 @@ public static class Deployer
         bool force,
         IReadOnlyDictionary<string, string>? adoptedSnapshots,
         bool resetPreserved,
-        IReadOnlyDictionary<string, DeployedFile>? targetFiles)
+        IReadOnlyDictionary<string, DeployedFile>? targetFiles
+    )
     {
         root = Path.GetFullPath(root);
         stateDirectory = Path.GetFullPath(stateDirectory);
@@ -129,7 +135,8 @@ public static class Deployer
                 {
                     throw new SeikoException(
                         $"generation snapshot for adopted file {relative} is missing",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 // The caller validated the snapshot against the target
@@ -151,7 +158,10 @@ public static class Deployer
 
         var statePath = Path.Combine(stateDirectory, "state.json");
         var state = File.Exists(statePath)
-            ? JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState) ?? new LocalState()
+            ? JsonSerializer.Deserialize(
+                File.ReadAllBytes(statePath),
+                SeikoJsonContext.Default.LocalState
+            ) ?? new LocalState()
             : new LocalState();
         if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
         {
@@ -160,7 +170,8 @@ public static class Deployer
             // empty root and deploy over the old environment.
             throw new SeikoException(
                 $"unsupported deployment state schemaVersion {state.SchemaVersion}",
-                "io");
+                "io"
+            );
         }
 
         if (state.Files is null)
@@ -180,7 +191,8 @@ public static class Deployer
             {
                 throw new SeikoException(
                     $"deployment state has no record for {relative}",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             PathSafety.EnsureNoLinks(root, relative);
@@ -198,14 +210,17 @@ public static class Deployer
 
         var preservedPaths = new HashSet<string>(
             sei.SelectMany(item => item.Manifest.Artifact?.Preserve ?? []),
-            StringComparer.Ordinal);
+            StringComparer.Ordinal
+        );
 
         // Whether the reset survives on the new record: the target's own mark
         // on a rollback, the flag or the previous mark on a normal run.
-        bool PreservedOnRecord(string relative, string after)
-            => preservedPaths.Contains(after)
-                && (resetPreserved
-                    || (authoritative.TryGetValue(relative, out var record) && record.Preserved));
+        bool PreservedOnRecord(string relative, string after) =>
+            preservedPaths.Contains(after)
+            && (
+                resetPreserved
+                || (authoritative.TryGetValue(relative, out var record) && record.Preserved)
+            );
         var preservedHere = new HashSet<string>(StringComparer.Ordinal);
         var retained = new List<string>();
         // The temporary name each held copy is written to. Chosen with the
@@ -221,7 +236,8 @@ public static class Deployer
             {
                 throw new SeikoException(
                     $"deployment state contains a reserved path: {oldFile}",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             if (desired.ContainsKey(oldFile) || !File.Exists(Native(root, oldFile)))
@@ -233,12 +249,14 @@ public static class Deployer
             var edited = !string.Equals(
                 Hashing.Sha256File(Native(root, oldFile)),
                 record.Sha256,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal
+            );
             if (edited && !record.Adopted && !force && !adopt)
             {
                 throw new SeikoException(
                     $"deployment conflict: managed file {oldFile} was modified; pass --force to delete it or --adopt to keep it",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             // Adopted content is user state: keep it on disk and drop only the
@@ -270,9 +288,11 @@ public static class Deployer
             // generation, so there its own record decides — and when the
             // record exists the path is managed again, which means a user
             // edit made since falls under the ordinary conflict rules.
-            if (preservedPaths.Contains(relative)
+            if (
+                preservedPaths.Contains(relative)
                 && !resetPreserved
-                && !(managedHere && previous!.Preserved))
+                && !(managedHere && previous!.Preserved)
+            )
             {
                 preservedHere.Add(relative);
                 if (!exists)
@@ -304,7 +324,8 @@ public static class Deployer
                 {
                     throw new SeikoException(
                         $"deployment conflict: unmanaged path {relative} is in the way; pass --adopt to keep it or --force to overwrite it",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 // Whether the user changed the file is judged against the
@@ -315,25 +336,31 @@ public static class Deployer
                     ? managedHere
                         && !previous!.Adopted
                         && !string.Equals(actual, previous.Sha256, StringComparison.Ordinal)
-                    : !(authoritative.TryGetValue(relative, out var targetRecord)
-                            && string.Equals(actual, targetRecord.Sha256, StringComparison.Ordinal))
-                        && (state.Files.TryGetValue(relative, out var live)
-                            ? !live.Adopted
-                                && !string.Equals(actual, live.Sha256, StringComparison.Ordinal)
-                            // Not managed in the current generation either:
-                            // nobody records this content, so it is the user's.
-                            : true);
+                    : !(
+                        authoritative.TryGetValue(relative, out var targetRecord)
+                        && string.Equals(actual, targetRecord.Sha256, StringComparison.Ordinal)
+                    )
+                        && (
+                            state.Files.TryGetValue(relative, out var live)
+                                ? !live.Adopted
+                                    && !string.Equals(actual, live.Sha256, StringComparison.Ordinal)
+                                // Not managed in the current generation either:
+                                // nobody records this content, so it is the user's.
+                                : true
+                        );
                 if (modified && !adopt && !force && !reset)
                 {
                     throw new SeikoException(
                         $"deployment conflict: managed file {relative} was modified; pass --force to overwrite it or --adopt to keep it",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 // On a rollback the target generation decides: a desired file
                 // it recorded as adopted is served from its snapshot, every
                 // other desired file is restored from the store.
-                var keepExisting = !force
+                var keepExisting =
+                    !force
                     && !reset
                     && adoptedSnapshots is null
                     && (adopt || (managedHere && previous!.Adopted));
@@ -357,7 +384,8 @@ public static class Deployer
             .ToDictionary(
                 mutation => mutation.RelativePath,
                 mutation => DeploymentTemporaryName(mutation.RelativePath),
-                StringComparer.Ordinal);
+                StringComparer.Ordinal
+            );
 
         var mutatedPaths = mutations
             .Where(mutation => mutation.File is not null)
@@ -381,9 +409,11 @@ public static class Deployer
             }
         }
         var modeChanges = modes
-            .Where(pair => !mutatedPaths.Contains(pair.Key)
+            .Where(pair =>
+                !mutatedPaths.Contains(pair.Key)
                 && File.Exists(Native(root, pair.Key))
-                && ModeDiffers(Native(root, pair.Key), pair.Value))
+                && ModeDiffers(Native(root, pair.Key), pair.Value)
+            )
             .Select(pair => pair.Key)
             .OrderBy(relative => relative, StringComparer.Ordinal)
             .ToList();
@@ -397,18 +427,28 @@ public static class Deployer
                     pair => pair.Key,
                     pair => new DeployedFile
                     {
-                        Owners = pair.Value.Owners.Distinct(StringComparer.Ordinal).OrderBy(o => o, StringComparer.Ordinal).ToList(),
+                        Owners = pair
+                            .Value.Owners.Distinct(StringComparer.Ordinal)
+                            .OrderBy(o => o, StringComparer.Ordinal)
+                            .ToList(),
                         Sha256 = adoptedHashes.TryGetValue(pair.Key, out var kept)
                             ? kept
                             : pair.Value.Sha256,
-                        Adopted = adoptedHashes.ContainsKey(pair.Key) || adoptedFrom.ContainsKey(pair.Key),
+                        Adopted =
+                            adoptedHashes.ContainsKey(pair.Key)
+                            || adoptedFrom.ContainsKey(pair.Key),
                         // The reset survives until the declaration disappears;
                         // a rollback reproduces the target generation's marks.
                         Preserved = PreservedOnRecord(pair.Key, pair.Key),
                     },
-                    StringComparer.Ordinal),
+                    StringComparer.Ordinal
+                ),
         };
-        var generationDirectory = Path.Combine(stateDirectory, "generations", newState.Generation.ToString());
+        var generationDirectory = Path.Combine(
+            stateDirectory,
+            "generations",
+            newState.Generation.ToString()
+        );
         var adoptedSources = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var relative in adoptedHashes.Keys)
         {
@@ -420,8 +460,9 @@ public static class Deployer
             adoptedSources[relative] = snapshot;
         }
 
-        var installedPaths = sei
-            .Select(item => Path.Combine(stateDirectory, "installed", item.Name, item.Version, "sei.json"))
+        var installedPaths = sei.Select(item =>
+                Path.Combine(stateDirectory, "installed", item.Name, item.Version, "sei.json")
+            )
             .ToList();
 
         var createdDirectories = new List<string>();
@@ -439,7 +480,8 @@ public static class Deployer
                     mutation.RelativePath,
                     allowDirectory: mutation.File is not null
                         && replaceable.Contains(mutation.RelativePath),
-                    sha256: mutation.File?.Sha256);
+                    sha256: mutation.File?.Sha256
+                );
             }
 
             foreach (var temporary in temporaryPaths.Values)
@@ -460,9 +502,15 @@ public static class Deployer
 
             if (Directory.Exists(generationDirectory))
             {
-                transaction.WillChange(Relative(root, Path.Combine(generationDirectory, "state.json")));
-                transaction.WillChange(Relative(root, Path.Combine(generationDirectory, "lock.json")));
-                transaction.WillChange(Relative(root, Path.Combine(generationDirectory, "seiko.conf")));
+                transaction.WillChange(
+                    Relative(root, Path.Combine(generationDirectory, "state.json"))
+                );
+                transaction.WillChange(
+                    Relative(root, Path.Combine(generationDirectory, "lock.json"))
+                );
+                transaction.WillChange(
+                    Relative(root, Path.Combine(generationDirectory, "seiko.conf"))
+                );
             }
             else
             {
@@ -475,11 +523,14 @@ public static class Deployer
             var adoptedDirectory = Path.Combine(generationDirectory, "adopted");
             var staging = Path.Combine(
                 generationDirectory,
-                DeploymentTransaction.AdoptedStagingPrefix + Guid.NewGuid().ToString("N"));
+                DeploymentTransaction.AdoptedStagingPrefix + Guid.NewGuid().ToString("N")
+            );
             transaction.WillCreateTemporary(Relative(root, staging));
-            foreach (var existing in Directory.Exists(adoptedDirectory)
-                ? Directory.EnumerateFiles(adoptedDirectory, "*", SearchOption.AllDirectories)
-                : [])
+            foreach (
+                var existing in Directory.Exists(adoptedDirectory)
+                    ? Directory.EnumerateFiles(adoptedDirectory, "*", SearchOption.AllDirectories)
+                    : []
+            )
             {
                 transaction.WillChange(Relative(root, existing));
             }
@@ -541,8 +592,8 @@ public static class Deployer
                 // content: back it up, then apply the normal unmanaged-path
                 // rule. The publish itself also refuses to overwrite, so the
                 // remaining window is closed by the rename, not by this check.
-                var raced = mutation.CreatedHere
-                    && transaction.SnapshotLateCreation(mutation.RelativePath);
+                var raced =
+                    mutation.CreatedHere && transaction.SnapshotLateCreation(mutation.RelativePath);
                 if (raced)
                 {
                     // A preserve target that appears in the window wins: the
@@ -563,7 +614,8 @@ public static class Deployer
                     {
                         throw new SeikoException(
                             $"deployment conflict: unmanaged path {mutation.RelativePath} appeared during the deployment; pass --adopt to keep it or --force to overwrite it",
-                            "deploy");
+                            "deploy"
+                        );
                     }
 
                     if (adopt)
@@ -583,7 +635,8 @@ public static class Deployer
                     {
                         throw new SeikoException(
                             $"deployment path is a directory: {mutation.RelativePath}",
-                            "deploy");
+                            "deploy"
+                        );
                     }
                 }
 
@@ -598,10 +651,12 @@ public static class Deployer
                         temp,
                         allowHardlink: !mutation.File.SnapshotSource
                             && !modes.ContainsKey(mutation.RelativePath)
-                            && !preservedHere.Contains(mutation.RelativePath));
+                            && !preservedHere.Contains(mutation.RelativePath)
+                    );
                     if (mutation.CreatedHere && !raced)
                     {
-                        if (PublishCreated(
+                        if (
+                            PublishCreated(
                                 temp,
                                 destination,
                                 mutation.RelativePath,
@@ -609,8 +664,9 @@ public static class Deployer
                                 adopt,
                                 force,
                                 lateAdoptions,
-                                preserve: preservedHere.Contains(mutation.RelativePath))
-                            && preservedHere.Contains(mutation.RelativePath))
+                                preserve: preservedHere.Contains(mutation.RelativePath)
+                            ) && preservedHere.Contains(mutation.RelativePath)
+                        )
                         {
                             // A preserve copy landed in the second window too;
                             // it is the user's now, so its permissions stay as
@@ -672,8 +728,18 @@ public static class Deployer
                 adoptedSources[relative] = Native(root, relative);
             }
 
-            WriteAtomic(statePath, JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState));
-            WriteGeneration(stateDirectory, newState, lockFile, configSnapshot, adoptedSources, staging);
+            WriteAtomic(
+                statePath,
+                JsonSerializer.Serialize(newState, SeikoJsonContext.Default.LocalState)
+            );
+            WriteGeneration(
+                stateDirectory,
+                newState,
+                lockFile,
+                configSnapshot,
+                adoptedSources,
+                staging
+            );
             WriteInstalledManifests(installedPaths, sei);
             if (writeLock)
             {
@@ -715,7 +781,8 @@ public static class Deployer
         bool adopt,
         bool force,
         List<string> lateAdoptions,
-        bool preserve)
+        bool preserve
+    )
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -736,9 +803,7 @@ public static class Deployer
                 // retry the same non-overwriting move.
                 continue;
             }
-            catch (IOException)
-            {
-            }
+            catch (IOException) { }
 
             if (!File.Exists(destination))
             {
@@ -770,7 +835,8 @@ public static class Deployer
             {
                 throw new SeikoException(
                     $"deployment conflict: unmanaged path {relative} appeared during the deployment; pass --adopt to keep it or --force to overwrite it",
-                    "deploy");
+                    "deploy"
+                );
             }
 
             if (adopt)
@@ -850,11 +916,13 @@ public static class Deployer
                 text,
                 System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture,
-                out var count)
+                out var count
+            )
                 ? count
                 : 2;
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        catch (Exception ex)
+            when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             // Without a usable stat, assume a shared link and copy: a needless
             // copy only costs space.
@@ -877,7 +945,13 @@ public static class Deployer
         var caseInsensitive = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in sei)
         {
-            foreach (var file in Directory.EnumerateFiles(item.Directory, "*", SearchOption.AllDirectories))
+            foreach (
+                var file in Directory.EnumerateFiles(
+                    item.Directory,
+                    "*",
+                    SearchOption.AllDirectories
+                )
+            )
             {
                 var relative = Path.GetRelativePath(item.Directory, file).Replace('\\', '/');
                 if (relative is "sei.json")
@@ -889,16 +963,20 @@ public static class Deployer
                 {
                     throw new SeikoException(
                         $"sei '{item.Name}' declares a reserved path: {relative}",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 var normalized = relative.Normalize(System.Text.NormalizationForm.FormC);
-                if (caseInsensitive.TryGetValue(normalized, out var other)
-                    && !string.Equals(other, relative, StringComparison.Ordinal))
+                if (
+                    caseInsensitive.TryGetValue(normalized, out var other)
+                    && !string.Equals(other, relative, StringComparison.Ordinal)
+                )
                 {
                     throw new SeikoException(
                         $"path conflict: {other} and {relative} differ only by case or Unicode normalization",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 caseInsensitive[normalized] = relative;
@@ -910,24 +988,31 @@ public static class Deployer
                     {
                         throw new SeikoException(
                             $"file conflict: {relative} differs between {existing.Owners[0]} and {item.Name}",
-                            "deploy");
+                            "deploy"
+                        );
                     }
 
                     var existingMode = GetModeText(existing.Modes, relative);
                     var incomingMode = GetModeText(item.Manifest.Artifact?.Modes, relative);
-                    if (existingMode is not null && incomingMode is not null
-                        && ParseModeValue(relative, existingMode) != ParseModeValue(relative, incomingMode))
+                    if (
+                        existingMode is not null
+                        && incomingMode is not null
+                        && ParseModeValue(relative, existingMode)
+                            != ParseModeValue(relative, incomingMode)
+                    )
                     {
                         throw new SeikoException(
                             $"mode conflict: {relative} is {existingMode} for {string.Join(", ", existing.Owners)} and {incomingMode} for {item.Name}",
-                            "deploy");
+                            "deploy"
+                        );
                     }
 
                     if (existingMode is null && incomingMode is not null)
                     {
                         existing.Modes = new Dictionary<string, string>(
                             existing.Modes ?? [],
-                            StringComparer.Ordinal)
+                            StringComparer.Ordinal
+                        )
                         {
                             [relative] = incomingMode,
                         };
@@ -955,7 +1040,8 @@ public static class Deployer
         string root,
         IReadOnlyDictionary<string, DesiredFile> desired,
         IReadOnlySet<string> managed,
-        bool force)
+        bool force
+    )
     {
         var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var relative in desired.Keys)
@@ -978,21 +1064,28 @@ public static class Deployer
             for (var i = 0; i < parts.Length - 1; i++)
             {
                 prefix = prefix.Length == 0 ? parts[i] : $"{prefix}/{parts[i]}";
-                if (normalized.TryGetValue(
+                if (
+                    normalized.TryGetValue(
                         prefix.Normalize(System.Text.NormalizationForm.FormC),
-                        out var file))
+                        out var file
+                    )
+                )
                 {
                     throw new SeikoException(
                         $"path conflict: {file} is both a file and a directory of {relative}",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
-                if (File.Exists(Native(root, prefix))
-                    && !(managed.Contains(prefix) && !desired.ContainsKey(prefix)))
+                if (
+                    File.Exists(Native(root, prefix))
+                    && !(managed.Contains(prefix) && !desired.ContainsKey(prefix))
+                )
                 {
                     throw new SeikoException(
                         $"path conflict: {prefix} is a file but {relative} needs a directory",
-                        "deploy");
+                        "deploy"
+                    );
                 }
             }
         }
@@ -1006,14 +1099,17 @@ public static class Deployer
         string destination,
         IReadOnlySet<string> managed,
         IReadOnlyDictionary<string, DesiredFile> desired,
-        bool force)
+        bool force
+    )
     {
         var allowedDirectories = new HashSet<string>(StringComparer.Ordinal) { relative };
         var prefix = relative + "/";
         foreach (var managedPath in managed)
         {
-            if (!managedPath.StartsWith(prefix, StringComparison.Ordinal)
-                || desired.ContainsKey(managedPath))
+            if (
+                !managedPath.StartsWith(prefix, StringComparison.Ordinal)
+                || desired.ContainsKey(managedPath)
+            )
             {
                 continue;
             }
@@ -1043,7 +1139,8 @@ public static class Deployer
                 {
                     throw new SeikoException(
                         $"path conflict: {relative} contains a link at {Path.GetRelativePath(root, entry)}",
-                        "deploy");
+                        "deploy"
+                    );
                 }
 
                 var child = Path.GetRelativePath(root, entry).Replace('\\', '/');
@@ -1053,7 +1150,8 @@ public static class Deployer
                     {
                         throw new SeikoException(
                             $"path conflict: {relative} is a directory containing unmanaged directory {child}; pass --force to replace it",
-                            "deploy");
+                            "deploy"
+                        );
                     }
 
                     if (!force || allowedDirectories.Contains(child))
@@ -1070,7 +1168,8 @@ public static class Deployer
                     {
                         throw new SeikoException(
                             $"path conflict: {relative} is a directory containing unmanaged file {child}; pass --force to replace it",
-                            "deploy");
+                            "deploy"
+                        );
                     }
                 }
             }
@@ -1103,18 +1202,16 @@ public static class Deployer
             var directory = created[i];
             try
             {
-                if (Directory.Exists(directory)
-                    && !Directory.EnumerateFileSystemEntries(directory).Any())
+                if (
+                    Directory.Exists(directory)
+                    && !Directory.EnumerateFileSystemEntries(directory).Any()
+                )
                 {
                     Directory.Delete(directory);
                 }
             }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -1124,7 +1221,8 @@ public static class Deployer
         SeikoLock lockFile,
         byte[] config,
         IReadOnlyDictionary<string, string>? adoptedFiles = null,
-        string? staging = null)
+        string? staging = null
+    )
     {
         var directory = Path.Combine(stateDirectory, "generations", state.Generation.ToString());
         Directory.CreateDirectory(directory);
@@ -1132,10 +1230,13 @@ public static class Deployer
             Path.Combine(directory, "meta.json"),
             JsonSerializer.Serialize(
                 new GenerationMeta { CreatedAt = DateTimeOffset.UtcNow },
-                SeikoJsonContext.Default.GenerationMeta));
+                SeikoJsonContext.Default.GenerationMeta
+            )
+        );
         WriteAtomic(
             Path.Combine(directory, "state.json"),
-            JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState));
+            JsonSerializer.Serialize(state, SeikoJsonContext.Default.LocalState)
+        );
         LockFile.Write(Path.Combine(directory, "lock.json"), lockFile);
         WriteAtomic(Path.Combine(directory, "seiko.conf"), config);
 
@@ -1147,7 +1248,8 @@ public static class Deployer
         var adoptedDirectory = Path.Combine(directory, "adopted");
         staging ??= Path.Combine(
             directory,
-            DeploymentTransaction.AdoptedStagingPrefix + Guid.NewGuid().ToString("N"));
+            DeploymentTransaction.AdoptedStagingPrefix + Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(staging);
         try
         {
@@ -1189,30 +1291,26 @@ public static class Deployer
                 {
                     Directory.Delete(path, recursive: true);
                 }
-                catch (IOException)
-                {
-                }
-                catch (UnauthorizedAccessException)
-                {
-                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
         }
     }
 
-    private static void WriteInstalledManifests(IReadOnlyList<string> paths, IReadOnlyList<DeployedSei> sei)
+    private static void WriteInstalledManifests(
+        IReadOnlyList<string> paths,
+        IReadOnlyList<DeployedSei> sei
+    )
     {
         for (var i = 0; i < paths.Count; i++)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(paths[i])!);
-            File.Copy(
-                Path.Combine(sei[i].Directory, "sei.json"),
-                paths[i],
-                overwrite: true);
+            File.Copy(Path.Combine(sei[i].Directory, "sei.json"), paths[i], overwrite: true);
         }
     }
 
-    private static string? GetModeText(Dictionary<string, string>? modes, string relative)
-        => modes is not null && modes.TryGetValue(relative, out var text) ? text : null;
+    private static string? GetModeText(Dictionary<string, string>? modes, string relative) =>
+        modes is not null && modes.TryGetValue(relative, out var text) ? text : null;
 
     private static int ParseModeValue(string relative, string text)
     {
@@ -1225,7 +1323,8 @@ public static class Deployer
         {
             throw new SeikoException(
                 $"mode '{text}' for {relative} sets setuid/setgid/sticky; only 0000-0777 is allowed",
-                "deploy");
+                "deploy"
+            );
         }
 
         return value;
@@ -1234,7 +1333,8 @@ public static class Deployer
     private static bool TryParseMode(
         string relative,
         Dictionary<string, string>? modes,
-        out UnixFileMode mode)
+        out UnixFileMode mode
+    )
     {
         mode = default;
         if (modes is null || !modes.TryGetValue(relative, out var text))
@@ -1291,14 +1391,17 @@ public static class Deployer
             || relative.StartsWith(".seiko/", comparison);
     }
 
-    private static string Relative(string root, string path)
-        => Path.GetRelativePath(root, path).Replace('\\', '/');
+    private static string Relative(string root, string path) =>
+        Path.GetRelativePath(root, path).Replace('\\', '/');
 
-    private static string Native(string root, string relative)
-        => RootedPath.Resolve(root, RelativePath.Parse(relative));
+    private static string Native(string root, string relative) =>
+        RootedPath.Resolve(root, RelativePath.Parse(relative));
 
-    private static void WriteAtomic(string path, string contents)
-        => WriteAtomic(path, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents));
+    private static void WriteAtomic(string path, string contents) =>
+        WriteAtomic(
+            path,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents)
+        );
 
     private static void WriteAtomic(string path, byte[] contents)
     {
@@ -1310,7 +1413,11 @@ public static class Deployer
     // CreatedHere marks a target that did not exist when the plan was made.
     // Publishing it must not overwrite a file another process created in the
     // meantime; the transaction knows no backup for that file (ADR-0019).
-    private sealed record Mutation(string RelativePath, DesiredFile? File, bool CreatedHere = false);
+    private sealed record Mutation(
+        string RelativePath,
+        DesiredFile? File,
+        bool CreatedHere = false
+    );
 
     private static string HashStoredFile(DeployedSei sei, string file, string relative)
     {
@@ -1320,8 +1427,10 @@ public static class Deployer
             return actual;
         }
 
-        if (!sei.Digests.TryGetValue(relative, out var digest)
-            || !actual.Equals(digest.Sha256, StringComparison.Ordinal))
+        if (
+            !sei.Digests.TryGetValue(relative, out var digest)
+            || !actual.Equals(digest.Sha256, StringComparison.Ordinal)
+        )
         {
             throw CorruptStore(sei, relative);
         }
@@ -1338,13 +1447,14 @@ public static class Deployer
         }
     }
 
-    private static SeikoException CorruptStore(DeployedSei sei, string relative)
-        => CorruptStore(sei.Directory, Path.Combine(sei.Directory, relative));
+    private static SeikoException CorruptStore(DeployedSei sei, string relative) =>
+        CorruptStore(sei.Directory, Path.Combine(sei.Directory, relative));
 
-    private static SeikoException CorruptStore(string storeDirectory, string path)
-        => new(
+    private static SeikoException CorruptStore(string storeDirectory, string path) =>
+        new(
             $"store artifact is corrupted ({path}); delete {storeDirectory} and run `sk sync` to download it again",
-            "checksum");
+            "checksum"
+        );
 
     private sealed class DesiredFile
     {

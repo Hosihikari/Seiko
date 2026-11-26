@@ -9,7 +9,8 @@ namespace Seiko;
     // `prerequisits` verified clean because nothing read it (ADR-0036 reports
     // unknown fields; this makes deserialization say so instead of guessing).
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+)]
 [JsonSerializable(typeof(SeiManifest))]
 [JsonSerializable(typeof(ArtifactManifest))]
 [JsonSerializable(typeof(ExternalFile))]
@@ -25,6 +26,4 @@ namespace Seiko;
 [JsonSerializable(typeof(RootRegistryState))]
 [JsonSerializable(typeof(GenerationMeta))]
 [JsonSerializable(typeof(StoreDigestsState))]
-public partial class SeikoJsonContext : JsonSerializerContext
-{
-}
+public partial class SeikoJsonContext : JsonSerializerContext { }

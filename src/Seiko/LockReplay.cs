@@ -11,16 +11,20 @@ public static class LockReplay
     {
         // The origin source may be wrapped (the offline probe does that); the
         // binding has to reach the instance that actually builds indices.
-        var found = sources.FirstOrDefault(
-            source => string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal));
+        var found = sources.FirstOrDefault(source =>
+            string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal)
+        );
         found = found is ISourceWrapper wrapper ? wrapper.InnerSource : found;
         if (found is not OriginSource origin)
         {
             return;
         }
 
-        foreach (var locked in lockFile.Sei.Where(
-            sei => sei.OriginPath is not null && sei.Source == OriginPaths.SourceId))
+        foreach (
+            var locked in lockFile.Sei.Where(sei =>
+                sei.OriginPath is not null && sei.Source == OriginPaths.SourceId
+            )
+        )
         {
             origin.PreferLocked(locked.Name, locked);
         }
@@ -29,14 +33,17 @@ public static class LockReplay
     public static IReadOnlyList<ResolvedSei> Resolve(
         IReadOnlyList<ISeiSource> sources,
         SeikoLock lockFile,
-        IReadOnlyList<SeiSpec> specs)
+        IReadOnlyList<SeiSpec> specs
+    )
     {
         ValidateGraph(lockFile);
         var declared = new HashSet<string>(StringComparer.Ordinal);
         foreach (var spec in specs)
         {
             declared.Add(spec.Name);
-            var locked = lockFile.Sei.FirstOrDefault(p => string.Equals(p.Name, spec.Name, StringComparison.Ordinal));
+            var locked = lockFile.Sei.FirstOrDefault(p =>
+                string.Equals(p.Name, spec.Name, StringComparison.Ordinal)
+            );
             if (locked is null)
             {
                 throw Fail($"--frozen: {spec.Name} is not in the lock");
@@ -48,9 +55,13 @@ public static class LockReplay
             }
 
             var range = ParseRange(spec.Version, spec.Name);
-            if (!NuGetVersion.TryParse(locked.Version, out var version) || !range.Satisfies(version))
+            if (
+                !NuGetVersion.TryParse(locked.Version, out var version) || !range.Satisfies(version)
+            )
             {
-                throw Fail($"--frozen: locked {spec.Name} {locked.Version} does not satisfy {range}");
+                throw Fail(
+                    $"--frozen: locked {spec.Name} {locked.Version} does not satisfy {range}"
+                );
             }
         }
 
@@ -65,69 +76,94 @@ public static class LockReplay
         var result = new List<ResolvedSei>();
         foreach (var locked in lockFile.Sei.OrderBy(p => p.Name, StringComparer.Ordinal))
         {
-            var source = sources.FirstOrDefault(s => string.Equals(s.Id, locked.Source, StringComparison.Ordinal))
+            var source =
+                sources.FirstOrDefault(s =>
+                    string.Equals(s.Id, locked.Source, StringComparison.Ordinal)
+                )
                 ?? throw Fail(
-                    $"--frozen: source '{locked.Source}' for {locked.Name} is not configured");
+                    $"--frozen: source '{locked.Source}' for {locked.Name} is not configured"
+                );
 
-            var index = source.GetSei(locked.Name)
+            var index =
+                source.GetSei(locked.Name)
                 ?? throw Fail($"--frozen: {locked.Name} is not in source '{locked.Source}'");
             SourceValidation.EnsureIndex(index, locked.Source, "lock");
             if (!NuGetVersion.TryParse(locked.Version, out var version))
             {
-                throw Fail($"--frozen: invalid locked version '{locked.Version}' for {locked.Name}");
+                throw Fail(
+                    $"--frozen: invalid locked version '{locked.Version}' for {locked.Name}"
+                );
             }
 
-            var matches = index.Versions
-                .Where(entry => NuGetVersion.TryParse(entry.Version, out var entryVersion)
-                    && entryVersion.Equals(version))
+            var matches = index
+                .Versions.Where(entry =>
+                    NuGetVersion.TryParse(entry.Version, out var entryVersion)
+                    && entryVersion.Equals(version)
+                )
                 .ToList();
             if (matches.Count == 0)
             {
-                throw Fail($"--frozen: {locked.Name} {locked.Version} not found in source '{locked.Source}'");
+                throw Fail(
+                    $"--frozen: {locked.Name} {locked.Version} not found in source '{locked.Source}'"
+                );
             }
 
             if (matches.Count > 1)
             {
-                throw Fail($"--frozen: {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'");
+                throw Fail(
+                    $"--frozen: {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'"
+                );
             }
 
             var entry = matches[0];
 
-            var sameDigest = entry.Artifacts
-                .Where(artifact => string.Equals(
-                    artifact.Source?.Sha256,
-                    locked.Artifact.Sha256,
-                    StringComparison.OrdinalIgnoreCase))
+            var sameDigest = entry
+                .Artifacts.Where(artifact =>
+                    string.Equals(
+                        artifact.Source?.Sha256,
+                        locked.Artifact.Sha256,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 .ToList();
             if (sameDigest.Count == 0)
             {
                 throw Fail(
-                    $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'");
+                    $"--frozen: artifact {locked.Artifact.Sha256} for {locked.Name} {locked.Version} is not in source '{locked.Source}'"
+                );
             }
 
-            var match = MatchArtifact(sameDigest, locked)
+            var match =
+                MatchArtifact(sameDigest, locked)
                 ?? throw Fail(
-                    $"--frozen: artifact metadata of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
+                    $"--frozen: artifact metadata of {locked.Name} {locked.Version} changed in source '{locked.Source}'"
+                );
 
-            if (!DependenciesEqual(entry.Dependencies, locked.Dependencies)
+            if (
+                !DependenciesEqual(entry.Dependencies, locked.Dependencies)
                 || !DependenciesEqual(entry.Prerequisites, locked.Prerequisites)
                 || !DependenciesEqual(entry.OptionalPeers, locked.OptionalPeers)
-                || !DependenciesEqual(entry.Conflicts, locked.Conflicts))
+                || !DependenciesEqual(entry.Conflicts, locked.Conflicts)
+            )
             {
-                throw Fail($"--frozen: relations of {locked.Name} {locked.Version} changed in source '{locked.Source}'");
+                throw Fail(
+                    $"--frozen: relations of {locked.Name} {locked.Version} changed in source '{locked.Source}'"
+                );
             }
 
-            result.Add(new ResolvedSei
-            {
-                Name = locked.Name,
-                ParsedVersion = version,
-                Entry = entry,
-                Source = source,
-                Direct = locked.Direct,
-                Artifact = match.Artifact,
-                GroupIndex = match.Group,
-                PackageDeprecated = index.Deprecated,
-            });
+            result.Add(
+                new ResolvedSei
+                {
+                    Name = locked.Name,
+                    ParsedVersion = version,
+                    Entry = entry,
+                    Source = source,
+                    Direct = locked.Direct,
+                    Artifact = match.Artifact,
+                    GroupIndex = match.Group,
+                    PackageDeprecated = index.Deprecated,
+                }
+            );
         }
 
         CrossSourceCheck.Verify(sources, result, "lock");
@@ -139,37 +175,46 @@ public static class LockReplay
     // metadata change even if some other group merges to the same relations.
     private static (ArtifactEntry Artifact, int? Group)? MatchArtifact(
         IEnumerable<ArtifactEntry> candidates,
-        LockedSei locked)
+        LockedSei locked
+    )
     {
         var matches = candidates
-            .Where(artifact => string.Equals(
-                artifact.Rid,
-                locked.Artifact.Rid,
-                StringComparison.OrdinalIgnoreCase))
             .Where(artifact =>
-                (artifact.DependencyGroups is { Count: > 0 }) == (locked.Artifact.Group is not null))
-            .Where(artifact => locked.Artifact.Group is not { } group
-                || group < (artifact.DependencyGroups?.Count ?? 0))
+                string.Equals(artifact.Rid, locked.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
+            )
+            .Where(artifact =>
+                (artifact.DependencyGroups is { Count: > 0 }) == (locked.Artifact.Group is not null)
+            )
+            .Where(artifact =>
+                locked.Artifact.Group is not { } group
+                || group < (artifact.DependencyGroups?.Count ?? 0)
+            )
             .Where(artifact =>
                 DependenciesEqual(
                     DependencyGroups.Dependencies(artifact, locked.Artifact.Group),
-                    locked.Artifact.Dependencies)
+                    locked.Artifact.Dependencies
+                )
                 && DependenciesEqual(
                     DependencyGroups.Prerequisites(artifact, locked.Artifact.Group),
-                    locked.Artifact.Prerequisites)
+                    locked.Artifact.Prerequisites
+                )
                 && DependenciesEqual(
                     DependencyGroups.OptionalPeers(artifact, locked.Artifact.Group),
-                    locked.Artifact.OptionalPeers)
+                    locked.Artifact.OptionalPeers
+                )
                 && DependenciesEqual(
                     DependencyGroups.Conflicts(artifact, locked.Artifact.Group),
-                    locked.Artifact.Conflicts))
+                    locked.Artifact.Conflicts
+                )
+            )
             .Select(artifact => (Artifact: artifact, Group: locked.Artifact.Group))
             .ToList();
 
         if (matches.Count > 1)
         {
             throw Fail(
-                $"--frozen: artifact for {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'");
+                $"--frozen: artifact for {locked.Name} {locked.Version} is ambiguous in source '{locked.Source}'"
+            );
         }
 
         return matches.Count == 1 ? matches[0] : null;
@@ -180,11 +225,17 @@ public static class LockReplay
         // A lock is only valid for the platform it was produced on (ADR-0025).
         foreach (var locked in lockFile.Sei)
         {
-            if (!string.IsNullOrWhiteSpace(locked.Artifact.Rid)
-                && !locked.Artifact.Rid.Equals(lockFile.Target.Rid, StringComparison.OrdinalIgnoreCase))
+            if (
+                !string.IsNullOrWhiteSpace(locked.Artifact.Rid)
+                && !locked.Artifact.Rid.Equals(
+                    lockFile.Target.Rid,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 throw Fail(
-                    $"--frozen: artifact of {locked.Name} {locked.Version} targets rid '{locked.Artifact.Rid}', but the lock targets '{lockFile.Target.Rid}'");
+                    $"--frozen: artifact of {locked.Name} {locked.Version} targets rid '{locked.Artifact.Rid}', but the lock targets '{lockFile.Target.Rid}'"
+                );
             }
         }
 
@@ -209,30 +260,65 @@ public static class LockReplay
                 if (!byName.TryGetValue(dependency.Name, out var dependencyLocked))
                 {
                     throw Fail(
-                        $"--frozen: {locked.Name} requires {dependency.Name}, which is missing from the lock");
+                        $"--frozen: {locked.Name} requires {dependency.Name}, which is missing from the lock"
+                    );
                 }
 
                 var range = ParseRange(dependency.Version, dependency.Name);
-                if (!NuGetVersion.TryParse(dependencyLocked.Version, out var dependencyVersion)
-                    || !range.Satisfies(dependencyVersion))
+                if (
+                    !NuGetVersion.TryParse(dependencyLocked.Version, out var dependencyVersion)
+                    || !range.Satisfies(dependencyVersion)
+                )
                 {
                     throw Fail(
-                        $"--frozen: {locked.Name} requires {dependency.Name} {dependency.Version}, but the lock has {dependencyLocked.Version}");
+                        $"--frozen: {locked.Name} requires {dependency.Name} {dependency.Version}, but the lock has {dependencyLocked.Version}"
+                    );
                 }
             }
 
-            ValidateRelations(byName, locked, locked.Prerequisites, "prerequisite", requirePresent: true);
-            ValidateRelations(byName, locked, locked.OptionalPeers, "optional peer", requirePresent: false);
+            ValidateRelations(
+                byName,
+                locked,
+                locked.Prerequisites,
+                "prerequisite",
+                requirePresent: true
+            );
+            ValidateRelations(
+                byName,
+                locked,
+                locked.OptionalPeers,
+                "optional peer",
+                requirePresent: false
+            );
             ValidateConflicts(byName, locked, locked.Conflicts);
-            ValidateRelations(byName, locked, locked.Artifact.Dependencies, "artifact dependency", requirePresent: true);
-            ValidateRelations(byName, locked, locked.Artifact.Prerequisites, "artifact prerequisite", requirePresent: true);
-            ValidateRelations(byName, locked, locked.Artifact.OptionalPeers, "artifact optional peer", requirePresent: false);
+            ValidateRelations(
+                byName,
+                locked,
+                locked.Artifact.Dependencies,
+                "artifact dependency",
+                requirePresent: true
+            );
+            ValidateRelations(
+                byName,
+                locked,
+                locked.Artifact.Prerequisites,
+                "artifact prerequisite",
+                requirePresent: true
+            );
+            ValidateRelations(
+                byName,
+                locked,
+                locked.Artifact.OptionalPeers,
+                "artifact optional peer",
+                requirePresent: false
+            );
             ValidateConflicts(byName, locked, locked.Artifact.Conflicts);
         }
 
         var reachable = new HashSet<string>(StringComparer.Ordinal);
         var pending = new Stack<string>(
-            lockFile.Sei.Where(entry => entry.Direct).Select(entry => entry.Name));
+            lockFile.Sei.Where(entry => entry.Direct).Select(entry => entry.Name)
+        );
         while (pending.Count > 0)
         {
             var name = pending.Pop();
@@ -241,8 +327,10 @@ public static class LockReplay
                 continue;
             }
 
-            foreach (var dependency in byName[name].Dependencies
-                .Concat(byName[name].Artifact.Dependencies))
+            foreach (
+                var dependency in byName[name]
+                    .Dependencies.Concat(byName[name].Artifact.Dependencies)
+            )
             {
                 pending.Push(dependency.Name);
             }
@@ -253,7 +341,8 @@ public static class LockReplay
             if (!reachable.Contains(locked.Name))
             {
                 throw Fail(
-                    $"--frozen: {locked.Name} is not reachable from the direct declarations");
+                    $"--frozen: {locked.Name} is not reachable from the direct declarations"
+                );
             }
         }
     }
@@ -263,7 +352,8 @@ public static class LockReplay
         LockedSei owner,
         List<SeiDependency>? relations,
         string kind,
-        bool requirePresent)
+        bool requirePresent
+    )
     {
         foreach (var relation in relations ?? [])
         {
@@ -280,15 +370,19 @@ public static class LockReplay
                 }
 
                 throw Fail(
-                    $"--frozen: {owner.Name} {owner.Version} has {kind} {relation.Name}, which is missing from the lock");
+                    $"--frozen: {owner.Name} {owner.Version} has {kind} {relation.Name}, which is missing from the lock"
+                );
             }
 
             var range = ParseRange(relation.Version, relation.Name);
-            if (!NuGetVersion.TryParse(target.Version, out var targetVersion)
-                || !range.Satisfies(targetVersion))
+            if (
+                !NuGetVersion.TryParse(target.Version, out var targetVersion)
+                || !range.Satisfies(targetVersion)
+            )
             {
                 throw Fail(
-                    $"--frozen: {owner.Name} {owner.Version} requires {kind} {relation.Name} {relation.Version}, but the lock has {target.Version}");
+                    $"--frozen: {owner.Name} {owner.Version} requires {kind} {relation.Name} {relation.Version}, but the lock has {target.Version}"
+                );
             }
         }
     }
@@ -296,7 +390,8 @@ public static class LockReplay
     private static void ValidateConflicts(
         Dictionary<string, LockedSei> byName,
         LockedSei owner,
-        List<SeiDependency>? conflicts)
+        List<SeiDependency>? conflicts
+    )
     {
         foreach (var conflict in conflicts ?? [])
         {
@@ -305,11 +400,14 @@ public static class LockReplay
                 continue;
             }
 
-            if (NuGetVersion.TryParse(target.Version, out var targetVersion)
-                && ParseRange(conflict.Version, conflict.Name).Satisfies(targetVersion))
+            if (
+                NuGetVersion.TryParse(target.Version, out var targetVersion)
+                && ParseRange(conflict.Version, conflict.Name).Satisfies(targetVersion)
+            )
             {
                 throw Fail(
-                    $"--frozen: {owner.Name} {owner.Version} conflicts with {conflict.Name} {target.Version}");
+                    $"--frozen: {owner.Name} {owner.Version} conflicts with {conflict.Name} {target.Version}"
+                );
             }
         }
     }
@@ -337,12 +435,21 @@ public static class LockReplay
         {
             var a = left[i];
             var b = right[i];
-            if (!string.Equals(a.Name, b.Name, StringComparison.Ordinal)
+            if (
+                !string.Equals(a.Name, b.Name, StringComparison.Ordinal)
                 || !string.Equals(a.Version, b.Version, StringComparison.Ordinal)
                 || !string.Equals(a.Source, b.Source, StringComparison.Ordinal)
                 || a.Direct != b.Direct
-                || !string.Equals(a.Artifact.Sha256, b.Artifact.Sha256, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(a.Artifact.Rid, b.Artifact.Rid, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(
+                    a.Artifact.Sha256,
+                    b.Artifact.Sha256,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || !string.Equals(
+                    a.Artifact.Rid,
+                    b.Artifact.Rid,
+                    StringComparison.OrdinalIgnoreCase
+                )
                 || a.Artifact.Group != b.Artifact.Group
                 || !DependenciesEqual(a.Dependencies, b.Dependencies)
                 || !DependenciesEqual(a.Prerequisites, b.Prerequisites)
@@ -351,7 +458,8 @@ public static class LockReplay
                 || !DependenciesEqual(a.Artifact.Dependencies, b.Artifact.Dependencies)
                 || !DependenciesEqual(a.Artifact.Prerequisites, b.Artifact.Prerequisites)
                 || !DependenciesEqual(a.Artifact.OptionalPeers, b.Artifact.OptionalPeers)
-                || !DependenciesEqual(a.Artifact.Conflicts, b.Artifact.Conflicts))
+                || !DependenciesEqual(a.Artifact.Conflicts, b.Artifact.Conflicts)
+            )
             {
                 return $"{a.Name} differs";
             }
@@ -373,9 +481,15 @@ public static class LockReplay
             .ThenBy(d => d.Version ?? "", StringComparer.Ordinal)
             .ToList();
         return a.Count == b.Count
-            && a.Zip(b).All(pair =>
-                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
-                && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
+            && a.Zip(b)
+                .All(pair =>
+                    string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                    && string.Equals(
+                        pair.First.Version ?? "",
+                        pair.Second.Version ?? "",
+                        StringComparison.Ordinal
+                    )
+                );
     }
 
     private static VersionRange ParseRange(string? text, string sei)

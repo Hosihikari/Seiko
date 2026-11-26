@@ -43,12 +43,19 @@ public sealed class IndexVerifierTests
     {
         using var fixture = NewFixture();
         var path = Path.Combine(fixture.SourceDirectory, "index.json");
-        File.WriteAllText(path, File.ReadAllText(path).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1"));
+        File.WriteAllText(
+            path,
+            File.ReadAllText(path).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1")
+        );
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "index-schema" && finding.Message.Contains("unsupported index schemaVersion"));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "index-schema"
+                && finding.Message.Contains("unsupported index schemaVersion")
+        );
     }
 
     [Fact]
@@ -134,8 +141,10 @@ public sealed class IndexVerifierTests
 
         Assert.Contains(
             result.Findings,
-            finding => finding.Code == "manifest-mismatch"
-                && finding.Message.Contains("dependency", StringComparison.Ordinal));
+            finding =>
+                finding.Code == "manifest-mismatch"
+                && finding.Message.Contains("dependency", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -146,8 +155,9 @@ public sealed class IndexVerifierTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello"));
         var client = new SeikoClient();
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("dependency", error.Message, StringComparison.Ordinal);
@@ -158,11 +168,7 @@ public sealed class IndexVerifierTests
     {
         using var fixture = NewFixture();
         var sei = ReadSei(fixture, "hello");
-        sei.Versions[0].Advisory = new AdvisoryInfo
-        {
-            Severity = "urgent",
-            Url = "not a url",
-        };
+        sei.Versions[0].Advisory = new AdvisoryInfo { Severity = "urgent", Url = "not a url" };
         WriteSei(fixture, "hello", sei);
         fixture.RefreshCatalog();
 
@@ -176,21 +182,20 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsDuplicateNormalizedArchivePaths()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["hello.txt"] = "one",
-                        ["./hello.txt"] = "two",
+                        Files = { ["hello.txt"] = "one", ["./hello.txt"] = "two" },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -202,21 +207,14 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsCaseEquivalentArchivePaths()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
-                    {
-                        ["A.txt"] = "a",
-                        ["a.txt"] = "b",
-                    },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["A.txt"] = "a", ["a.txt"] = "b" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -228,21 +226,14 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsNormalizationEquivalentArchivePaths()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
-                    {
-                        ["é.txt"] = "a",
-                        ["é.txt"] = "b",
-                    },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["é.txt"] = "a", ["é.txt"] = "b" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -254,21 +245,17 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsCaseEquivalentFileAndDirectoryPrefixes()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
-                    {
-                        ["Tool"] = "a",
-                        ["tool/data"] = "b",
-                    },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture { Files = { ["Tool"] = "a", ["tool/data"] = "b" } },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -280,11 +267,14 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsUnsafeArchivePaths()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["foo:bar"] = "x" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["foo:bar"] = "x" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -296,17 +286,20 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsOverlongArchivePaths()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [new string('a', ArchiveLimits.MaxEntryNameLength + 1)] = "x" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [new string('a', ArchiveLimits.MaxEntryNameLength + 1)] = "x" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -318,20 +311,15 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsTooDeepArchivePaths()
     {
         using var fixture = new Fixture();
-        var directory = string.Join(
-            '/',
-            Enumerable.Repeat("a", ArchiveLimits.MaxEntryNameDepth));
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [directory + "/x"] = "x" },
-                },
-            ],
-        });
+        var directory = string.Join('/', Enumerable.Repeat("a", ArchiveLimits.MaxEntryNameDepth));
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [directory + "/x"] = "x" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -357,11 +345,14 @@ public sealed class IndexVerifierTests
             files["tool/x"] = "x";
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = files }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = files }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -434,18 +425,21 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsPrivilegedModes()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["hello.txt"] = "04755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["hello.txt"] = "04755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -457,18 +451,21 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsAModeForAFileTheArtifactDoesNotDeploy()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    Modes = new Dictionary<string, string> { ["nope.txt"] = "0755" },
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        Modes = new Dictionary<string, string> { ["nope.txt"] = "0755" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -480,12 +477,15 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsInvalidPrerequisiteRange()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Prerequisites = [new DepFixture("marker", "not-a-range")],
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Prerequisites = [new DepFixture("marker", "not-a-range")],
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -556,7 +556,12 @@ public sealed class IndexVerifierTests
     public void Verify_AcceptsExternalDeclarationsWithoutDownloading()
     {
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("vendor/server.bin", "https://vendor.invalid/server.bin", "data"));
+            new ExternalFileFixture(
+                "vendor/server.bin",
+                "https://vendor.invalid/server.bin",
+                "data"
+            )
+        );
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -571,7 +576,8 @@ public sealed class IndexVerifierTests
         // the length check used to dereference it and the verifier's catch
         // list has no NullReferenceException, so the whole run crashed.
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("vendor/server.bin", "https://vendor.invalid/x", "data"));
+            new ExternalFileFixture("vendor/server.bin", "https://vendor.invalid/x", "data")
+        );
         var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
         var node = JsonNode.Parse(File.ReadAllText(path))!;
         node["versions"]![0]!["artifacts"]![0]!["externalFiles"]![0]!["path"] = null;
@@ -579,8 +585,12 @@ public sealed class IndexVerifierTests
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "artifact-external" && finding.Message.Contains("path is null", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "artifact-external"
+                && finding.Message.Contains("path is null", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -595,45 +605,65 @@ public sealed class IndexVerifierTests
         File.WriteAllText(path, node.ToJsonString());
 
         var nullElement = IndexVerifier.Verify(fixture.SourceDirectory);
-        Assert.Contains(nullElement.Findings, finding =>
-            finding.Code == "artifact-external" && finding.Message.Contains("declaration is null", StringComparison.Ordinal));
+        Assert.Contains(
+            nullElement.Findings,
+            finding =>
+                finding.Code == "artifact-external"
+                && finding.Message.Contains("declaration is null", StringComparison.Ordinal)
+        );
 
         node = JsonNode.Parse(File.ReadAllText(path))!;
         node["versions"]![0]!["artifacts"]![0]!.AsObject().Remove("externalFiles");
         node["versions"]![0]!["artifacts"]![0]!["externalArchives"] = JsonNode.Parse(
-            "[{\"url\":\"https://vendor.invalid/z.zip\",\"sha256\":\"" + new string('a', 64)
-            + "\",\"format\":\"zip\",\"members\":null}]");
+            "[{\"url\":\"https://vendor.invalid/z.zip\",\"sha256\":\""
+                + new string('a', 64)
+                + "\",\"format\":\"zip\",\"members\":null}]"
+        );
         File.WriteAllText(path, node.ToJsonString());
 
         var nullMembers = IndexVerifier.Verify(fixture.SourceDirectory);
-        Assert.Contains(nullMembers.Findings, finding =>
-            finding.Code == "artifact-external" && finding.Message.Contains("has no members", StringComparison.Ordinal));
+        Assert.Contains(
+            nullMembers.Findings,
+            finding =>
+                finding.Code == "artifact-external"
+                && finding.Message.Contains("has no members", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
     public void Verify_RejectsExternalUrlWithUserinfo()
-    {        using var fixture = ExternalFixture(
+    {
+        using var fixture = ExternalFixture(
             new ExternalFileFixture(
                 "vendor/server.bin",
                 "https://user:secret@vendor.invalid/server.bin",
-                "data"));
+                "data"
+            )
+        );
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "artifact-external" && finding.Message.Contains("userinfo"));
+        Assert.Contains(
+            result.Findings,
+            finding => finding.Code == "artifact-external" && finding.Message.Contains("userinfo")
+        );
     }
 
     [Fact]
     public void Verify_RejectsExternalTargetInsideTheZip()
     {
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("hello.txt", "https://vendor.invalid/hello.txt", "data"));
+            new ExternalFileFixture("hello.txt", "https://vendor.invalid/hello.txt", "data")
+        );
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-external" && finding.Message.Contains("also exists inside"));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-external"
+                && finding.Message.Contains("also exists inside")
+        );
     }
 
     [Fact]
@@ -643,13 +673,17 @@ public sealed class IndexVerifierTests
         // case, which deployment folds. The zip content is only known with
         // --check-artifacts.
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("HELLO.txt", "https://vendor.invalid/hello.txt", "data"));
+            new ExternalFileFixture("HELLO.txt", "https://vendor.invalid/hello.txt", "data")
+        );
 
         var checkedResult = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(checkedResult.Findings, finding =>
-            finding.Code == "manifest-external"
-            && finding.Message.Contains("also exists inside", StringComparison.Ordinal));
+        Assert.Contains(
+            checkedResult.Findings,
+            finding =>
+                finding.Code == "manifest-external"
+                && finding.Message.Contains("also exists inside", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -659,8 +693,18 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Artifacts[0].ExternalFiles =
         [
-            new ExternalFile { Path = "one.txt", Url = "https://vendor.invalid/1", Sha256 = new string('a', 64) },
-            new ExternalFile { Path = "ONE.txt", Url = "https://vendor.invalid/2", Sha256 = new string('b', 64) },
+            new ExternalFile
+            {
+                Path = "one.txt",
+                Url = "https://vendor.invalid/1",
+                Sha256 = new string('a', 64),
+            },
+            new ExternalFile
+            {
+                Path = "ONE.txt",
+                Url = "https://vendor.invalid/2",
+                Sha256 = new string('b', 64),
+            },
         ];
         WriteSei(fixture, "hello", sei);
         fixture.RefreshCatalog();
@@ -668,8 +712,14 @@ public sealed class IndexVerifierTests
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
         Assert.Contains(result.Findings, finding => finding.Code == "artifact-external");
-        Assert.Contains(result.Findings, finding =>
-            finding.Message.Contains("by case or Unicode normalization", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Message.Contains(
+                    "by case or Unicode normalization",
+                    StringComparison.Ordinal
+                )
+        );
     }
 
     [Fact]
@@ -680,7 +730,8 @@ public sealed class IndexVerifierTests
         // and escapes the typed catch list. The summary is deliberately wrong
         // so a comparison that did run would add a second finding.
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data")
+        );
         var sei = ReadSei(fixture, "hello");
         var entry = sei.Versions[0].Artifacts[0];
         entry.ExternalFiles![0].Size = long.MaxValue;
@@ -704,7 +755,8 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsAWrongExternalSummaryHost()
     {
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data")
+        );
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Artifacts[0].External = new ExternalSummary
         {
@@ -723,7 +775,8 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsAWrongExternalSummarySize()
     {
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data")
+        );
         var sei = ReadSei(fixture, "hello");
         var entry = sei.Versions[0].Artifacts[0];
         entry.External = new ExternalSummary
@@ -744,7 +797,8 @@ public sealed class IndexVerifierTests
     public void Verify_AcceptsAMatchingExternalSummary()
     {
         using var fixture = ExternalFixture(
-            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data"));
+            new ExternalFileFixture("vendor.bin", "https://vendor.invalid/vendor.bin", "data")
+        );
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Artifacts[0].External = new ExternalSummary
         {
@@ -757,7 +811,10 @@ public sealed class IndexVerifierTests
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
-        Assert.DoesNotContain(result.Findings, finding => finding.Code == "artifact-external-summary");
+        Assert.DoesNotContain(
+            result.Findings,
+            finding => finding.Code == "artifact-external-summary"
+        );
     }
 
     [Fact]
@@ -784,28 +841,34 @@ public sealed class IndexVerifierTests
         // The zip has dir/child.txt; the external target is dir, so the
         // external file needs dir to be a file. Order must not matter.
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["dir/child.txt"] = "child" },
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("dir", "https://vendor.invalid/dir", "data"),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["dir/child.txt"] = "child" },
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture("dir", "https://vendor.invalid/dir", "data"),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-external"
-            && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-external"
+                && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -815,17 +878,30 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Artifacts[0].ExternalFiles =
         [
-            new ExternalFile { Path = "dir/child.txt", Url = "https://vendor.invalid/c", Sha256 = new string('a', 64) },
-            new ExternalFile { Path = "dir", Url = "https://vendor.invalid/d", Sha256 = new string('b', 64) },
+            new ExternalFile
+            {
+                Path = "dir/child.txt",
+                Url = "https://vendor.invalid/c",
+                Sha256 = new string('a', 64),
+            },
+            new ExternalFile
+            {
+                Path = "dir",
+                Url = "https://vendor.invalid/d",
+                Sha256 = new string('b', 64),
+            },
         ];
         WriteSei(fixture, "hello", sei);
         fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "artifact-external"
-            && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "artifact-external"
+                && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -834,22 +910,25 @@ public sealed class IndexVerifierTests
         // U+017F upper-cases to 'S' but OrdinalIgnoreCase does not equate them,
         // so an upper-folding sort would hide the S/s pair behind it.
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["S.txt"] = "upper",
-                        ["ſ.txt"] = "long-s",
-                        ["s.txt"] = "lower",
+                        Files =
+                        {
+                            ["S.txt"] = "upper",
+                            ["ſ.txt"] = "long-s",
+                            ["s.txt"] = "lower",
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -863,21 +942,20 @@ public sealed class IndexVerifierTests
         // The parent is added after its child by the archive order, so a
         // one-directional "earlier index" check would miss it.
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["dir/child.txt"] = "child",
-                        ["dir"] = "flat",
+                        Files = { ["dir/child.txt"] = "child", ["dir"] = "flat" },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -895,21 +973,24 @@ public sealed class IndexVerifierTests
         using var fixture = new Fixture();
         var ancestor = string.Join("/", Enumerable.Repeat("d", 500));
         var target = ancestor + "/" + string.Join("/", Enumerable.Repeat("e", 100));
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { [ancestor] = "x" },
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture(target, "https://vendor.invalid/x", "x"),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { [ancestor] = "x" },
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(target, "https://vendor.invalid/x", "x"),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         // Keep the declaration only inside the ZIP manifest: an index-level
@@ -951,11 +1032,14 @@ public sealed class IndexVerifierTests
             files[nested + $"/leaf{i}.txt"] = "x";
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = files }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = files }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -973,7 +1057,12 @@ public sealed class IndexVerifierTests
         var deep = string.Join("/", Enumerable.Repeat("d", 600));
         sei.Versions[0].Artifacts[0].ExternalFiles =
         [
-            new ExternalFile { Path = deep + ".bin", Url = "https://vendor.invalid/x", Sha256 = new string('a', 64) },
+            new ExternalFile
+            {
+                Path = deep + ".bin",
+                Url = "https://vendor.invalid/x",
+                Sha256 = new string('a', 64),
+            },
         ];
         WriteSei(fixture, "hello", sei);
         fixture.RefreshCatalog();
@@ -997,11 +1086,14 @@ public sealed class IndexVerifierTests
             files[$"top{i}/{depth}/leaf.txt"] = "x";
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = files }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = files }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1018,18 +1110,36 @@ public sealed class IndexVerifierTests
         var sei = ReadSei(fixture, "hello");
         sei.Versions[0].Artifacts[0].ExternalFiles =
         [
-            new ExternalFile { Path = "dir/x", Url = "https://vendor.invalid/x", Sha256 = new string('a', 64) },
-            new ExternalFile { Path = "dir!", Url = "https://vendor.invalid/bang", Sha256 = new string('b', 64) },
-            new ExternalFile { Path = "dir", Url = "https://vendor.invalid/dir", Sha256 = new string('c', 64) },
+            new ExternalFile
+            {
+                Path = "dir/x",
+                Url = "https://vendor.invalid/x",
+                Sha256 = new string('a', 64),
+            },
+            new ExternalFile
+            {
+                Path = "dir!",
+                Url = "https://vendor.invalid/bang",
+                Sha256 = new string('b', 64),
+            },
+            new ExternalFile
+            {
+                Path = "dir",
+                Url = "https://vendor.invalid/dir",
+                Sha256 = new string('c', 64),
+            },
         ];
         WriteSei(fixture, "hello", sei);
         fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "artifact-external"
-            && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "artifact-external"
+                && finding.Message.Contains("both a file and a directory", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1039,22 +1149,25 @@ public sealed class IndexVerifierTests
         // OrdinalIgnoreCase folds. Upper-casing UTF-16 units one at a time
         // cannot pair them, so a naive sort would leave them non-adjacent.
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files =
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        ["\U00010400.txt"] = "upper",
-                        ["\U00010401.txt"] = "middle",
-                        ["\U00010428.txt"] = "lower",
+                        Files =
+                        {
+                            ["\U00010400.txt"] = "upper",
+                            ["\U00010401.txt"] = "middle",
+                            ["\U00010428.txt"] = "lower",
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1068,7 +1181,8 @@ public sealed class IndexVerifierTests
         using var fixture = ExternalFixture(
             new ExternalFileFixture("\U00010400.txt", "https://vendor.invalid/a", "a"),
             new ExternalFileFixture("\U00010401.txt", "https://vendor.invalid/b", "b"),
-            new ExternalFileFixture("\U00010428.txt", "https://vendor.invalid/c", "c"));
+            new ExternalFileFixture("\U00010428.txt", "https://vendor.invalid/c", "c")
+        );
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
 
@@ -1107,8 +1221,10 @@ public sealed class IndexVerifierTests
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding => finding.Code == "artifact-size"
-            || finding.Code == "artifact-read");
+        Assert.Contains(
+            result.Findings,
+            finding => finding.Code == "artifact-size" || finding.Code == "artifact-read"
+        );
     }
 
     [Fact]
@@ -1155,14 +1271,18 @@ public sealed class IndexVerifierTests
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
 
         var started = DateTime.UtcNow;
-        Assert.ThrowsAny<OperationCanceledException>(() => IndexVerifier.Verify(
-            fixture.SourceDirectory,
-            checkArtifacts: true,
-            cancellationToken: cts.Token));
+        Assert.ThrowsAny<OperationCanceledException>(() =>
+            IndexVerifier.Verify(
+                fixture.SourceDirectory,
+                checkArtifacts: true,
+                cancellationToken: cts.Token
+            )
+        );
 
         Assert.True(
             DateTime.UtcNow - started < TimeSpan.FromSeconds(20),
-            "cancellation must interrupt the stalled body read");
+            "cancellation must interrupt the stalled body read"
+        );
     }
 
     [Fact]
@@ -1172,14 +1292,22 @@ public sealed class IndexVerifierTests
         using var server = new TestHttpServer(fixture.SourceDirectory);
         var sei = ReadSei(fixture, "hello");
         var source = sei.Versions[0].Artifacts[0].Source;
-        source.Url = server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url) + "?sig=REREVIEW_SENTINEL";
+        source.Url =
+            server.BaseUrl + "artifacts/" + Path.GetFileName(source.Url) + "?sig=REREVIEW_SENTINEL";
         WriteSei(fixture, "hello", sei);
         var logs = new List<string>();
 
-        var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true, log: logs.Add);
+        var result = IndexVerifier.Verify(
+            fixture.SourceDirectory,
+            checkArtifacts: true,
+            log: logs.Add
+        );
 
         Assert.Empty(result.Findings);
-        Assert.DoesNotContain(logs, line => line.Contains("REREVIEW_SENTINEL", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            logs,
+            line => line.Contains("REREVIEW_SENTINEL", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1231,16 +1359,20 @@ public sealed class IndexVerifierTests
     public void Sync_RejectsUnsafeDependencyName()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("../../escape", null)],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("../../escape", null)],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app"));
 
-        var exception = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var exception = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", exception.Code);
         Assert.Contains("invalid sei name", exception.Message);
@@ -1264,15 +1396,18 @@ public sealed class IndexVerifierTests
     public void Verify_RejectsAmbiguousArtifacts()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture { Files = { ["a.txt"] = "a" } },
-                new ArtifactFixture { Files = { ["b.txt"] = "b" } },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture { Files = { ["a.txt"] = "a" } },
+                    new ArtifactFixture { Files = { ["b.txt"] = "b" } },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
@@ -1284,28 +1419,30 @@ public sealed class IndexVerifierTests
     public void Verify_NormalizesEquivalentPrerequisiteRanges()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("marker", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["a.txt"] = "a" },
-                    Prerequisites = [new DepFixture("marker", null)],
-                },
-                new ArtifactFixture
-                {
-                    Files = { ["b.txt"] = "b" },
-                    Prerequisites = [new DepFixture("marker", "*")],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "marker",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["a.txt"] = "a" },
+                        Prerequisites = [new DepFixture("marker", null)],
+                    },
+                    new ArtifactFixture
+                    {
+                        Files = { ["b.txt"] = "b" },
+                        Prerequisites = [new DepFixture("marker", "*")],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory);
@@ -1381,11 +1518,14 @@ public sealed class IndexVerifierTests
     private static Fixture NewFixture()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         return fixture;
     }
@@ -1393,37 +1533,42 @@ public sealed class IndexVerifierTests
     private static Fixture ExternalFixture(params ExternalFileFixture[] files)
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    ExternalFiles = files.ToList(),
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        ExternalFiles = files.ToList(),
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
         return fixture;
     }
 
-    private static IndexRoot ReadIndex(Fixture fixture)
-        => JsonSerializer.Deserialize(
+    private static IndexRoot ReadIndex(Fixture fixture) =>
+        JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "index.json")),
-            SeikoJsonContext.Default.IndexRoot)!;
+            SeikoJsonContext.Default.IndexRoot
+        )!;
 
-    private static void WriteIndex(Fixture fixture, IndexRoot index)
-        => File.WriteAllBytes(
+    private static void WriteIndex(Fixture fixture, IndexRoot index) =>
+        File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.IndexRoot));
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.IndexRoot)
+        );
 
     private static void MakeManifestDependenciesNull(Fixture fixture)
     {
-        var zipPath = Assert.Single(Directory.GetFiles(
-            Path.Combine(fixture.SourceDirectory, "artifacts"),
-            "*.zip"));
+        var zipPath = Assert.Single(
+            Directory.GetFiles(Path.Combine(fixture.SourceDirectory, "artifacts"), "*.zip")
+        );
         using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Update))
         {
             var entry = archive.GetEntry("sei.json")!;
@@ -1450,13 +1595,15 @@ public sealed class IndexVerifierTests
         WriteSei(fixture, "hello", sei);
     }
 
-    private static SeiIndex ReadSei(Fixture fixture, string name)
-        => JsonSerializer.Deserialize(
+    private static SeiIndex ReadSei(Fixture fixture, string name) =>
+        JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", name + ".json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
 
-    private static void WriteSei(Fixture fixture, string name, SeiIndex sei)
-        => File.WriteAllBytes(
+    private static void WriteSei(Fixture fixture, string name, SeiIndex sei) =>
+        File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "sei", name + ".json"),
-            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
 }

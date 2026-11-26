@@ -350,7 +350,8 @@ public sealed record GenerationInfo(
     bool Current,
     int SeiCount,
     int FileCount,
-    bool Valid);
+    bool Valid
+);
 
 // The read-only diff `rollback --dry-run` prints. It never changes state and
 // never downloads; a missing store entry is reported, not fetched.
@@ -363,7 +364,8 @@ public sealed record RollbackPreview(
     IReadOnlyList<string> Removed,
     IReadOnlyList<string> Replaced,
     IReadOnlyList<string> Adopted,
-    IReadOnlyList<string> MissingStore);
+    IReadOnlyList<string> MissingStore
+);
 
 // One audit finding. `fix` is the newest version without that advisory, or
 // null when none is known; `unknown` marks a package the audit could not read.
@@ -373,11 +375,13 @@ public sealed record AuditFinding(
     string Kind,
     string? Severity,
     string? Url,
-    string? Fix);
+    string? Fix
+);
 
 public sealed record AuditResult(
     IReadOnlyList<AuditFinding> Findings,
-    IReadOnlyList<string> Unknown);
+    IReadOnlyList<string> Unknown
+);
 
 // One row of `source status`. Catalog issues are warnings, index issues are
 // errors; nothing here changes a source or falls back to another one.
@@ -386,7 +390,8 @@ public sealed record SourceStatus(
     bool Reachable,
     int? SeiCount,
     bool CatalogPresent,
-    IReadOnlyList<string> Problems);
+    IReadOnlyList<string> Problems
+);
 
 public sealed class RootRegistryState
 {
@@ -431,7 +436,8 @@ public sealed record SeiSummary(
     IReadOnlyList<string>? Tags = null,
     string? License = null,
     string? Deprecated = null,
-    AdvisoryInfo? Advisory = null);
+    AdvisoryInfo? Advisory = null
+);
 
 // A link of a `why` chain; the kind names the relation that made the edge.
 public sealed record WhyLink(string Name, string Kind);
@@ -445,7 +451,8 @@ public sealed record SeiArtifactInfo(
     int ExternalCount,
     IReadOnlyList<string> ExternalHosts,
     bool ExternalKnown = true,
-    IReadOnlyList<DependencyGroup>? DependencyGroups = null);
+    IReadOnlyList<DependencyGroup>? DependencyGroups = null
+);
 
 public sealed record SeiVersionInfo(
     string Version,
@@ -457,7 +464,8 @@ public sealed record SeiVersionInfo(
     IReadOnlyList<SeiDependency> OptionalPeers,
     IReadOnlyList<SeiDependency> Conflicts,
     IReadOnlyList<SeiArtifactInfo> Artifacts,
-    bool SourceRetired = false)
+    bool SourceRetired = false
+)
 {
     public int ArtifactCount => Artifacts.Count;
 }
@@ -473,4 +481,5 @@ public sealed record SeiInfo(
     bool MaintainedHere = false,
     // Origin entries carry no index cross-check (ADR-0044).
     bool IndexVerified = true,
-    IReadOnlyList<string>? OriginPaths = null);
+    IReadOnlyList<string>? OriginPaths = null
+);

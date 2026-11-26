@@ -11,20 +11,14 @@ try
 {
     Console.OutputEncoding = System.Text.Encoding.UTF8;
 }
-catch (IOException)
-{
-}
+catch (IOException) { }
 
 // Descriptions are built once, so the locale must be known before the
 // command tree exists (ADR-0034).
 Loc.Configure(null);
 
 var rootCommand = new RootCommand(Loc.Get("cmd.root"));
-var jsonOption = new Option<bool>("--json")
-{
-    Description = Loc.Get("opt.json"),
-    Recursive = true,
-};
+var jsonOption = new Option<bool>("--json") { Description = Loc.Get("opt.json"), Recursive = true };
 var verboseOption = new Option<bool>("--verbose", "-v")
 {
     Description = Loc.Get("opt.verbose"),
@@ -57,23 +51,30 @@ rootCommand.Add(offlineOption);
 rootCommand.Add(diagnosticsOption);
 rootCommand.Add(colorOption);
 
-var init = new Command("init", Describe(
-    "cmd.init",
-    "https://hoshi.srcz.one/seiko/getting-started/",
-    "sk init --root ./server"));
+var init = new Command(
+    "init",
+    Describe("cmd.init", "https://hoshi.srcz.one/seiko/getting-started/", "sk init --root ./server")
+);
 var initRoot = RootOption();
 init.Add(initRoot);
-init.SetAction(parseResult => Run(
-    "init",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Init(parseResult.GetValue(initRoot), IsJson(parseResult))));
+init.SetAction(parseResult =>
+    Run(
+        "init",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () => Init(parseResult.GetValue(initRoot), IsJson(parseResult))
+    )
+);
 
-var sync = new Command("sync", Describe(
-    "cmd.sync",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk sync --dry-run",
-    "sk sync --frozen"));
+var sync = new Command(
+    "sync",
+    Describe(
+        "cmd.sync",
+        "https://hoshi.srcz.one/seiko/commands/",
+        "sk sync --dry-run",
+        "sk sync --frozen"
+    )
+);
 var syncRoot = RootOption();
 var syncStore = StoreOption();
 var syncPre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
@@ -106,34 +107,43 @@ sync.Add(syncDryRun);
 sync.Add(syncAdopt);
 sync.Add(syncForce);
 sync.Add(syncResetPreserved);
-sync.SetAction(parseResult => Run(
-    "sync",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Sync(
-        parseResult.GetValue(syncRoot),
-        parseResult.GetValue(syncStore),
-        parseResult.GetValue(syncPre),
-        parseResult.GetValue(syncFrozen),
-        parseResult.GetValue(syncLocked),
-        parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
-        parseResult.GetValue(syncProxy),
-        parseResult.GetValue(syncLatestInstallable),
-        parseResult.GetValue(syncAllowCritical),
-        parseResult.GetValue(syncDryRun),
-        parseResult.GetValue(syncAdopt),
-        parseResult.GetValue(syncForce),
-        parseResult.GetValue(syncResetPreserved),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+sync.SetAction(parseResult =>
+    Run(
+        "sync",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Sync(
+                parseResult.GetValue(syncRoot),
+                parseResult.GetValue(syncStore),
+                parseResult.GetValue(syncPre),
+                parseResult.GetValue(syncFrozen),
+                parseResult.GetValue(syncLocked),
+                parseResult.GetValue(syncJobs) ?? DownloadSession.DefaultJobs,
+                parseResult.GetValue(syncProxy),
+                parseResult.GetValue(syncLatestInstallable),
+                parseResult.GetValue(syncAllowCritical),
+                parseResult.GetValue(syncDryRun),
+                parseResult.GetValue(syncAdopt),
+                parseResult.GetValue(syncForce),
+                parseResult.GetValue(syncResetPreserved),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 sync.Aliases.Add("install");
 
-var add = new Command("add", Describe(
-    "cmd.add",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk add hello",
-    "sk add hello@[1.2.0,2.0.0) --dry-run"));
+var add = new Command(
+    "add",
+    Describe(
+        "cmd.add",
+        "https://hoshi.srcz.one/seiko/commands/",
+        "sk add hello",
+        "sk add hello@[1.2.0,2.0.0) --dry-run"
+    )
+);
 var addRoot = RootOption();
 var addStore = StoreOption();
 var addPre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
@@ -174,32 +184,37 @@ add.Add(addDryRun);
 add.Add(addAdopt);
 add.Add(addForce);
 add.Add(addResetPreserved);
-add.SetAction(parseResult => Run(
-    "add",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Add(
-        parseResult.GetValue(addRoot),
-        parseResult.GetValue(addSpec)!,
-        parseResult.GetValue(addRemove),
-        parseResult.GetValue(addStore),
-        parseResult.GetValue(addPre),
-        parseResult.GetValue(addJobs) ?? DownloadSession.DefaultJobs,
-        parseResult.GetValue(addProxy),
-        parseResult.GetValue(addLatestInstallable),
-        parseResult.GetValue(addAllowCritical),
-        parseResult.GetValue(addDryRun),
-        parseResult.GetValue(addAdopt),
-        parseResult.GetValue(addForce),
-        parseResult.GetValue(addResetPreserved),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+add.SetAction(parseResult =>
+    Run(
+        "add",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Add(
+                parseResult.GetValue(addRoot),
+                parseResult.GetValue(addSpec)!,
+                parseResult.GetValue(addRemove),
+                parseResult.GetValue(addStore),
+                parseResult.GetValue(addPre),
+                parseResult.GetValue(addJobs) ?? DownloadSession.DefaultJobs,
+                parseResult.GetValue(addProxy),
+                parseResult.GetValue(addLatestInstallable),
+                parseResult.GetValue(addAllowCritical),
+                parseResult.GetValue(addDryRun),
+                parseResult.GetValue(addAdopt),
+                parseResult.GetValue(addForce),
+                parseResult.GetValue(addResetPreserved),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 
-var remove = new Command("remove", Describe(
-    "cmd.remove",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk remove hello"));
+var remove = new Command(
+    "remove",
+    Describe("cmd.remove", "https://hoshi.srcz.one/seiko/commands/", "sk remove hello")
+);
 var removeRoot = RootOption();
 var removeStore = StoreOption();
 var removePre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
@@ -209,10 +224,7 @@ var removeDryRun = DryRunOption();
 var removeAdopt = AdoptOption();
 var removeForce = ForceOption();
 var removeResetPreserved = ResetPreservedOption();
-var removePurge = new Option<bool>("--purge")
-{
-    Description = Loc.Get("opt.purge"),
-};
+var removePurge = new Option<bool>("--purge") { Description = Loc.Get("opt.purge") };
 var removeAllowCritical = new Option<bool>("--allow-critical")
 {
     Description = Loc.Get("opt.allow-critical"),
@@ -230,32 +242,41 @@ remove.Add(removePurge);
 remove.Add(removeAdopt);
 remove.Add(removeForce);
 remove.Add(removeResetPreserved);
-remove.SetAction(parseResult => Run(
-    "remove",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Remove(
-        parseResult.GetValue(removeRoot),
-        parseResult.GetValue(removeName)!,
-        parseResult.GetValue(removeStore),
-        parseResult.GetValue(removePre),
-        parseResult.GetValue(removeJobs) ?? DownloadSession.DefaultJobs,
-        parseResult.GetValue(removeProxy),
-        parseResult.GetValue(removeAllowCritical),
-        parseResult.GetValue(removeDryRun),
-        parseResult.GetValue(removePurge),
-        parseResult.GetValue(removeAdopt),
-        parseResult.GetValue(removeForce),
-        parseResult.GetValue(removeResetPreserved),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+remove.SetAction(parseResult =>
+    Run(
+        "remove",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Remove(
+                parseResult.GetValue(removeRoot),
+                parseResult.GetValue(removeName)!,
+                parseResult.GetValue(removeStore),
+                parseResult.GetValue(removePre),
+                parseResult.GetValue(removeJobs) ?? DownloadSession.DefaultJobs,
+                parseResult.GetValue(removeProxy),
+                parseResult.GetValue(removeAllowCritical),
+                parseResult.GetValue(removeDryRun),
+                parseResult.GetValue(removePurge),
+                parseResult.GetValue(removeAdopt),
+                parseResult.GetValue(removeForce),
+                parseResult.GetValue(removeResetPreserved),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 
-var update = new Command("update", Describe(
-    "cmd.update",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk update --dry-run",
-    "sk update hello --latest"));
+var update = new Command(
+    "update",
+    Describe(
+        "cmd.update",
+        "https://hoshi.srcz.one/seiko/commands/",
+        "sk update --dry-run",
+        "sk update hello --latest"
+    )
+);
 var updateRoot = RootOption();
 var updateStore = StoreOption();
 var updatePre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") };
@@ -292,43 +313,55 @@ update.Add(updateDryRun);
 update.Add(updateAdopt);
 update.Add(updateForce);
 update.Add(updateResetPreserved);
-update.SetAction(parseResult => Run(
-    "update",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Update(
-        parseResult.GetValue(updateRoot),
-        parseResult.GetValue(updateName),
-        parseResult.GetValue(updateLatest),
-        parseResult.GetValue(updateStore),
-        parseResult.GetValue(updatePre),
-        parseResult.GetValue(updateJobs) ?? DownloadSession.DefaultJobs,
-        parseResult.GetValue(updateProxy),
-        parseResult.GetValue(updateLatestInstallable),
-        parseResult.GetValue(updateAllowCritical),
-        parseResult.GetValue(updateDryRun),
-        parseResult.GetValue(updateAdopt),
-        parseResult.GetValue(updateForce),
-        parseResult.GetValue(updateResetPreserved),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+update.SetAction(parseResult =>
+    Run(
+        "update",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Update(
+                parseResult.GetValue(updateRoot),
+                parseResult.GetValue(updateName),
+                parseResult.GetValue(updateLatest),
+                parseResult.GetValue(updateStore),
+                parseResult.GetValue(updatePre),
+                parseResult.GetValue(updateJobs) ?? DownloadSession.DefaultJobs,
+                parseResult.GetValue(updateProxy),
+                parseResult.GetValue(updateLatestInstallable),
+                parseResult.GetValue(updateAllowCritical),
+                parseResult.GetValue(updateDryRun),
+                parseResult.GetValue(updateAdopt),
+                parseResult.GetValue(updateForce),
+                parseResult.GetValue(updateResetPreserved),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 
 var list = new Command("list", Loc.Get("cmd.list"));
 var listRoot = RootOption();
 list.Add(listRoot);
-list.SetAction(parseResult => Run(
-    "list",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => List(parseResult.GetValue(listRoot), IsJson(parseResult))));
+list.SetAction(parseResult =>
+    Run(
+        "list",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () => List(parseResult.GetValue(listRoot), IsJson(parseResult))
+    )
+);
 
-var rollback = new Command("rollback", Describe(
-    "cmd.rollback",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk generation list",
-    "sk rollback --dry-run",
-    "sk rollback --to 3"));
+var rollback = new Command(
+    "rollback",
+    Describe(
+        "cmd.rollback",
+        "https://hoshi.srcz.one/seiko/commands/",
+        "sk generation list",
+        "sk rollback --dry-run",
+        "sk rollback --to 3"
+    )
+);
 var rollbackRoot = RootOption();
 var rollbackStore = StoreOption();
 var rollbackTo = new Option<int?>("--to") { Description = Loc.Get("opt.to") };
@@ -342,19 +375,24 @@ rollback.Add(rollbackStore);
 rollback.Add(rollbackTo);
 rollback.Add(rollbackDryRun);
 rollback.Add(rollbackProxy);
-rollback.SetAction(parseResult => Run(
-    "rollback",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Rollback(
-        parseResult.GetValue(rollbackRoot),
-        parseResult.GetValue(rollbackStore),
-        parseResult.GetValue(rollbackTo),
-        parseResult.GetValue(rollbackProxy),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
+rollback.SetAction(parseResult =>
+    Run(
+        "rollback",
+        parseResult.GetValue(colorOption) ?? "auto",
         IsJson(parseResult),
-        parseResult.GetValue(rollbackDryRun))));
+        () =>
+            Rollback(
+                parseResult.GetValue(rollbackRoot),
+                parseResult.GetValue(rollbackStore),
+                parseResult.GetValue(rollbackTo),
+                parseResult.GetValue(rollbackProxy),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult),
+                parseResult.GetValue(rollbackDryRun)
+            )
+    )
+);
 
 var generation = new Command("generation", Loc.Get("cmd.generation"));
 var generationList = new Command("list", Loc.Get("cmd.generation.list"));
@@ -362,21 +400,30 @@ var generationRoot = RootOption();
 var generationStore = StoreOption();
 generationList.Add(generationRoot);
 generationList.Add(generationStore);
-generationList.SetAction(parseResult => Run(
-    "generation_list",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Generations(
-        parseResult.GetValue(generationRoot),
-        parseResult.GetValue(generationStore),
-        IsJson(parseResult))));
+generationList.SetAction(parseResult =>
+    Run(
+        "generation_list",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Generations(
+                parseResult.GetValue(generationRoot),
+                parseResult.GetValue(generationStore),
+                IsJson(parseResult)
+            )
+    )
+);
 generation.Add(generationList);
 
-var search = new Command("search", Describe(
-    "cmd.search",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk search server",
-    "sk search server --tag hosting --limit 10"));
+var search = new Command(
+    "search",
+    Describe(
+        "cmd.search",
+        "https://hoshi.srcz.one/seiko/commands/",
+        "sk search server",
+        "sk search server --tag hosting --limit 10"
+    )
+);
 var searchRoot = RootOption();
 var searchProxy = ProxyOption();
 var searchTerms = new Argument<string[]>("terms")
@@ -393,26 +440,35 @@ search.Add(searchLicense);
 search.Add(searchLimit);
 search.Add(searchRoot);
 search.Add(searchProxy);
-search.SetAction(parseResult => Run(
-    "search",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Search(
-        parseResult.GetValue(searchRoot),
-        parseResult.GetValue(searchTerms) ?? [],
-        parseResult.GetValue(searchProxy),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
+search.SetAction(parseResult =>
+    Run(
+        "search",
+        parseResult.GetValue(colorOption) ?? "auto",
         IsJson(parseResult),
-        parseResult.GetValue(searchTag),
-        parseResult.GetValue(searchLicense),
-        parseResult.GetValue(searchLimit))));
+        () =>
+            Search(
+                parseResult.GetValue(searchRoot),
+                parseResult.GetValue(searchTerms) ?? [],
+                parseResult.GetValue(searchProxy),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult),
+                parseResult.GetValue(searchTag),
+                parseResult.GetValue(searchLicense),
+                parseResult.GetValue(searchLimit)
+            )
+    )
+);
 
-var info = new Command("info", Describe(
-    "cmd.info",
-    "https://hoshi.srcz.one/seiko/commands/",
-    "sk info hello",
-    "sk info hello --versions"));
+var info = new Command(
+    "info",
+    Describe(
+        "cmd.info",
+        "https://hoshi.srcz.one/seiko/commands/",
+        "sk info hello",
+        "sk info hello --versions"
+    )
+);
 var infoRoot = RootOption();
 var infoProxy = ProxyOption();
 var infoVersions = new Option<bool>("--versions") { Description = Loc.Get("opt.versions") };
@@ -421,40 +477,54 @@ info.Add(infoName);
 info.Add(infoVersions);
 info.Add(infoRoot);
 info.Add(infoProxy);
-info.SetAction(parseResult => Run(
-    "info",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Info(
-        parseResult.GetValue(infoRoot),
-        parseResult.GetValue(infoName)!,
-        parseResult.GetValue(infoProxy),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
+info.SetAction(parseResult =>
+    Run(
+        "info",
+        parseResult.GetValue(colorOption) ?? "auto",
         IsJson(parseResult),
-        parseResult.GetValue(infoVersions))));
+        () =>
+            Info(
+                parseResult.GetValue(infoRoot),
+                parseResult.GetValue(infoName)!,
+                parseResult.GetValue(infoProxy),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult),
+                parseResult.GetValue(infoVersions)
+            )
+    )
+);
 
-var doctor = new Command("doctor", Describe(
-    "cmd.doctor",
-    "https://hoshi.srcz.one/seiko/troubleshooting/",
-    "sk doctor",
-    "sk doctor --clean"));
+var doctor = new Command(
+    "doctor",
+    Describe(
+        "cmd.doctor",
+        "https://hoshi.srcz.one/seiko/troubleshooting/",
+        "sk doctor",
+        "sk doctor --clean"
+    )
+);
 var doctorRoot = RootOption();
 var doctorStore = StoreOption();
 var doctorClean = new Option<bool>("--clean") { Description = Loc.Get("opt.clean") };
 doctor.Add(doctorRoot);
 doctor.Add(doctorStore);
 doctor.Add(doctorClean);
-doctor.SetAction(parseResult => Run(
-    "doctor",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => RunDoctor(
+doctor.SetAction(parseResult =>
+    Run(
         "doctor",
-        parseResult.GetValue(doctorRoot),
-        parseResult.GetValue(doctorStore),
-        parseResult.GetValue(doctorClean),
-        IsJson(parseResult))));
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            RunDoctor(
+                "doctor",
+                parseResult.GetValue(doctorRoot),
+                parseResult.GetValue(doctorStore),
+                parseResult.GetValue(doctorClean),
+                IsJson(parseResult)
+            )
+    )
+);
 
 // `check` is the read-only terminal summary of doctor; it never deletes .part.
 var check = new Command("check", Loc.Get("cmd.check"));
@@ -462,30 +532,36 @@ var checkRoot = RootOption();
 var checkStore = StoreOption();
 check.Add(checkRoot);
 check.Add(checkStore);
-check.SetAction(parseResult => Run(
-    "check",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => RunDoctor(
+check.SetAction(parseResult =>
+    Run(
         "check",
-        parseResult.GetValue(checkRoot),
-        parseResult.GetValue(checkStore),
-        clean: false,
-        IsJson(parseResult))));
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            RunDoctor(
+                "check",
+                parseResult.GetValue(checkRoot),
+                parseResult.GetValue(checkStore),
+                clean: false,
+                IsJson(parseResult)
+            )
+    )
+);
 
 var why = new Command("why", Loc.Get("cmd.why"));
 var whyRoot = RootOption();
 var whyName = new Argument<string>("name") { Description = Loc.Get("opt.sei-name") };
 why.Add(whyName);
 why.Add(whyRoot);
-why.SetAction(parseResult => Run(
-    "why",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Why(
-        parseResult.GetValue(whyRoot),
-        parseResult.GetValue(whyName)!,
-        IsJson(parseResult))));
+why.SetAction(parseResult =>
+    Run(
+        "why",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Why(parseResult.GetValue(whyRoot), parseResult.GetValue(whyName)!, IsJson(parseResult))
+    )
+);
 
 var outdated = new Command("outdated", Loc.Get("cmd.outdated"));
 var outdatedRoot = RootOption();
@@ -494,58 +570,72 @@ var outdatedPre = new Option<bool>("--pre") { Description = Loc.Get("opt.pre") }
 outdated.Add(outdatedRoot);
 outdated.Add(outdatedProxy);
 outdated.Add(outdatedPre);
-outdated.SetAction(parseResult => Run(
-    "outdated",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Outdated(
-        parseResult.GetValue(outdatedRoot),
-        parseResult.GetValue(outdatedProxy),
-        parseResult.GetValue(outdatedPre),
-        IsOffline(parseResult),
-        IsDiagnostics(parseResult),
-        IsJson(parseResult))));
+outdated.SetAction(parseResult =>
+    Run(
+        "outdated",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Outdated(
+                parseResult.GetValue(outdatedRoot),
+                parseResult.GetValue(outdatedProxy),
+                parseResult.GetValue(outdatedPre),
+                IsOffline(parseResult),
+                IsDiagnostics(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 
-var audit = new Command("audit", Describe(
-    "cmd.audit",
-    "https://hoshi.srcz.one/seiko/troubleshooting/",
-    "sk audit",
-    "sk audit --security-only --fail-on high"));
+var audit = new Command(
+    "audit",
+    Describe(
+        "cmd.audit",
+        "https://hoshi.srcz.one/seiko/troubleshooting/",
+        "sk audit",
+        "sk audit --security-only --fail-on high"
+    )
+);
 var auditRoot = RootOption();
 var auditProxy = ProxyOption();
 var auditSecurity = new Option<bool>("--security-only")
 {
     Description = Loc.Get("opt.security-only"),
 };
-var auditFailOn = new Option<string?>("--fail-on")
-{
-    Description = Loc.Get("opt.fail-on"),
-};
+var auditFailOn = new Option<string?>("--fail-on") { Description = Loc.Get("opt.fail-on") };
 audit.Add(auditRoot);
 audit.Add(auditProxy);
 audit.Add(auditSecurity);
 audit.Add(auditFailOn);
-audit.SetAction(parseResult => Run(
-    "audit",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Audit(
-        parseResult.GetValue(auditRoot),
-        parseResult.GetValue(auditProxy),
-        parseResult.GetValue(auditSecurity),
-        parseResult.GetValue(auditFailOn),
-        IsOffline(parseResult),
-        IsJson(parseResult))));
+audit.SetAction(parseResult =>
+    Run(
+        "audit",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            Audit(
+                parseResult.GetValue(auditRoot),
+                parseResult.GetValue(auditProxy),
+                parseResult.GetValue(auditSecurity),
+                parseResult.GetValue(auditFailOn),
+                IsOffline(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 
 var source = new Command("source", Loc.Get("cmd.source"));
 var sourceList = new Command("list", Loc.Get("cmd.source.list"));
 var sourceListRoot = RootOption();
 sourceList.Add(sourceListRoot);
-sourceList.SetAction(parseResult => Run(
-    "source_list",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => SourceListCommand(parseResult.GetValue(sourceListRoot), IsJson(parseResult))));
+sourceList.SetAction(parseResult =>
+    Run(
+        "source_list",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () => SourceListCommand(parseResult.GetValue(sourceListRoot), IsJson(parseResult))
+    )
+);
 
 var sourceStatus = new Command("status", Loc.Get("cmd.source.status"));
 var sourceStatusRoot = RootOption();
@@ -558,16 +648,21 @@ var sourceStatusId = new Argument<string?>("id")
 sourceStatus.Add(sourceStatusId);
 sourceStatus.Add(sourceStatusRoot);
 sourceStatus.Add(sourceStatusProxy);
-sourceStatus.SetAction(parseResult => Run(
-    "source_status",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => SourceStatusCommand(
-        parseResult.GetValue(sourceStatusRoot),
-        parseResult.GetValue(sourceStatusId),
-        parseResult.GetValue(sourceStatusProxy),
-        IsOffline(parseResult),
-        IsJson(parseResult))));
+sourceStatus.SetAction(parseResult =>
+    Run(
+        "source_status",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            SourceStatusCommand(
+                parseResult.GetValue(sourceStatusRoot),
+                parseResult.GetValue(sourceStatusId),
+                parseResult.GetValue(sourceStatusProxy),
+                IsOffline(parseResult),
+                IsJson(parseResult)
+            )
+    )
+);
 source.Add(sourceStatus);
 
 var sourceAdd = new Command("add", Loc.Get("cmd.source.add"));
@@ -584,30 +679,40 @@ sourceAdd.Add(sourceAddId);
 sourceAdd.Add(sourceAddIndex);
 sourceAdd.Add(sourceAddRoot);
 sourceAdd.Add(sourceAddTokenHosts);
-sourceAdd.SetAction(parseResult => Run(
-    "source_add",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => SourceAddCommand(
-        parseResult.GetValue(sourceAddRoot),
-        parseResult.GetValue(sourceAddId)!,
-        parseResult.GetValue(sourceAddIndex)!,
-        parseResult.GetValue(sourceAddTokenHosts),
-        IsJson(parseResult))));
+sourceAdd.SetAction(parseResult =>
+    Run(
+        "source_add",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            SourceAddCommand(
+                parseResult.GetValue(sourceAddRoot),
+                parseResult.GetValue(sourceAddId)!,
+                parseResult.GetValue(sourceAddIndex)!,
+                parseResult.GetValue(sourceAddTokenHosts),
+                IsJson(parseResult)
+            )
+    )
+);
 
 var sourceRemove = new Command("remove", Loc.Get("cmd.source.remove"));
 var sourceRemoveRoot = RootOption();
 var sourceRemoveId = new Argument<string>("id") { Description = Loc.Get("opt.source-id") };
 sourceRemove.Add(sourceRemoveId);
 sourceRemove.Add(sourceRemoveRoot);
-sourceRemove.SetAction(parseResult => Run(
-    "source_remove",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => SourceRemoveCommand(
-        parseResult.GetValue(sourceRemoveRoot),
-        parseResult.GetValue(sourceRemoveId)!,
-        IsJson(parseResult))));
+sourceRemove.SetAction(parseResult =>
+    Run(
+        "source_remove",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            SourceRemoveCommand(
+                parseResult.GetValue(sourceRemoveRoot),
+                parseResult.GetValue(sourceRemoveId)!,
+                IsJson(parseResult)
+            )
+    )
+);
 
 source.Add(sourceList);
 source.Add(sourceAdd);
@@ -619,14 +724,19 @@ var configGetRoot = RootOption();
 var configGetKey = new Argument<string>("key") { Description = Loc.Get("opt.config-key") };
 configGet.Add(configGetKey);
 configGet.Add(configGetRoot);
-configGet.SetAction(parseResult => Run(
-    "config_get",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => ConfigGetCommand(
-        parseResult.GetValue(configGetRoot),
-        parseResult.GetValue(configGetKey)!,
-        IsJson(parseResult))));
+configGet.SetAction(parseResult =>
+    Run(
+        "config_get",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            ConfigGetCommand(
+                parseResult.GetValue(configGetRoot),
+                parseResult.GetValue(configGetKey)!,
+                IsJson(parseResult)
+            )
+    )
+);
 
 var configSet = new Command("set", Loc.Get("cmd.config.set"));
 var configSetRoot = RootOption();
@@ -635,15 +745,20 @@ var configSetValue = new Argument<string>("value") { Description = Loc.Get("opt.
 configSet.Add(configSetKey);
 configSet.Add(configSetValue);
 configSet.Add(configSetRoot);
-configSet.SetAction(parseResult => Run(
-    "config_set",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => ConfigSetCommand(
-        parseResult.GetValue(configSetRoot),
-        parseResult.GetValue(configSetKey)!,
-        parseResult.GetValue(configSetValue)!,
-        IsJson(parseResult))));
+configSet.SetAction(parseResult =>
+    Run(
+        "config_set",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            ConfigSetCommand(
+                parseResult.GetValue(configSetRoot),
+                parseResult.GetValue(configSetKey)!,
+                parseResult.GetValue(configSetValue)!,
+                IsJson(parseResult)
+            )
+    )
+);
 
 config.Add(configGet);
 config.Add(configSet);
@@ -652,34 +767,45 @@ var cache = new Command("cache", Loc.Get("cmd.cache"));
 var cacheStatus = new Command("status", Loc.Get("cmd.cache.status"));
 var cacheStatusStore = StoreOption();
 cacheStatus.Add(cacheStatusStore);
-cacheStatus.SetAction(parseResult => Run(
-    "cache_status",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => CacheStatusCommand(parseResult.GetValue(cacheStatusStore), IsJson(parseResult))));
+cacheStatus.SetAction(parseResult =>
+    Run(
+        "cache_status",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () => CacheStatusCommand(parseResult.GetValue(cacheStatusStore), IsJson(parseResult))
+    )
+);
 
 var cacheVerify = new Command("verify", Loc.Get("cmd.cache.verify"));
 var cacheVerifyStore = StoreOption();
 cacheVerify.Add(cacheVerifyStore);
-cacheVerify.SetAction(parseResult => Run(
-    "cache_verify",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => CacheVerifyCommand(parseResult.GetValue(cacheVerifyStore), IsJson(parseResult))));
+cacheVerify.SetAction(parseResult =>
+    Run(
+        "cache_verify",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () => CacheVerifyCommand(parseResult.GetValue(cacheVerifyStore), IsJson(parseResult))
+    )
+);
 
 var cacheClean = new Command("clean", Loc.Get("cmd.cache.clean"));
 var cacheCleanRoot = RootOption();
 var cacheCleanStore = StoreOption();
 cacheClean.Add(cacheCleanRoot);
 cacheClean.Add(cacheCleanStore);
-cacheClean.SetAction(parseResult => Run(
-    "cache_clean",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => CacheCleanCommand(
-        parseResult.GetValue(cacheCleanRoot),
-        parseResult.GetValue(cacheCleanStore),
-        IsJson(parseResult))));
+cacheClean.SetAction(parseResult =>
+    Run(
+        "cache_clean",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            CacheCleanCommand(
+                parseResult.GetValue(cacheCleanRoot),
+                parseResult.GetValue(cacheCleanStore),
+                IsJson(parseResult)
+            )
+    )
+);
 
 cache.Add(cacheStatus);
 cache.Add(cacheVerify);
@@ -696,25 +822,27 @@ var indexVerifyArtifacts = new Option<bool>("--check-artifacts")
 {
     Description = Loc.Get("opt.check-artifacts"),
 };
-var indexVerifyStrict = new Option<bool>("--strict")
-{
-    Description = Loc.Get("opt.strict"),
-};
+var indexVerifyStrict = new Option<bool>("--strict") { Description = Loc.Get("opt.strict") };
 var indexVerifyProxy = ProxyOption();
 indexVerify.Add(indexVerifyPath);
 indexVerify.Add(indexVerifyArtifacts);
 indexVerify.Add(indexVerifyStrict);
 indexVerify.Add(indexVerifyProxy);
-indexVerify.SetAction(parseResult => Run(
-    "index_verify",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => IndexVerifyCommand(
-        parseResult.GetValue(indexVerifyPath),
-        parseResult.GetValue(indexVerifyArtifacts),
-        parseResult.GetValue(indexVerifyStrict),
-        parseResult.GetValue(indexVerifyProxy),
-        IsJson(parseResult))));
+indexVerify.SetAction(parseResult =>
+    Run(
+        "index_verify",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            IndexVerifyCommand(
+                parseResult.GetValue(indexVerifyPath),
+                parseResult.GetValue(indexVerifyArtifacts),
+                parseResult.GetValue(indexVerifyStrict),
+                parseResult.GetValue(indexVerifyProxy),
+                IsJson(parseResult)
+            )
+    )
+);
 index.Add(indexVerify);
 
 var indexCatalog = new Command("catalog", Loc.Get("cmd.index.catalog"));
@@ -723,33 +851,35 @@ var indexCatalogPath = new Argument<string?>("path")
     Description = Loc.Get("opt.index-dir"),
     Arity = ArgumentArity.ZeroOrOne,
 };
-var indexCatalogCheck = new Option<bool>("--check")
-{
-    Description = Loc.Get("opt.catalog-check"),
-};
+var indexCatalogCheck = new Option<bool>("--check") { Description = Loc.Get("opt.catalog-check") };
 indexCatalog.Add(indexCatalogPath);
 indexCatalog.Add(indexCatalogCheck);
-indexCatalog.SetAction(parseResult => Run(
-    "index_catalog",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => IndexCatalogCommand(
-        parseResult.GetValue(indexCatalogPath),
-        parseResult.GetValue(indexCatalogCheck),
-        IsJson(parseResult))));
+indexCatalog.SetAction(parseResult =>
+    Run(
+        "index_catalog",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () =>
+            IndexCatalogCommand(
+                parseResult.GetValue(indexCatalogPath),
+                parseResult.GetValue(indexCatalogCheck),
+                IsJson(parseResult)
+            )
+    )
+);
 index.Add(indexCatalog);
 
 var completion = new Command("completion", Loc.Get("cmd.completion"));
-var completionShell = new Argument<string>("shell")
-{
-    Description = Loc.Get("opt.shell"),
-};
+var completionShell = new Argument<string>("shell") { Description = Loc.Get("opt.shell") };
 completion.Add(completionShell);
-completion.SetAction(parseResult => Run(
-    "completion",
-    parseResult.GetValue(colorOption) ?? "auto",
-    IsJson(parseResult),
-    () => Completion(parseResult.GetValue(completionShell)!, IsJson(parseResult))));
+completion.SetAction(parseResult =>
+    Run(
+        "completion",
+        parseResult.GetValue(colorOption) ?? "auto",
+        IsJson(parseResult),
+        () => Completion(parseResult.GetValue(completionShell)!, IsJson(parseResult))
+    )
+);
 
 var help = new Command("help", Loc.Get("cmd.help"));
 help.SetAction(_ => rootCommand.Parse(["--help"]).Invoke());
@@ -786,7 +916,12 @@ if (parseResult.Errors.Count > 0)
     {
         WriteJson(
             CliJsonContext.Default.ErrorEnvelope,
-            new ErrorEnvelope(1, FirstCommand(parseResult), new ErrorData("usage", parseResult.Errors[0].Message)));
+            new ErrorEnvelope(
+                1,
+                FirstCommand(parseResult),
+                new ErrorData("usage", parseResult.Errors[0].Message)
+            )
+        );
     }
     else
     {
@@ -823,7 +958,8 @@ static int Run(string command, string color, bool json, Func<int> action)
             ex.Message,
             ex.Code == "usage" ? 2 : 1,
             ex.Hint,
-            ex.HintKey);
+            ex.HintKey
+        );
     }
     catch (IOException ex)
     {
@@ -858,28 +994,32 @@ static int Fail(
     string message,
     int exitCode,
     string? hint = null,
-    string? hintKey = null)
+    string? hintKey = null
+)
 {
     if (json)
     {
         WriteJson(
             CliJsonContext.Default.ErrorEnvelope,
-            new ErrorEnvelope(1, command, new ErrorData(code, message, hint)));
+            new ErrorEnvelope(1, command, new ErrorData(code, message, hint))
+        );
     }
     else
     {
         Console.Error.WriteLine($"{Color.Error("sk: " + message)}");
         if (!string.IsNullOrWhiteSpace(hint))
         {
-            Console.Error.WriteLine(Color.Dim("  " + Loc.GetIsolated("hint", Loc.Get(hintKey ?? "hint", hint))));
+            Console.Error.WriteLine(
+                Color.Dim("  " + Loc.GetIsolated("hint", Loc.Get(hintKey ?? "hint", hint)))
+            );
         }
     }
 
     return exitCode;
 }
 
-static void WriteJson<T>(JsonTypeInfo<T> typeInfo, T value)
-    => Console.WriteLine(JsonSerializer.Serialize(value, typeInfo));
+static void WriteJson<T>(JsonTypeInfo<T> typeInfo, T value) =>
+    Console.WriteLine(JsonSerializer.Serialize(value, typeInfo));
 
 static string FirstCommand(ParseResult parseResult)
 {
@@ -911,29 +1051,22 @@ static string Describe(string key, string? docs = null, params string[] examples
     return text;
 }
 
-static Option<string?> RootOption()
-    => new("--root") { Description = Loc.Get("opt.root") };
+static Option<string?> RootOption() => new("--root") { Description = Loc.Get("opt.root") };
 
-static Option<string?> StoreOption()
-    => new("--store") { Description = Loc.Get("opt.store") };
+static Option<string?> StoreOption() => new("--store") { Description = Loc.Get("opt.store") };
 
-static Option<string?> ProxyOption()
-    => new("--proxy") { Description = Loc.Get("opt.proxy") };
+static Option<string?> ProxyOption() => new("--proxy") { Description = Loc.Get("opt.proxy") };
 
-static Option<int?> JobsOption()
-    => new("--jobs") { Description = Loc.Get("opt.jobs") };
+static Option<int?> JobsOption() => new("--jobs") { Description = Loc.Get("opt.jobs") };
 
-static Option<bool> DryRunOption()
-    => new("--dry-run") { Description = Loc.Get("opt.dry-run") };
+static Option<bool> DryRunOption() => new("--dry-run") { Description = Loc.Get("opt.dry-run") };
 
-static Option<bool> AdoptOption()
-    => new("--adopt") { Description = Loc.Get("opt.adopt") };
+static Option<bool> AdoptOption() => new("--adopt") { Description = Loc.Get("opt.adopt") };
 
-static Option<bool> ForceOption()
-    => new("--force") { Description = Loc.Get("opt.force") };
+static Option<bool> ForceOption() => new("--force") { Description = Loc.Get("opt.force") };
 
-static Option<bool> ResetPreservedOption()
-    => new("--reset-preserved") { Description = Loc.Get("opt.reset-preserved") };
+static Option<bool> ResetPreservedOption() =>
+    new("--reset-preserved") { Description = Loc.Get("opt.reset-preserved") };
 
 static int Sync(
     string? rootOption,
@@ -951,7 +1084,8 @@ static int Sync(
     bool resetPreserved,
     bool offline,
     bool diagnostics,
-    bool json)
+    bool json
+)
 {
     if (frozen && locked)
     {
@@ -959,7 +1093,10 @@ static int Sync(
     }
 
     var root = ResolveRoot(rootOption);
-    var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
+    var mode =
+        frozen ? SyncMode.Frozen
+        : locked ? SyncMode.Locked
+        : SyncMode.Normal;
     var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
     SyncResult result;
     if (showProgress)
@@ -980,7 +1117,8 @@ static int Sync(
             adopt: adopt,
             force: force,
             offline: offline,
-            resetPreserved: resetPreserved);
+            resetPreserved: resetPreserved
+        );
     }
     else
     {
@@ -998,7 +1136,8 @@ static int Sync(
             adopt: adopt,
             force: force,
             offline: offline,
-            resetPreserved: resetPreserved);
+            resetPreserved: resetPreserved
+        );
     }
 
     if (dryRun)
@@ -1010,21 +1149,28 @@ static int Sync(
     {
         WriteJson(
             CliJsonContext.Default.SyncEnvelope,
-            new SyncEnvelope(1, "sync", new SyncData(
-                result.SeiInstalled,
-                result.FilesDeployed,
-                mode.ToString(),
-                result.Warnings.ToList(),
-                diagnostics ? result.Diagnostics.ToList() : null,
-                result.ExternalItems,
-                result.ExternalHosts.ToList(),
-                result.Lock.Sei
-                    .Select(sei => new SyncSeiData(
-                        sei.Name,
-                        sei.Version,
-                        sei.Source,
-                        !string.Equals(sei.Source, "origin", StringComparison.Ordinal)))
-                    .ToList()))); 
+            new SyncEnvelope(
+                1,
+                "sync",
+                new SyncData(
+                    result.SeiInstalled,
+                    result.FilesDeployed,
+                    mode.ToString(),
+                    result.Warnings.ToList(),
+                    diagnostics ? result.Diagnostics.ToList() : null,
+                    result.ExternalItems,
+                    result.ExternalHosts.ToList(),
+                    result
+                        .Lock.Sei.Select(sei => new SyncSeiData(
+                            sei.Name,
+                            sei.Version,
+                            sei.Source,
+                            !string.Equals(sei.Source, "origin", StringComparison.Ordinal)
+                        ))
+                        .ToList()
+                )
+            )
+        );
         return 0;
     }
 
@@ -1038,16 +1184,22 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
     {
         WriteJson(
             CliJsonContext.Default.PreviewEnvelope,
-            new PreviewEnvelope(1, command, new PreviewData(
-                preview.Changes.ToList(),
-                preview.Blocked.ToList(),
-                preview.Warnings.ToList(),
-                false,
-                diagnostics ? preview.Diagnostics.ToList() : null,
-                preview.ExternalItems,
-                preview.ExternalBytes,
-                preview.ExternalHosts.ToList(),
-                preview.ExternalUnknown.ToList())));
+            new PreviewEnvelope(
+                1,
+                command,
+                new PreviewData(
+                    preview.Changes.ToList(),
+                    preview.Blocked.ToList(),
+                    preview.Warnings.ToList(),
+                    false,
+                    diagnostics ? preview.Diagnostics.ToList() : null,
+                    preview.ExternalItems,
+                    preview.ExternalBytes,
+                    preview.ExternalHosts.ToList(),
+                    preview.ExternalUnknown.ToList()
+                )
+            )
+        );
         return 0;
     }
 
@@ -1088,7 +1240,9 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
     {
         foreach (var diagnostic in preview.Diagnostics)
         {
-            Console.WriteLine($"diagnostic\t{diagnostic.Name}\t{diagnostic.Kind}: {diagnostic.Message}");
+            Console.WriteLine(
+                $"diagnostic\t{diagnostic.Name}\t{diagnostic.Kind}: {diagnostic.Message}"
+            );
         }
     }
 
@@ -1096,7 +1250,8 @@ static int PrintPreview(string command, PreviewResult preview, bool json, bool d
     {
         Console.WriteLine(
             $"external	{preview.ExternalItems} item(s), ~{preview.ExternalBytes} byte(s) from "
-            + string.Join(", ", preview.ExternalHosts));
+                + string.Join(", ", preview.ExternalHosts)
+        );
     }
 
     if (preview.ExternalUnknown.Count > 0)
@@ -1124,29 +1279,33 @@ static int Add(
     bool resetPreserved,
     bool offline,
     bool diagnostics,
-    bool json)
-    => RunMutation(
+    bool json
+) =>
+    RunMutation(
         "add",
         json,
         dryRun,
         diagnostics,
-        (progress, log) => new SeikoClient().AddMany(
-            ResolveRoot(rootOption),
-            specifications,
-            remove,
-            store,
-            pre,
-            jobs,
-            proxy,
-            progress,
-            log,
-            latestInstallable: latestInstallable,
-            allowCritical: allowCritical,
-            dryRun: dryRun,
-            adopt: adopt,
-            force: force,
-            offline: offline,
-            resetPreserved: resetPreserved));
+        (progress, log) =>
+            new SeikoClient().AddMany(
+                ResolveRoot(rootOption),
+                specifications,
+                remove,
+                store,
+                pre,
+                jobs,
+                proxy,
+                progress,
+                log,
+                latestInstallable: latestInstallable,
+                allowCritical: allowCritical,
+                dryRun: dryRun,
+                adopt: adopt,
+                force: force,
+                offline: offline,
+                resetPreserved: resetPreserved
+            )
+    );
 
 static int Remove(
     string? rootOption,
@@ -1163,28 +1322,32 @@ static int Remove(
     bool resetPreserved,
     bool offline,
     bool diagnostics,
-    bool json)
-    => RunMutation(
+    bool json
+) =>
+    RunMutation(
         "remove",
         json,
         dryRun,
         diagnostics,
-        (progress, log) => new SeikoClient().Remove(
-            ResolveRoot(rootOption),
-            name,
-            store,
-            pre,
-            jobs,
-            proxy,
-            progress,
-            log,
-            allowCritical: allowCritical,
-            dryRun: dryRun,
-            purge: purge,
-            adopt: adopt,
-            force: force,
-            offline: offline,
-            resetPreserved: resetPreserved));
+        (progress, log) =>
+            new SeikoClient().Remove(
+                ResolveRoot(rootOption),
+                name,
+                store,
+                pre,
+                jobs,
+                proxy,
+                progress,
+                log,
+                allowCritical: allowCritical,
+                dryRun: dryRun,
+                purge: purge,
+                adopt: adopt,
+                force: force,
+                offline: offline,
+                resetPreserved: resetPreserved
+            )
+    );
 
 static int Update(
     string? rootOption,
@@ -1202,29 +1365,33 @@ static int Update(
     bool resetPreserved,
     bool offline,
     bool diagnostics,
-    bool json)
-    => RunMutation(
+    bool json
+) =>
+    RunMutation(
         "update",
         json,
         dryRun,
         diagnostics,
-        (progress, log) => new SeikoClient().Update(
-            ResolveRoot(rootOption),
-            name,
-            latest,
-            store,
-            pre,
-            jobs,
-            proxy,
-            progress,
-            log,
-            latestInstallable: latestInstallable,
-            allowCritical: allowCritical,
-            dryRun: dryRun,
-            adopt: adopt,
-            force: force,
-            offline: offline,
-            resetPreserved: resetPreserved));
+        (progress, log) =>
+            new SeikoClient().Update(
+                ResolveRoot(rootOption),
+                name,
+                latest,
+                store,
+                pre,
+                jobs,
+                proxy,
+                progress,
+                log,
+                latestInstallable: latestInstallable,
+                allowCritical: allowCritical,
+                dryRun: dryRun,
+                adopt: adopt,
+                force: force,
+                offline: offline,
+                resetPreserved: resetPreserved
+            )
+    );
 
 static int Why(string? rootOption, string name, bool json)
 {
@@ -1234,7 +1401,12 @@ static int Why(string? rootOption, string name, bool json)
     {
         WriteJson(
             CliJsonContext.Default.WhyEnvelope,
-            new WhyEnvelope(1, "why", new WhyData(name, chains.Select(chain => chain.ToList()).ToList())));
+            new WhyEnvelope(
+                1,
+                "why",
+                new WhyData(name, chains.Select(chain => chain.ToList()).ToList())
+            )
+        );
         return 0;
     }
 
@@ -1246,21 +1418,36 @@ static int Why(string? rootOption, string name, bool json)
 
     foreach (var chain in chains)
     {
-        Console.WriteLine(string.Join(
-            " -> ",
-            chain.Select(link => link.Kind == "direct" ? link.Name : $"{link.Name} ({link.Kind})")));
+        Console.WriteLine(
+            string.Join(
+                " -> ",
+                chain.Select(link =>
+                    link.Kind == "direct" ? link.Name : $"{link.Name} ({link.Kind})"
+                )
+            )
+        );
     }
 
     return 0;
 }
 
-static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, bool diagnostics, bool json)
+static int Outdated(
+    string? rootOption,
+    string? proxy,
+    bool pre,
+    bool offline,
+    bool diagnostics,
+    bool json
+)
 {
     var root = ResolveRoot(rootOption);
     var items = new SeikoClient().Outdated(root, proxy, pre, offline);
     if (json)
     {
-        WriteJson(CliJsonContext.Default.OutdatedEnvelope, new OutdatedEnvelope(1, "outdated", items.ToList()));
+        WriteJson(
+            CliJsonContext.Default.OutdatedEnvelope,
+            new OutdatedEnvelope(1, "outdated", items.ToList())
+        );
         return 0;
     }
 
@@ -1273,10 +1460,21 @@ static int Outdated(string? rootOption, string? proxy, bool pre, bool offline, b
     Console.WriteLine("NAME	CURRENT	LATEST-IN-RANGE	LATEST	LATEST-INSTALLABLE");
     foreach (var item in items)
     {
-        Console.WriteLine($"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}	{item.LatestInstallable ?? "-"}");
+        Console.WriteLine(
+            $"{item.Name}	{item.Current}	{item.LatestInRange ?? "-"}	{item.Latest}	{item.LatestInstallable ?? "-"}"
+        );
         foreach (var blocker in item.Blockers)
         {
-            Console.WriteLine("  " + Loc.Get("outdated.blocked", blocker.Relation, blocker.Target, blocker.Range ?? "", blocker.Source));
+            Console.WriteLine(
+                "  "
+                    + Loc.Get(
+                        "outdated.blocked",
+                        blocker.Relation,
+                        blocker.Target,
+                        blocker.Range ?? "",
+                        blocker.Source
+                    )
+            );
         }
     }
 
@@ -1296,7 +1494,8 @@ static int SourceAddCommand(
     string id,
     string index,
     string[]? tokenHosts,
-    bool json)
+    bool json
+)
 {
     var root = ResolveRoot(rootOption);
     var sources = new SeikoClient().SourceAdd(root, id, index, tokenHosts);
@@ -1353,7 +1552,8 @@ static void PrintConfig(string command, string key, string? value, bool json)
     {
         WriteJson(
             CliJsonContext.Default.ConfigEnvelope,
-            new ConfigEnvelope(1, command, new ConfigData(value)));
+            new ConfigEnvelope(1, command, new ConfigData(value))
+        );
         return;
     }
 
@@ -1365,7 +1565,10 @@ static int CacheStatusCommand(string? store, bool json)
     var status = new SeikoClient().CacheStatus(store);
     if (json)
     {
-        WriteJson(CliJsonContext.Default.CacheStatusEnvelope, new CacheStatusEnvelope(1, "cache_status", status));
+        WriteJson(
+            CliJsonContext.Default.CacheStatusEnvelope,
+            new CacheStatusEnvelope(1, "cache_status", status)
+        );
         return 0;
     }
 
@@ -1385,7 +1588,10 @@ static int CacheVerifyCommand(string? store, bool json)
     var hasError = findings.Any(finding => finding.Severity == "error");
     if (json)
     {
-        WriteJson(CliJsonContext.Default.CacheVerifyEnvelope, new CacheVerifyEnvelope(1, "cache_verify", findings.ToList()));
+        WriteJson(
+            CliJsonContext.Default.CacheVerifyEnvelope,
+            new CacheVerifyEnvelope(1, "cache_verify", findings.ToList())
+        );
         return hasError ? 1 : 0;
     }
 
@@ -1409,7 +1615,10 @@ static int CacheCleanCommand(string? rootOption, string? store, bool json)
     var result = new SeikoClient().CacheClean(root, store);
     if (json)
     {
-        WriteJson(CliJsonContext.Default.CacheCleanEnvelope, new CacheCleanEnvelope(1, "cache_clean", result));
+        WriteJson(
+            CliJsonContext.Default.CacheCleanEnvelope,
+            new CacheCleanEnvelope(1, "cache_clean", result)
+        );
         return 0;
     }
 
@@ -1422,7 +1631,8 @@ static int RunMutation(
     bool json,
     bool dryRun,
     bool diagnostics,
-    Func<IProgress<SyncProgress>?, Action<string>, SyncResult> action)
+    Func<IProgress<SyncProgress>?, Action<string>, SyncResult> action
+)
 {
     var showProgress = !json && !Log.Quiet && ProgressDisplay.IsSupported();
     SyncResult result;
@@ -1445,14 +1655,20 @@ static int RunMutation(
     {
         WriteJson(
             CliJsonContext.Default.SyncEnvelope,
-            new SyncEnvelope(1, command, new SyncData(
-                result.SeiInstalled,
-                result.FilesDeployed,
-                SyncMode.Normal.ToString(),
-                result.Warnings.ToList(),
-                diagnostics ? result.Diagnostics.ToList() : null,
-                result.ExternalItems,
-                result.ExternalHosts.ToList())));
+            new SyncEnvelope(
+                1,
+                command,
+                new SyncData(
+                    result.SeiInstalled,
+                    result.FilesDeployed,
+                    SyncMode.Normal.ToString(),
+                    result.Warnings.ToList(),
+                    diagnostics ? result.Diagnostics.ToList() : null,
+                    result.ExternalItems,
+                    result.ExternalHosts.ToList()
+                )
+            )
+        );
     }
     else
     {
@@ -1473,16 +1689,15 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
     if (result.ExternalItems > 0)
     {
         Console.WriteLine(
-            Loc.Get("external", result.ExternalItems, string.Join(", ", result.ExternalHosts)));
+            Loc.Get("external", result.ExternalItems, string.Join(", ", result.ExternalHosts))
+        );
     }
 
     foreach (var sei in result.Lock.Sei)
     {
         // A local file is not cross-checked against an index entry, so the
         // default output says so (ADR-0044).
-        var origin = sei.OriginPath is { } path
-            ? Loc.Get("origin-suffix", path)
-            : "";
+        var origin = sei.OriginPath is { } path ? Loc.Get("origin-suffix", path) : "";
         Console.WriteLine($"  {sei.Name} {sei.Version}{(sei.Direct ? " (direct)" : "")}{origin}");
     }
 
@@ -1490,7 +1705,9 @@ static void PrintSyncResult(SyncResult result, bool diagnostics)
     {
         foreach (var diagnostic in result.Diagnostics)
         {
-            Console.WriteLine($"diagnostic	{diagnostic.Name}	{diagnostic.Kind}: {diagnostic.Message}");
+            Console.WriteLine(
+                $"diagnostic	{diagnostic.Name}	{diagnostic.Kind}: {diagnostic.Message}"
+            );
         }
     }
 }
@@ -1506,7 +1723,10 @@ static int List(string? rootOption, bool json)
         {
             var selectors = sei.Artifact.Rid is null
                 ? null
-                : new Dictionary<string, string>(StringComparer.Ordinal) { ["rid"] = sei.Artifact.Rid };
+                : new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["rid"] = sei.Artifact.Rid,
+                };
             items.Add(new ListItem(sei.Name, sei.Version, sei.Source, sei.Direct, selectors));
         }
     }
@@ -1527,7 +1747,9 @@ static int List(string? rootOption, bool json)
     foreach (var sei in lockFile.Sei)
     {
         var selectors = sei.Artifact.Rid is null ? "-" : $"rid={sei.Artifact.Rid}";
-        Console.WriteLine($"{sei.Name}\t{sei.Version}\t{(sei.Direct ? "yes" : "no")}\t{sei.Source}\t{selectors}");
+        Console.WriteLine(
+            $"{sei.Name}\t{sei.Version}\t{(sei.Direct ? "yes" : "no")}\t{sei.Source}\t{selectors}"
+        );
     }
 
     return 0;
@@ -1542,7 +1764,8 @@ static int Search(
     bool json,
     string? tag,
     string? license,
-    int? limit)
+    int? limit
+)
 {
     var root = ResolveRoot(rootOption);
     var client = new SeikoClient();
@@ -1566,7 +1789,10 @@ static int Search(
 
     if (json)
     {
-        WriteJson(CliJsonContext.Default.SearchEnvelope, new SearchEnvelope(1, "search", results.ToList()));
+        WriteJson(
+            CliJsonContext.Default.SearchEnvelope,
+            new SearchEnvelope(1, "search", results.ToList())
+        );
         return 0;
     }
 
@@ -1575,7 +1801,8 @@ static int Search(
     {
         var flags = result.Deprecated is null ? "" : "\tdeprecated";
         Console.WriteLine(
-            $"{result.Name}\t{result.Version}\t{result.Source}\t{result.License ?? ""}\t{result.Description ?? ""}{flags}");
+            $"{result.Name}\t{result.Version}\t{result.Source}\t{result.License ?? ""}\t{result.Description ?? ""}{flags}"
+        );
     }
 
     return 0;
@@ -1588,7 +1815,8 @@ static int Info(
     bool offline,
     bool diagnostics,
     bool json,
-    bool allVersions)
+    bool allVersions
+)
 {
     var root = ResolveRoot(rootOption);
     var info = new SeikoClient().Info(root, name, proxy, offline);
@@ -1599,8 +1827,7 @@ static int Info(
             info.Source,
             info.Unlisted,
             info.Deprecated,
-            info.Versions
-                .Select(version => new InfoVersion(
+            info.Versions.Select(version => new InfoVersion(
                     version.Version,
                     version.Yanked,
                     version.Deprecated,
@@ -1610,8 +1837,8 @@ static int Info(
                     version.Prerequisites.ToList(),
                     version.OptionalPeers.ToList(),
                     version.Conflicts.ToList(),
-                    version.Artifacts
-                        .Select(artifact => new InfoArtifact(
+                    version
+                        .Artifacts.Select(artifact => new InfoArtifact(
                             artifact.Rid,
                             artifact.Dependencies.ToList(),
                             artifact.Prerequisites.ToList(),
@@ -1620,15 +1847,18 @@ static int Info(
                             artifact.ExternalCount,
                             artifact.ExternalHosts.ToList(),
                             artifact.ExternalKnown,
-                            artifact.DependencyGroups?.ToList()))
+                            artifact.DependencyGroups?.ToList()
+                        ))
                         .ToList(),
-                    version.SourceRetired))
+                    version.SourceRetired
+                ))
                 .ToList(),
             info.Project,
             info.UpstreamHost,
             info.MaintainedHere,
             info.IndexVerified,
-            info.OriginPaths?.ToList());
+            info.OriginPaths?.ToList()
+        );
         WriteJson(CliJsonContext.Default.InfoEnvelope, new InfoEnvelope(1, "info", data));
         return 0;
     }
@@ -1651,7 +1881,9 @@ static int Info(
             Console.WriteLine($"  {project.Description}");
         }
 
-        Console.WriteLine($"  authors: {string.Join(", ", project.Authors)}  license: {project.License}");
+        Console.WriteLine(
+            $"  authors: {string.Join(", ", project.Authors)}  license: {project.License}"
+        );
         if (project.Tags is { Count: > 0 })
         {
             Console.WriteLine($"  tags: {string.Join(", ", project.Tags)}");
@@ -1678,11 +1910,13 @@ static int Info(
     var installed = InstalledVersion(root, info.Name);
     var shown = allVersions
         ? info.Versions
-        : info.Versions
-            .Where(version => version == info.Versions[0]
+        : info
+            .Versions.Where(version =>
+                version == info.Versions[0]
                 || version.Yanked
                 || version.Advisory is not null
-                || string.Equals(version.Version, installed, StringComparison.Ordinal))
+                || string.Equals(version.Version, installed, StringComparison.Ordinal)
+            )
             .ToList();
     if (!allVersions && shown.Count < info.Versions.Count)
     {
@@ -1716,7 +1950,9 @@ static int Info(
             }
         }
 
-        Console.WriteLine($"  {version.Version}{flags}  deps={version.Dependencies.Count} artifacts={version.ArtifactCount}");
+        Console.WriteLine(
+            $"  {version.Version}{flags}  deps={version.Dependencies.Count} artifacts={version.ArtifactCount}"
+        );
         WriteRelations(version.Dependencies, "dependency");
         WriteRelations(version.Prerequisites, "prerequisite");
         WriteRelations(version.OptionalPeers, "optional peer");
@@ -1731,7 +1967,8 @@ static int Info(
             else if (artifact.ExternalCount > 0)
             {
                 Console.WriteLine(
-                    $"      external: {artifact.ExternalCount} item(s) from {string.Join(", ", artifact.ExternalHosts)}");
+                    $"      external: {artifact.ExternalCount} item(s) from {string.Join(", ", artifact.ExternalHosts)}"
+                );
             }
 
             WriteRelations(artifact.Dependencies, "dependency", 6);
@@ -1778,7 +2015,8 @@ static int SourceStatusCommand(
     string? id,
     string? proxy,
     bool offline,
-    bool json)
+    bool json
+)
 {
     var root = ResolveRoot(rootOption);
     var statuses = new SeikoClient().SourceStatus(root, id, proxy, offline);
@@ -1787,7 +2025,8 @@ static int SourceStatusCommand(
     {
         WriteJson(
             CliJsonContext.Default.SourceStatusEnvelope,
-            new SourceStatusEnvelope(1, "source_status", statuses.ToList()));
+            new SourceStatusEnvelope(1, "source_status", statuses.ToList())
+        );
         return failed ? 1 : 0;
     }
 
@@ -1795,7 +2034,15 @@ static int SourceStatusCommand(
     {
         var catalog = Loc.Get(status.CatalogPresent ? "status.catalog" : "status.no-catalog");
         var count = status.SeiCount is null ? "?" : status.SeiCount.Value.ToString();
-        Console.WriteLine(Loc.Get("status.row", status.Id, Loc.Get(status.Reachable ? "status.reachable" : "status.unreachable"), count, catalog));
+        Console.WriteLine(
+            Loc.Get(
+                "status.row",
+                status.Id,
+                Loc.Get(status.Reachable ? "status.reachable" : "status.unreachable"),
+                count,
+                catalog
+            )
+        );
         foreach (var problem in status.Problems)
         {
             Console.WriteLine($"  {problem}");
@@ -1812,7 +2059,8 @@ static int Audit(
     bool securityOnly,
     string? failOn,
     bool offline,
-    bool json)
+    bool json
+)
 {
     var threshold = 0;
     if (failOn is not null)
@@ -1825,23 +2073,26 @@ static int Audit(
             "critical" => 4,
             _ => throw new SeikoException(
                 "--fail-on requires low, moderate, high, or critical",
-                "usage"),
+                "usage"
+            ),
         };
     }
 
     var root = ResolveRoot(rootOption);
     var result = new SeikoClient().Audit(root, proxy, offline, securityOnly: securityOnly);
 
-    static int Rank(string? severity) => severity?.ToLowerInvariant() switch
-    {
-        "critical" => 4,
-        "high" => 3,
-        "moderate" => 2,
-        "low" => 1,
-        _ => 0,
-    };
+    static int Rank(string? severity) =>
+        severity?.ToLowerInvariant() switch
+        {
+            "critical" => 4,
+            "high" => 3,
+            "moderate" => 2,
+            "low" => 1,
+            _ => 0,
+        };
 
-    var failed = threshold > 0 && result.Findings.Any(finding => Rank(finding.Severity) >= threshold);
+    var failed =
+        threshold > 0 && result.Findings.Any(finding => Rank(finding.Severity) >= threshold);
     // Unknown is not safe: a source that could not answer fails the command.
     failed |= result.Unknown.Count > 0;
 
@@ -1849,9 +2100,12 @@ static int Audit(
     {
         WriteJson(
             CliJsonContext.Default.AuditEnvelope,
-            new AuditEnvelope(1, "audit", new AuditData(
-                result.Findings.ToList(),
-                result.Unknown.ToList())));
+            new AuditEnvelope(
+                1,
+                "audit",
+                new AuditData(result.Findings.ToList(), result.Unknown.ToList())
+            )
+        );
         return failed ? 1 : 0;
     }
 
@@ -1860,7 +2114,9 @@ static int Audit(
         var detail = finding.Url is null ? "" : $" ({finding.Url})";
         var fix = finding.Fix is null ? "no clean version found" : $"fix: {finding.Fix}";
         var severity = finding.Severity is null ? "" : $"[{finding.Severity}] ";
-        Console.WriteLine($"{finding.Name} {finding.Version}  {severity}{finding.Kind}{detail}  {fix}");
+        Console.WriteLine(
+            $"{finding.Name} {finding.Version}  {severity}{finding.Kind}{detail}  {fix}"
+        );
     }
 
     foreach (var name in result.Unknown)
@@ -1870,7 +2126,8 @@ static int Audit(
 
     Console.WriteLine(
         $"{result.Findings.Count} finding(s), {result.Unknown.Count} unknown; "
-        + "`sk update` applies fixes");
+            + "`sk update` applies fixes"
+    );
     return failed ? 1 : 0;
 }
 
@@ -1882,7 +2139,8 @@ static int Rollback(
     bool offline,
     bool diagnostics,
     bool json,
-    bool dryRun)
+    bool dryRun
+)
 {
     if (toGeneration is < 1)
     {
@@ -1898,18 +2156,23 @@ static int Rollback(
         {
             WriteJson(
                 CliJsonContext.Default.RollbackPreviewEnvelope,
-                new RollbackPreviewEnvelope(1, "rollback", preview));
+                new RollbackPreviewEnvelope(1, "rollback", preview)
+            );
             return 0;
         }
 
-        Console.WriteLine($"rollback preview: generation {preview.FromGeneration} -> {preview.ToGeneration}");
+        Console.WriteLine(
+            $"rollback preview: generation {preview.FromGeneration} -> {preview.ToGeneration}"
+        );
         WritePreviewList(preview.ConfigChanges);
         WritePreviewList(preview.LockChanges);
         WritePreviewList(preview.Added.Select(path => $"+ add {path}"));
         WritePreviewList(preview.Removed.Select(path => $"- remove {path}"));
         WritePreviewList(preview.Replaced.Select(path => $"~ replace {path}"));
         WritePreviewList(preview.Adopted.Select(path => $"= adopted {path}"));
-        WritePreviewList(preview.MissingStore.Select(path => $"! store entry missing, download needed: {path}"));
+        WritePreviewList(
+            preview.MissingStore.Select(path => $"! store entry missing, download needed: {path}")
+        );
         Console.WriteLine(Loc.Get("preview-done"));
         return 0;
     }
@@ -1919,11 +2182,18 @@ static int Rollback(
     {
         WriteJson(
             CliJsonContext.Default.RollbackEnvelope,
-            new RollbackEnvelope(1, "rollback", new RollbackData(result.Generation, result.SeiInstalled, result.FilesDeployed)));
+            new RollbackEnvelope(
+                1,
+                "rollback",
+                new RollbackData(result.Generation, result.SeiInstalled, result.FilesDeployed)
+            )
+        );
         return 0;
     }
 
-    Console.WriteLine($"rolled back to generation {result.Generation}: {result.SeiInstalled} sei, {result.FilesDeployed} file(s)");
+    Console.WriteLine(
+        $"rolled back to generation {result.Generation}: {result.SeiInstalled} sei, {result.FilesDeployed} file(s)"
+    );
     return 0;
 }
 
@@ -1943,7 +2213,8 @@ static int Generations(string? rootOption, string? store, bool json)
     {
         WriteJson(
             CliJsonContext.Default.GenerationEnvelope,
-            new GenerationEnvelope(1, "generation_list", new GenerationData(generations.ToList())));
+            new GenerationEnvelope(1, "generation_list", new GenerationData(generations.ToList()))
+        );
         return 0;
     }
 
@@ -1952,8 +2223,9 @@ static int Generations(string? rootOption, string? store, bool json)
     {
         Console.WriteLine(
             $"{generation.Generation}\t{generation.CreatedAt?.UtcDateTime.ToString("u") ?? "unknown"}\t"
-            + $"{(generation.Current ? "yes" : "")}\t{generation.SeiCount}\t{generation.FileCount}\t"
-            + $"{(generation.Valid ? "yes" : "no")}");
+                + $"{(generation.Current ? "yes" : "")}\t{generation.SeiCount}\t{generation.FileCount}\t"
+                + $"{(generation.Valid ? "yes" : "no")}"
+        );
     }
 
     return 0;
@@ -1964,7 +2236,10 @@ static int Init(string? rootOption, bool json)
     var path = InitTemplate.Write(Path.GetFullPath(rootOption ?? Directory.GetCurrentDirectory()));
     if (json)
     {
-        WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "init", new InitData(path)));
+        WriteJson(
+            CliJsonContext.Default.InitEnvelope,
+            new InitEnvelope(1, "init", new InitData(path))
+        );
         return 0;
     }
 
@@ -1977,7 +2252,8 @@ static int IndexVerifyCommand(
     bool checkArtifacts,
     bool strict,
     string? proxy,
-    bool json)
+    bool json
+)
 {
     var directory = Path.GetFullPath(pathOption ?? Directory.GetCurrentDirectory());
     var result = IndexVerifier.VerifyPath(directory, checkArtifacts, proxy, Log.Debug);
@@ -1986,7 +2262,8 @@ static int IndexVerifyCommand(
     {
         WriteJson(
             CliJsonContext.Default.IndexVerifyEnvelope,
-            new IndexVerifyEnvelope(1, "index_verify", result));
+            new IndexVerifyEnvelope(1, "index_verify", result)
+        );
         return failed ? 1 : 0;
     }
 
@@ -1996,12 +2273,12 @@ static int IndexVerifyCommand(
         Console.WriteLine($"{finding.Severity} {finding.Code}: {finding.Message}{path}");
     }
 
-    var checkedText = result.CheckedArtifacts > 0
-        ? $", {result.CheckedArtifacts} artifact(s) checked"
-        : "";
+    var checkedText =
+        result.CheckedArtifacts > 0 ? $", {result.CheckedArtifacts} artifact(s) checked" : "";
     Console.WriteLine(
         $"{result.Sei} sei, {result.Versions} version(s), {result.Artifacts} artifact(s){checkedText}; "
-        + $"{result.Errors} error(s), {result.Warnings} warning(s)");
+            + $"{result.Errors} error(s), {result.Warnings} warning(s)"
+    );
     return failed ? 1 : 0;
 }
 
@@ -2014,7 +2291,9 @@ static int IndexCatalogCommand(string? pathOption, bool check, bool json)
     if (File.Exists(path))
     {
         var existing = CatalogFile.TryRead(path);
-        stale = existing is null || existing.Sei.Count != expected.Sei.Count
+        stale =
+            existing is null
+            || existing.Sei.Count != expected.Sei.Count
             || JsonSerializer.Serialize(existing, SeikoJsonContext.Default.SeiCatalog)
                 != JsonSerializer.Serialize(expected, SeikoJsonContext.Default.SeiCatalog);
     }
@@ -2033,18 +2312,20 @@ static int IndexCatalogCommand(string? pathOption, bool check, bool json)
     {
         WriteJson(
             CliJsonContext.Default.IndexCatalogEnvelope,
-            new IndexCatalogEnvelope(1, "index_catalog", new IndexCatalogData(
-                expected.Sei.Count,
-                wrote,
-                stale)));
+            new IndexCatalogEnvelope(
+                1,
+                "index_catalog",
+                new IndexCatalogData(expected.Sei.Count, wrote, stale)
+            )
+        );
         return check && stale ? 1 : 0;
     }
 
     if (check)
     {
-        Console.WriteLine(stale
-            ? "catalog.json is missing or stale"
-            : "catalog.json is up to date");
+        Console.WriteLine(
+            stale ? "catalog.json is missing or stale" : "catalog.json is up to date"
+        );
         return stale ? 1 : 0;
     }
 
@@ -2073,7 +2354,9 @@ static int RunDoctor(string command, string? rootOption, string? store, bool cle
         Console.WriteLine(finding.Severity == "error" ? Color.Error(line) : Color.Warning(line));
         if (finding.Hint is not null)
         {
-            Console.WriteLine("  " + Loc.GetIsolated("hint", Loc.Get(finding.HintKey ?? "hint", finding.Hint!)));
+            Console.WriteLine(
+                "  " + Loc.GetIsolated("hint", Loc.Get(finding.HintKey ?? "hint", finding.Hint!))
+            );
         }
     }
 
@@ -2101,11 +2384,15 @@ static int Completion(string? shell, bool json)
         "powershell" or "pwsh" => CompletionScript("powershell"),
         _ => throw new SeikoException(
             "completion requires bash, zsh, fish, or powershell",
-            "usage"),
+            "usage"
+        ),
     };
     if (json)
     {
-        WriteJson(CliJsonContext.Default.InitEnvelope, new InitEnvelope(1, "completion", new InitData(script)));
+        WriteJson(
+            CliJsonContext.Default.InitEnvelope,
+            new InitEnvelope(1, "completion", new InitData(script))
+        );
         return 0;
     }
 

@@ -5,27 +5,29 @@ namespace Seiko.Tests;
 
 public sealed class CatalogTests
 {
-    private static void WriteCatalog(Fixture fixture, params SeiIndex[] indexes)
-        => File.WriteAllBytes(
+    private static void WriteCatalog(Fixture fixture, params SeiIndex[] indexes) =>
+        File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 CatalogFile.Build(indexes),
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
 
-    private static SeiIndex Read(Fixture fixture, string name)
-        => JsonSerializer.Deserialize(
+    private static SeiIndex Read(Fixture fixture, string name) =>
+        JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", name + ".json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
 
     [Fact]
     public void Search_UsesTheCatalogAndSkipsPerNameFiles()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         WriteCatalog(fixture, Read(fixture, "hello"));
 
@@ -44,7 +46,8 @@ public sealed class CatalogTests
         fixture.AddSei(
             "hello",
             new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
-            new VersionFixture { Version = "2.0.0-beta", Artifacts = [new ArtifactFixture()] });
+            new VersionFixture { Version = "2.0.0-beta", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
 
         var fallback = Assert.Single(new SeikoClient().Search(fixture.Root, "hello")).Version;
@@ -59,17 +62,23 @@ public sealed class CatalogTests
     public void Search_CatalogAndFallbackReportTheSamePackageAdvisory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-            Advisory = new AdvisoryInfo { Severity = "critical", Url = "https://example.invalid/a" },
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture()],
+                Advisory = new AdvisoryInfo
+                {
+                    Severity = "critical",
+                    Url = "https://example.invalid/a",
+                },
+            }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
 
         var fallback = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
@@ -94,12 +103,13 @@ public sealed class CatalogTests
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             "schemaVersion = 2\n"
-            + "sources = [\n"
-            + $"  {{ id = \"a\", index = \"{server.BaseUrl}sources/a/index.json\" }},\n"
-            + $"  {{ id = \"b\", index = \"{server.BaseUrl}sources/b/index.json\" }}\n"
-            + "]\n"
-            + "rid = \"win-x64\"\n"
-            + "sei = []\n");
+                + "sources = [\n"
+                + $"  {{ id = \"a\", index = \"{server.BaseUrl}sources/a/index.json\" }},\n"
+                + $"  {{ id = \"b\", index = \"{server.BaseUrl}sources/b/index.json\" }}\n"
+                + "]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = []\n"
+        );
 
         // Online caches each source's index and catalog, but neither source
         // lists the other's package, so no per-name file is fetched.
@@ -110,7 +120,8 @@ public sealed class CatalogTests
             fixture.Root,
             "o",
             offline: true,
-            storeRoot: fixture.StoreDirectory);
+            storeRoot: fixture.StoreDirectory
+        );
         Assert.Equal(2, offline.Count);
     }
 
@@ -119,18 +130,19 @@ public sealed class CatalogTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.Root);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         WriteCatalog(fixture, Read(fixture, "hello"));
         File.Delete(Path.Combine(fixture.SourceDirectory, "sei", "hello.json"));
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "index.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { Sei = ["hello"] },
-                SeikoJsonContext.Default.IndexRoot));
+                SeikoJsonContext.Default.IndexRoot
+            )
+        );
 
         // The HTTP source lists the name but its catalog is empty; online
         // search never asks it because the local catalog already answered.
@@ -140,33 +152,40 @@ public sealed class CatalogTests
             Path.Combine(second, "index.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { Sei = ["hello"] },
-                SeikoJsonContext.Default.IndexRoot));
+                SeikoJsonContext.Default.IndexRoot
+            )
+        );
         File.WriteAllBytes(
             Path.Combine(second, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new SeiCatalog { Sei = [] },
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
 
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             "schemaVersion = 2\n"
-            + "sources = [\n"
-            + $"  {{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }},\n"
-            + $"  {{ id = \"b\", index = \"{server.BaseUrl}sources/b/index.json\" }}\n"
-            + "]\n"
-            + "rid = \"win-x64\"\n"
-            + "sei = []\n");
+                + "sources = [\n"
+                + $"  {{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }},\n"
+                + $"  {{ id = \"b\", index = \"{server.BaseUrl}sources/b/index.json\" }}\n"
+                + "]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = []\n"
+        );
 
-        Assert.Single(new SeikoClient().Search(
-            fixture.Root,
-            "hello",
-            storeRoot: fixture.StoreDirectory));
+        Assert.Single(
+            new SeikoClient().Search(fixture.Root, "hello", storeRoot: fixture.StoreDirectory)
+        );
 
-        var offline = Assert.Single(new SeikoClient().Search(
-            fixture.Root,
-            "hello",
-            offline: true,
-            storeRoot: fixture.StoreDirectory));
+        var offline = Assert.Single(
+            new SeikoClient().Search(
+                fixture.Root,
+                "hello",
+                offline: true,
+                storeRoot: fixture.StoreDirectory
+            )
+        );
         Assert.Equal("hello", offline.Name);
     }
 
@@ -177,7 +196,9 @@ public sealed class CatalogTests
             Path.Combine(directory, "index.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { Sei = [name] },
-                SeikoJsonContext.Default.IndexRoot));
+                SeikoJsonContext.Default.IndexRoot
+            )
+        );
         var catalog = CatalogFile.Build([
             new SeiIndex
             {
@@ -193,7 +214,8 @@ public sealed class CatalogTests
         ]);
         File.WriteAllBytes(
             Path.Combine(directory, "catalog.json"),
-            JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog));
+            JsonSerializer.SerializeToUtf8Bytes(catalog, SeikoJsonContext.Default.SeiCatalog)
+        );
     }
 
     [Fact]
@@ -201,26 +223,27 @@ public sealed class CatalogTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         WriteCatalog(fixture, Read(fixture, "hello"));
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
 
         // The catalog answers the search, so the per-name file is never
         // fetched or cached.
-        Assert.Single(new SeikoClient().Search(
-            fixture.Root,
-            "hello",
-            storeRoot: fixture.StoreDirectory));
+        Assert.Single(
+            new SeikoClient().Search(fixture.Root, "hello", storeRoot: fixture.StoreDirectory)
+        );
 
-        var result = Assert.Single(new SeikoClient().Search(
-            fixture.Root,
-            "hello",
-            offline: true,
-            storeRoot: fixture.StoreDirectory));
+        var result = Assert.Single(
+            new SeikoClient().Search(
+                fixture.Root,
+                "hello",
+                offline: true,
+                storeRoot: fixture.StoreDirectory
+            )
+        );
         Assert.Equal("hello", result.Name);
     }
 
@@ -228,11 +251,10 @@ public sealed class CatalogTests
     public void Search_MatchesDescriptionAndTagsFromTheCatalog()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         var sei = Read(fixture, "hello");
         sei.Project = new ProjectMetadata
@@ -258,18 +280,19 @@ public sealed class CatalogTests
     public void Search_FallsBackWhenTheCatalogHasDuplicateNames()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         var entry = new CatalogEntry { Name = "hello", Version = "1.0.0" };
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new SeiCatalog { Sei = [entry, entry] },
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
 
         var result = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
 
@@ -280,17 +303,18 @@ public sealed class CatalogTests
     public void Search_FallsBackWhenTheCatalogHasANullEntry()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new SeiCatalog { Sei = [null!] },
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
 
         var result = Assert.Single(new SeikoClient().Search(fixture.Root, "hello"));
 
@@ -302,23 +326,23 @@ public sealed class CatalogTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64");
         var entry = new CatalogEntry { Name = "hello", Version = "1.0.0" };
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new SeiCatalog { Sei = [entry, entry] },
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
 
-        var result = Assert.Single(new SeikoClient().Search(
-            fixture.Root,
-            "hello",
-            storeRoot: fixture.StoreDirectory));
+        var result = Assert.Single(
+            new SeikoClient().Search(fixture.Root, "hello", storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("hello", result.Name);
     }
@@ -327,11 +351,10 @@ public sealed class CatalogTests
     public void Search_FallsBackWhenTheCatalogIsBroken()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         File.WriteAllText(Path.Combine(fixture.SourceDirectory, "catalog.json"), "{ not json");
 
@@ -343,16 +366,14 @@ public sealed class CatalogTests
     public void Search_MatchesNamesOutsideTheCatalog()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "other",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         WriteCatalog(fixture, Read(fixture, "hello"));
 
@@ -364,11 +385,10 @@ public sealed class CatalogTests
     public void Search_SkipsUnlistedFromTheCatalog()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         var sei = Read(fixture, "hello");
         sei.Unlisted = true;
@@ -382,8 +402,14 @@ public sealed class CatalogTests
     public void Search_RespectsTheLimit()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("alpha", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
-        fixture.AddSei("alpine", new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] });
+        fixture.AddSei(
+            "alpha",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "alpine",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         WriteCatalog(fixture, Read(fixture, "alpha"), Read(fixture, "alpine"));
 
@@ -398,7 +424,12 @@ public sealed class CatalogTests
         var index = new SeiIndex
         {
             Name = "hello",
-            Project = new ProjectMetadata { Description = "d", Authors = ["a"], License = "MIT" },
+            Project = new ProjectMetadata
+            {
+                Description = "d",
+                Authors = ["a"],
+                License = "MIT",
+            },
             Versions =
             [
                 new SeiVersionEntry

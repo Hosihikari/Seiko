@@ -15,7 +15,8 @@ public sealed record IndexVerifyResult(
     int Versions,
     int Artifacts,
     int CheckedArtifacts,
-    IReadOnlyList<IndexFinding> Findings)
+    IReadOnlyList<IndexFinding> Findings
+)
 {
     public int Errors => Findings.Count(finding => finding.Severity == "error");
     public int Warnings => Findings.Count(finding => finding.Severity == "warning");
@@ -31,7 +32,8 @@ public static class IndexVerifier
         bool checkArtifacts = false,
         string? proxy = null,
         Action<string>? log = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var full = Path.GetFullPath(path);
         return File.Exists(full)
@@ -44,7 +46,8 @@ public static class IndexVerifier
         bool checkArtifacts,
         string? proxy,
         Action<string>? log,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var directory = Path.GetDirectoryName(path)!;
         var fileName = Path.GetFileName(path);
@@ -53,7 +56,10 @@ public static class IndexVerifier
         SeiIndex? index;
         try
         {
-            index = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex);
+            index = JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.SeiIndex
+            );
         }
         catch (JsonException ex)
         {
@@ -72,16 +78,22 @@ public static class IndexVerifier
             context.Warning(
                 "sei-filename",
                 $"file name is '{fileName}'; the registered name must be sei-index.json",
-                fileName);
+                fileName
+            );
         }
 
-        if (index.Upstream is not null || index.Maintainers is not null
-            || index.SourceUnlisted is not null || index.SourceDeprecated is not null)
+        if (
+            index.Upstream is not null
+            || index.Maintainers is not null
+            || index.SourceUnlisted is not null
+            || index.SourceDeprecated is not null
+        )
         {
             context.Error(
                 "sei-side-field",
                 "a maintainer file must not declare upstream, maintainers, or source* fields",
-                fileName);
+                fileName
+            );
         }
 
         ValidateSeiBody(context, fileName, Path.GetFileNameWithoutExtension(fileName), index);
@@ -94,7 +106,8 @@ public static class IndexVerifier
                     context.Error(
                         "sei-side-field",
                         $"version '{entry!.Version}' must not declare source* fields",
-                        fileName);
+                        fileName
+                    );
                 }
             }
         }
@@ -114,7 +127,8 @@ public static class IndexVerifier
         string? proxy = null,
         Action<string>? log = null,
         CancellationToken cancellationToken = default,
-        bool checkCatalog = true)
+        bool checkCatalog = true
+    )
     {
         var root = Path.GetFullPath(directory);
         var context = new Context(root);
@@ -149,7 +163,11 @@ public static class IndexVerifier
 
                 if (!listed!.Add(name))
                 {
-                    context.Warning("index-duplicate", $"duplicate sei name '{name}' in index.json", "index.json");
+                    context.Warning(
+                        "index-duplicate",
+                        $"duplicate sei name '{name}' in index.json",
+                        "index.json"
+                    );
                 }
             }
         }
@@ -158,7 +176,8 @@ public static class IndexVerifier
             context.Warning(
                 "index-list-missing",
                 "index.json has no sei list; search will not see this index",
-                "index.json");
+                "index.json"
+            );
         }
 
         var files = EnumerateSeiFiles(root);
@@ -178,7 +197,8 @@ public static class IndexVerifier
                 context.Error(
                     "sei-not-listed",
                     $"sei '{name}' is not listed in index.json",
-                    Relative(root, file));
+                    Relative(root, file)
+                );
             }
 
             ValidateSeiFile(context, file, name);
@@ -193,7 +213,8 @@ public static class IndexVerifier
                     context.Error(
                         "sei-missing",
                         $"sei '{name}' is listed in index.json but sei/{name}.json is missing",
-                        $"sei/{name}.json");
+                        $"sei/{name}.json"
+                    );
                 }
             }
         }
@@ -224,7 +245,8 @@ public static class IndexVerifier
             context.Warning(
                 "catalog-missing",
                 "catalog.json is missing or unreadable; search will fall back to per-name reads",
-                CatalogFile.FileName);
+                CatalogFile.FileName
+            );
             return;
         }
 
@@ -244,21 +266,24 @@ public static class IndexVerifier
             context.Error(
                 "catalog-stale",
                 "catalog.json does not match the index; regenerate it",
-                CatalogFile.FileName);
+                CatalogFile.FileName
+            );
         }
     }
 
-    private static string Serialize(SeiCatalog catalog)
-        => JsonSerializer.Serialize(catalog, SeikoJsonContext.Default.SeiCatalog);
+    private static string Serialize(SeiCatalog catalog) =>
+        JsonSerializer.Serialize(catalog, SeikoJsonContext.Default.SeiCatalog);
 
-    private static IEnumerable<SeiIndex> LoadAllSei(string root)
-        => CatalogFile.Load(root);
+    private static IEnumerable<SeiIndex> LoadAllSei(string root) => CatalogFile.Load(root);
 
     private static IndexRoot? ReadIndex(Context context, string path)
     {
         try
         {
-            var index = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.IndexRoot);
+            var index = JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.IndexRoot
+            );
             if (index is null)
             {
                 context.Error("index-invalid", "index.json is empty", "index.json");
@@ -270,7 +295,8 @@ public static class IndexVerifier
                 context.Error(
                     "index-schema",
                     $"unsupported index schemaVersion {index.SchemaVersion}",
-                    "index.json");
+                    "index.json"
+                );
                 return null;
             }
 
@@ -293,7 +319,9 @@ public static class IndexVerifier
 
         return Directory
             .EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
-            .Where(path => Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase))
+            .Where(path =>
+                Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)
+            )
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToList();
     }
@@ -304,7 +332,10 @@ public static class IndexVerifier
         SeiIndex? index;
         try
         {
-            index = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex);
+            index = JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.SeiIndex
+            );
         }
         catch (JsonException ex)
         {
@@ -323,16 +354,14 @@ public static class IndexVerifier
             context.Error(
                 "sei-schema",
                 $"unsupported sei schemaVersion {index.SchemaVersion}",
-                relative);
+                relative
+            );
             return;
         }
 
         if (!string.Equals(index.Name, name, StringComparison.Ordinal))
         {
-            context.Error(
-                "sei-name",
-                $"sei file declares name '{index.Name}'",
-                relative);
+            context.Error("sei-name", $"sei file declares name '{index.Name}'", relative);
             return;
         }
 
@@ -343,7 +372,8 @@ public static class IndexVerifier
         Context context,
         string relative,
         string name,
-        SeiIndex index)
+        SeiIndex index
+    )
     {
         context.Sei++;
         if (index.Deprecated is not null && string.IsNullOrWhiteSpace(index.Deprecated))
@@ -351,7 +381,8 @@ public static class IndexVerifier
             context.Warning(
                 "deprecated-empty",
                 $"sei '{name}' has an empty deprecated message",
-                relative);
+                relative
+            );
         }
 
         ValidateProject(context, relative, name, index.Project);
@@ -361,7 +392,8 @@ public static class IndexVerifier
             context.Warning(
                 "source-overlay",
                 $"sei '{name}' records sourceUnlisted false; it only ever ORs with unlisted",
-                relative);
+                relative
+            );
         }
 
         var versions = index.Versions ?? [];
@@ -392,7 +424,8 @@ public static class IndexVerifier
                 context.Error(
                     "dependency-list",
                     $"sei '{name}' {entry.Version} has a null dependency list",
-                    relative);
+                    relative
+                );
             }
 
             var dependencies = (entry.Dependencies ?? [])
@@ -404,7 +437,8 @@ public static class IndexVerifier
                 context.Error(
                     "artifact-empty",
                     $"sei '{name}' {entry.Version} has no artifacts",
-                    relative);
+                    relative
+                );
                 continue;
             }
 
@@ -416,7 +450,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-invalid",
                         $"sei '{name}' {entry.Version} has a null artifact",
-                        relative);
+                        relative
+                    );
                     continue;
                 }
 
@@ -431,21 +466,25 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-ambiguous",
                         $"sei '{name}' {entry.Version} has artifacts with equivalent resolution conditions",
-                        relative);
+                        relative
+                    );
                     continue;
                 }
 
                 conditions.Add(artifact);
-                context.Artifacts.Add(new ArtifactRef(
-                    name,
-                    entry.Version,
-                    version,
-                    dependencies,
-                    entry.Prerequisites ?? [],
-                    entry.OptionalPeers ?? [],
-                    entry.Conflicts ?? [],
-                    artifact,
-                    relative));
+                context.Artifacts.Add(
+                    new ArtifactRef(
+                        name,
+                        entry.Version,
+                        version,
+                        dependencies,
+                        entry.Prerequisites ?? [],
+                        entry.OptionalPeers ?? [],
+                        entry.Conflicts ?? [],
+                        artifact,
+                        relative
+                    )
+                );
             }
         }
     }
@@ -455,14 +494,16 @@ public static class IndexVerifier
         string path,
         string name,
         SeiVersionEntry entry,
-        HashSet<NuGetVersion> seenVersions)
+        HashSet<NuGetVersion> seenVersions
+    )
     {
         if (!NuGetVersion.TryParse(entry.Version, out var version))
         {
             context.Error(
                 "version-invalid",
                 $"sei '{name}' has invalid version '{entry.Version}'",
-                path);
+                path
+            );
             return null;
         }
 
@@ -471,7 +512,8 @@ public static class IndexVerifier
             context.Error(
                 "version-duplicate",
                 $"sei '{name}' lists version '{entry.Version}' more than once",
-                path);
+                path
+            );
             return null;
         }
 
@@ -482,7 +524,8 @@ public static class IndexVerifier
                 context.Error(
                     "dependency-name",
                     $"sei '{name}' {entry.Version} has invalid dependency name '{dependency?.Name}'",
-                    path);
+                    path
+                );
                 continue;
             }
 
@@ -491,7 +534,8 @@ public static class IndexVerifier
                 context.Error(
                     "dependency-self",
                     $"sei '{name}' {entry.Version} depends on itself",
-                    path);
+                    path
+                );
             }
 
             if (!IsValidRange(dependency.Version))
@@ -499,7 +543,8 @@ public static class IndexVerifier
                 context.Error(
                     "dependency-range",
                     $"sei '{name}' {entry.Version} has invalid version range '{dependency.Version}' for '{dependency.Name}'",
-                    path);
+                    path
+                );
             }
         }
 
@@ -512,7 +557,8 @@ public static class IndexVerifier
             context.Warning(
                 "deprecated-empty",
                 $"sei '{name}' {entry.Version} has an empty deprecated message",
-                path);
+                path
+            );
         }
 
         if (entry.Advisory is { } advisory)
@@ -523,7 +569,8 @@ public static class IndexVerifier
                 context.Error(
                     "advisory-severity",
                     $"sei '{name}' {entry.Version} has invalid advisory severity '{advisory.Severity}'",
-                    path);
+                    path
+                );
             }
 
             if (advisory.Url is not null && !Urls.TryGetHttp(advisory.Url, out _))
@@ -531,7 +578,8 @@ public static class IndexVerifier
                 context.Error(
                     "advisory-url",
                     $"sei '{name}' {entry.Version} has invalid advisory URL '{advisory.Url}'",
-                    path);
+                    path
+                );
             }
         }
 
@@ -544,14 +592,12 @@ public static class IndexVerifier
         Context context,
         string path,
         string name,
-        ProjectMetadata? project)
+        ProjectMetadata? project
+    )
     {
         if (project is null)
         {
-            context.Warning(
-                "project-missing",
-                $"sei '{name}' has no project metadata",
-                path);
+            context.Warning("project-missing", $"sei '{name}' has no project metadata", path);
             return;
         }
 
@@ -560,8 +606,11 @@ public static class IndexVerifier
             context.Error("project-field", $"sei '{name}' has no project description", path);
         }
 
-        if (project.Authors is null || project.Authors.Count == 0
-            || project.Authors.Any(author => string.IsNullOrWhiteSpace(author)))
+        if (
+            project.Authors is null
+            || project.Authors.Count == 0
+            || project.Authors.Any(author => string.IsNullOrWhiteSpace(author))
+        )
         {
             context.Error("project-field", $"sei '{name}' has an empty project author list", path);
         }
@@ -571,26 +620,36 @@ public static class IndexVerifier
             context.Error(
                 "project-license",
                 $"sei '{name}' has an invalid SPDX license expression '{project.License}'",
-                path);
+                path
+            );
         }
 
         foreach (var tag in project.Tags ?? [])
         {
-            if (string.IsNullOrWhiteSpace(tag) || !string.Equals(tag, tag.Trim(), StringComparison.Ordinal))
+            if (
+                string.IsNullOrWhiteSpace(tag)
+                || !string.Equals(tag, tag.Trim(), StringComparison.Ordinal)
+            )
             {
                 context.Error("project-tag", $"sei '{name}' has an invalid tag '{tag}'", path);
             }
         }
 
-        foreach (var (field, url) in new[]
-        {
-            ("projectUrl", project.ProjectUrl),
-            ("repositoryUrl", project.RepositoryUrl),
-        })
+        foreach (
+            var (field, url) in new[]
+            {
+                ("projectUrl", project.ProjectUrl),
+                ("repositoryUrl", project.RepositoryUrl),
+            }
+        )
         {
             if (url is not null && !IsHttps(url))
             {
-                context.Error("project-url", $"sei '{name}' {field} must be an absolute https URL", path);
+                context.Error(
+                    "project-url",
+                    $"sei '{name}' {field} must be an absolute https URL",
+                    path
+                );
             }
         }
 
@@ -599,7 +658,8 @@ public static class IndexVerifier
             context.Warning(
                 "project-field",
                 $"sei '{name}' has a repositoryUrl without repositoryType",
-                path);
+                path
+            );
         }
     }
 
@@ -608,7 +668,8 @@ public static class IndexVerifier
         string path,
         string name,
         UpstreamInfo? upstream,
-        List<string>? maintainers)
+        List<string>? maintainers
+    )
     {
         if (maintainers is not null)
         {
@@ -617,12 +678,12 @@ public static class IndexVerifier
                 context.Error("maintainer", $"sei '{name}' has an empty maintainer entry", path);
             }
 
-            if (maintainers.Count > 0 && !maintainers.Any(item => item.StartsWith("github:", StringComparison.Ordinal)))
+            if (
+                maintainers.Count > 0
+                && !maintainers.Any(item => item.StartsWith("github:", StringComparison.Ordinal))
+            )
             {
-                context.Warning(
-                    "maintainer",
-                    $"sei '{name}' has no GitHub maintainer",
-                    path);
+                context.Warning("maintainer", $"sei '{name}' has no GitHub maintainer", path);
             }
         }
 
@@ -638,12 +699,19 @@ public static class IndexVerifier
             return;
         }
 
-        if (!IsHttps(upstream.Url) || !new Uri(upstream.Url).AbsolutePath.EndsWith("/sei-index.json", StringComparison.Ordinal))
+        if (
+            !IsHttps(upstream.Url)
+            || !new Uri(upstream.Url).AbsolutePath.EndsWith(
+                "/sei-index.json",
+                StringComparison.Ordinal
+            )
+        )
         {
             context.Error(
                 "upstream",
                 $"sei '{name}' upstream must be an https URL ending in /sei-index.json",
-                path);
+                path
+            );
         }
 
         if (!Hashing.IsSha256(upstream.Sha256))
@@ -652,11 +720,11 @@ public static class IndexVerifier
         }
     }
 
-    private static bool IsHttps(string url)
-        => Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            && uri.Scheme == Uri.UriSchemeHttps
-            && !string.IsNullOrWhiteSpace(uri.Host)
-            && string.IsNullOrEmpty(uri.UserInfo);
+    private static bool IsHttps(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && !string.IsNullOrWhiteSpace(uri.Host)
+        && string.IsNullOrEmpty(uri.UserInfo);
 
     private static void ValidateRelations(
         Context context,
@@ -664,15 +732,13 @@ public static class IndexVerifier
         string name,
         string version,
         string kind,
-        List<SeiDependency>? relations)
+        List<SeiDependency>? relations
+    )
     {
         var code = kind.Replace(' ', '-');
         if (relations is null)
         {
-            context.Error(
-                $"{code}-list",
-                $"sei '{name}' {version} has a null {kind} list",
-                path);
+            context.Error($"{code}-list", $"sei '{name}' {version} has a null {kind} list", path);
             return;
         }
 
@@ -683,16 +749,14 @@ public static class IndexVerifier
                 context.Error(
                     $"{code}-name",
                     $"sei '{name}' {version} has invalid {kind} name '{relation?.Name}'",
-                    path);
+                    path
+                );
                 continue;
             }
 
             if (string.Equals(relation.Name, name, StringComparison.Ordinal))
             {
-                context.Error(
-                    $"{code}-self",
-                    $"sei '{name}' {version} has a self {kind}",
-                    path);
+                context.Error($"{code}-self", $"sei '{name}' {version} has a self {kind}", path);
             }
 
             if (!IsValidRange(relation.Version))
@@ -700,7 +764,8 @@ public static class IndexVerifier
                 context.Error(
                     $"{code}-range",
                     $"sei '{name}' {version} has invalid version range '{relation.Version}' for {kind} '{relation.Name}'",
-                    path);
+                    path
+                );
             }
         }
     }
@@ -710,23 +775,49 @@ public static class IndexVerifier
         string path,
         string name,
         SeiVersionEntry entry,
-        ArtifactEntry artifact)
+        ArtifactEntry artifact
+    )
     {
         var ok = true;
 
         if (artifact.Rid is not null && string.IsNullOrWhiteSpace(artifact.Rid))
         {
-            context.Error(
-                "artifact-rid",
-                $"sei '{name}' {entry.Version} has an empty rid",
-                path);
+            context.Error("artifact-rid", $"sei '{name}' {entry.Version} has an empty rid", path);
             ok = false;
         }
 
-        ValidateRelations(context, path, name, entry.Version, "artifact dependency", artifact.Dependencies);
-        ValidateRelations(context, path, name, entry.Version, "artifact prerequisite", artifact.Prerequisites);
-        ValidateRelations(context, path, name, entry.Version, "artifact optional peer", artifact.OptionalPeers);
-        ValidateRelations(context, path, name, entry.Version, "artifact conflict", artifact.Conflicts);
+        ValidateRelations(
+            context,
+            path,
+            name,
+            entry.Version,
+            "artifact dependency",
+            artifact.Dependencies
+        );
+        ValidateRelations(
+            context,
+            path,
+            name,
+            entry.Version,
+            "artifact prerequisite",
+            artifact.Prerequisites
+        );
+        ValidateRelations(
+            context,
+            path,
+            name,
+            entry.Version,
+            "artifact optional peer",
+            artifact.OptionalPeers
+        );
+        ValidateRelations(
+            context,
+            path,
+            name,
+            entry.Version,
+            "artifact conflict",
+            artifact.Conflicts
+        );
 
         if (artifact.DependencyGroups is { } groups)
         {
@@ -738,16 +829,45 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-group",
                         $"sei '{name}' {entry.Version} has a null dependency group",
-                        path);
+                        path
+                    );
                     ok = false;
                     continue;
                 }
 
                 var kind = $"group {index}";
-                ValidateRelations(context, path, name, entry.Version, $"{kind} dependency", group.Dependencies);
-                ValidateRelations(context, path, name, entry.Version, $"{kind} prerequisite", group.Prerequisites);
-                ValidateRelations(context, path, name, entry.Version, $"{kind} optional peer", group.OptionalPeers);
-                ValidateRelations(context, path, name, entry.Version, $"{kind} conflict", group.Conflicts);
+                ValidateRelations(
+                    context,
+                    path,
+                    name,
+                    entry.Version,
+                    $"{kind} dependency",
+                    group.Dependencies
+                );
+                ValidateRelations(
+                    context,
+                    path,
+                    name,
+                    entry.Version,
+                    $"{kind} prerequisite",
+                    group.Prerequisites
+                );
+                ValidateRelations(
+                    context,
+                    path,
+                    name,
+                    entry.Version,
+                    $"{kind} optional peer",
+                    group.OptionalPeers
+                );
+                ValidateRelations(
+                    context,
+                    path,
+                    name,
+                    entry.Version,
+                    $"{kind} conflict",
+                    group.Conflicts
+                );
             }
 
             // Two groups that apply under identical conditions but install
@@ -761,7 +881,8 @@ public static class IndexVerifier
                 context.Error(
                     "artifact-group-ambiguous",
                     $"sei '{name}' {entry.Version} has dependency groups with the same conditions but different relations",
-                    path);
+                    path
+                );
                 ok = false;
             }
         }
@@ -771,7 +892,8 @@ public static class IndexVerifier
             context.Error(
                 "artifact-layout",
                 $"sei '{name}' {entry.Version} has unsupported layout '{artifact.Layout}'",
-                path);
+                path
+            );
             ok = false;
         }
 
@@ -781,15 +903,20 @@ public static class IndexVerifier
             context.Error(
                 "artifact-source",
                 $"sei '{name}' {entry.Version} has no artifact source",
-                path);
+                path
+            );
             return false;
         }
 
-        if (ExternalFiles.Count(new ArtifactManifest
-        {
-            ExternalFiles = artifact.ExternalFiles,
-            ExternalArchives = artifact.ExternalArchives,
-        }) > 0)
+        if (
+            ExternalFiles.Count(
+                new ArtifactManifest
+                {
+                    ExternalFiles = artifact.ExternalFiles,
+                    ExternalArchives = artifact.ExternalArchives,
+                }
+            ) > 0
+        )
         {
             var declarationsValid = true;
             try
@@ -801,7 +928,8 @@ public static class IndexVerifier
                         ExternalArchives = artifact.ExternalArchives,
                     },
                     $"sei '{name}' {entry.Version}",
-                    "artifact-external");
+                    "artifact-external"
+                );
             }
             catch (SeikoException ex)
             {
@@ -816,7 +944,8 @@ public static class IndexVerifier
                 context.Warning(
                     "artifact-external-summary",
                     $"sei '{name}' {entry.Version} has external files but no external summary",
-                    path);
+                    path
+                );
             }
             else if (!declarationsValid)
             {
@@ -839,7 +968,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-external-summary",
                         $"sei '{name}' {entry.Version} external summary does not match the declarations",
-                        path);
+                        path
+                    );
                     ok = false;
                 }
             }
@@ -849,7 +979,8 @@ public static class IndexVerifier
             context.Error(
                 "artifact-external-summary",
                 $"sei '{name}' {entry.Version} has an external summary but no external declarations",
-                path);
+                path
+            );
             ok = false;
         }
 
@@ -858,7 +989,8 @@ public static class IndexVerifier
             context.Error(
                 "artifact-url",
                 $"sei '{name}' {entry.Version} has invalid artifact URL '{DescribeArtifactUrl(source.Url)}'",
-                path);
+                path
+            );
             ok = false;
         }
         else if (IsLocalAbsoluteArtifact(source.Url))
@@ -866,7 +998,8 @@ public static class IndexVerifier
             context.Warning(
                 "artifact-local",
                 $"sei '{name}' {entry.Version} uses a machine-local artifact URL '{source.Url}'",
-                path);
+                path
+            );
         }
 
         if (!Hashing.IsSha256(source.Sha256))
@@ -874,7 +1007,8 @@ public static class IndexVerifier
             context.Error(
                 "artifact-sha256",
                 $"sei '{name}' {entry.Version} has invalid SHA-256 '{source.Sha256}'",
-                path);
+                path
+            );
             ok = false;
         }
 
@@ -883,7 +1017,8 @@ public static class IndexVerifier
             context.Error(
                 "artifact-size",
                 $"sei '{name}' {entry.Version} has invalid artifact size {source.Size}",
-                path);
+                path
+            );
             ok = false;
         }
 
@@ -894,11 +1029,10 @@ public static class IndexVerifier
         Context context,
         string? proxy,
         Action<string>? log,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        var temp = Path.Combine(
-            Path.GetTempPath(),
-            "seiko-index-" + Guid.NewGuid().ToString("N"));
+        var temp = Path.Combine(Path.GetTempPath(), "seiko-index-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         try
         {
@@ -929,7 +1063,8 @@ public static class IndexVerifier
         ArtifactRef reference,
         HttpClient client,
         string tempDirectory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var source = reference.Artifact.Source;
         var path = Path.Combine(tempDirectory, Guid.NewGuid().ToString("N"));
@@ -942,7 +1077,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-missing",
                         $"sei '{reference.Sei}' {reference.Version}: artifact not found: {local}",
-                        reference.Path);
+                        reference.Path
+                    );
                     return;
                 }
 
@@ -952,7 +1088,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-size",
                         $"sei '{reference.Sei}' {reference.Version}: expected {source.Size} bytes, got {localLength}",
-                        reference.Path);
+                        reference.Path
+                    );
                     return;
                 }
 
@@ -970,7 +1107,8 @@ public static class IndexVerifier
                 context.Error(
                     "artifact-size",
                     $"sei '{reference.Sei}' {reference.Version}: expected {source.Size} bytes, got {length}",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -980,7 +1118,8 @@ public static class IndexVerifier
                 context.Error(
                     "artifact-checksum",
                     $"sei '{reference.Sei}' {reference.Version}: expected SHA-256 {source.Sha256}, got {actual}",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -995,17 +1134,22 @@ public static class IndexVerifier
             context.Error(
                 "artifact-size",
                 $"sei '{reference.Sei}' {reference.Version}: {ex.Message}",
-                reference.Path);
+                reference.Path
+            );
         }
-        catch (Exception ex) when (ex is IOException
-            or HttpRequestException
-            or TaskCanceledException
-            or InvalidDataException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or HttpRequestException
+                        or TaskCanceledException
+                        or InvalidDataException
+            )
         {
             context.Error(
                 "artifact-read",
                 $"sei '{reference.Sei}' {reference.Version}: {ex.Message}",
-                reference.Path);
+                reference.Path
+            );
         }
         finally
         {
@@ -1018,7 +1162,8 @@ public static class IndexVerifier
         string url,
         string path,
         long maxBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.TryAddWithoutValidation("User-Agent", SeikoHttp.UserAgent);
@@ -1028,15 +1173,17 @@ public static class IndexVerifier
             .GetResult();
         if (!response.IsSuccessStatusCode)
         {
-            var safe = Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? Urls.Redact(parsed) : url;
-            throw new HttpRequestException(
-                $"HTTP {(int)response.StatusCode} for {safe}");
+            var safe = Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                ? Urls.Redact(parsed)
+                : url;
+            throw new HttpRequestException($"HTTP {(int)response.StatusCode} for {safe}");
         }
 
         if (response.Content.Headers.ContentLength is { } length && length > maxBytes)
         {
             throw new ArtifactSizeException(
-                $"artifact response is {length} bytes; expected {maxBytes}");
+                $"artifact response is {length} bytes; expected {maxBytes}"
+            );
         }
 
         using var input = response.Content.ReadAsStream(cancellationToken);
@@ -1053,7 +1200,12 @@ public static class IndexVerifier
     // Readable by tests; production keeps the default.
     internal static TimeSpan? BodyIdleTimeoutOverride { get; set; }
 
-    private static void CopyBounded(Stream input, string path, long maxBytes, CancellationToken cancellationToken)
+    private static void CopyBounded(
+        Stream input,
+        string path,
+        long maxBytes,
+        CancellationToken cancellationToken
+    )
     {
         using var output = File.Create(path);
         var buffer = new byte[81920];
@@ -1070,7 +1222,8 @@ public static class IndexVerifier
             if (total + read > maxBytes)
             {
                 throw new ArtifactSizeException(
-                    $"artifact response exceeds the expected {maxBytes} bytes");
+                    $"artifact response exceeds the expected {maxBytes} bytes"
+                );
             }
 
             output.Write(buffer, 0, read);
@@ -1083,7 +1236,11 @@ public static class IndexVerifier
     // Synchronous Read cannot be cancelled on every stream; racing the read
     // against the token also covers a stalled body without changing the
     // verifier's serial structure.
-    private static int ReadWithIdleLimit(Stream input, byte[] buffer, CancellationToken cancellationToken)
+    private static int ReadWithIdleLimit(
+        Stream input,
+        byte[] buffer,
+        CancellationToken cancellationToken
+    )
     {
         var read = input.ReadAsync(buffer, cancellationToken).AsTask();
         bool finished;
@@ -1123,7 +1280,8 @@ public static class IndexVerifier
             context.Error(
                 "artifact-format",
                 $"sei '{reference.Sei}' {reference.Version}: artifact is not a zip archive",
-                reference.Path);
+                reference.Path
+            );
             return;
         }
 
@@ -1134,7 +1292,8 @@ public static class IndexVerifier
                 context.Error(
                     "artifact-budget",
                     $"sei '{reference.Sei}' {reference.Version}: artifact has {archive.Entries.Count} entries; the limit is {ArchiveLimits.MaxEntries}",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -1144,13 +1303,16 @@ public static class IndexVerifier
             foreach (var entry in archive.Entries)
             {
                 declaredTotal += entry.Length;
-                if (entry.Length > ArchiveLimits.MaxEntryBytes
-                    || declaredTotal > ArchiveLimits.MaxTotalBytes)
+                if (
+                    entry.Length > ArchiveLimits.MaxEntryBytes
+                    || declaredTotal > ArchiveLimits.MaxTotalBytes
+                )
                 {
                     context.Error(
                         "artifact-budget",
                         $"sei '{reference.Sei}' {reference.Version}: artifact expands beyond the extraction limits",
-                        reference.Path);
+                        reference.Path
+                    );
                     return;
                 }
 
@@ -1165,7 +1327,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-path",
                         $"sei '{reference.Sei}' {reference.Version}: archive path is too long or too deep",
-                        reference.Path);
+                        reference.Path
+                    );
                     return;
                 }
 
@@ -1174,7 +1337,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-path",
                         $"sei '{reference.Sei}' {reference.Version}: unsafe archive path '{name}'",
-                        reference.Path);
+                        reference.Path
+                    );
                     return;
                 }
 
@@ -1183,7 +1347,8 @@ public static class IndexVerifier
                     context.Error(
                         "artifact-duplicate",
                         $"sei '{reference.Sei}' {reference.Version}: duplicate archive path '{name}'",
-                        reference.Path);
+                        reference.Path
+                    );
                     return;
                 }
 
@@ -1195,19 +1360,21 @@ public static class IndexVerifier
                 context.Error(
                     "artifact-path",
                     artifactCollision(reference, archiveCollision!),
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
-            var manifests = archive.Entries
-                .Where(entry => ArchiveLimits.NormalizeName(entry.FullName) == "sei.json")
+            var manifests = archive
+                .Entries.Where(entry => ArchiveLimits.NormalizeName(entry.FullName) == "sei.json")
                 .ToList();
             if (manifests.Count == 0)
             {
                 context.Error(
                     "manifest-missing",
                     $"sei '{reference.Sei}' {reference.Version}: artifact has no root sei.json",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -1216,7 +1383,8 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-duplicate",
                     $"sei '{reference.Sei}' {reference.Version}: artifact has more than one root sei.json",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -1225,7 +1393,8 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-budget",
                     $"sei '{reference.Sei}' {reference.Version}: sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -1237,14 +1406,18 @@ public static class IndexVerifier
                 using var buffer = new MemoryStream();
                 stream.CopyTo(buffer);
                 manifestBytes = buffer.ToArray();
-                manifest = JsonSerializer.Deserialize(manifestBytes, SeikoJsonContext.Default.SeiManifest);
+                manifest = JsonSerializer.Deserialize(
+                    manifestBytes,
+                    SeikoJsonContext.Default.SeiManifest
+                );
             }
             catch (JsonException ex)
             {
                 context.Error(
                     "manifest-invalid",
                     $"sei '{reference.Sei}' {reference.Version}: invalid sei.json: {ex.Message}",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -1253,7 +1426,8 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-invalid",
                     $"sei '{reference.Sei}' {reference.Version}: empty sei.json",
-                    reference.Path);
+                    reference.Path
+                );
                 return;
             }
 
@@ -1263,98 +1437,130 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json schemaVersion {manifest.SchemaVersion}",
-                    reference.Path);
+                    reference.Path
+                );
             }
             else if (!string.Equals(manifest.Name, reference.Sei, StringComparison.Ordinal))
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json declares name '{manifest.Name}'",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (!NuGetVersion.TryParse(manifest.Version, out var manifestVersion)
-                || !manifestVersion.Equals(reference.ParsedVersion))
+            else if (
+                !NuGetVersion.TryParse(manifest.Version, out var manifestVersion)
+                || !manifestVersion.Equals(reference.ParsedVersion)
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json declares version '{manifest.Version}'",
-                    reference.Path);
+                    reference.Path
+                );
             }
             else if (manifest.Dependencies is null)
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json has a null dependency list",
-                    reference.Path);
+                    reference.Path
+                );
             }
             else if (!DependenciesEqual(manifest.Dependencies, reference.Dependencies))
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json dependencies do not match the index",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (manifest.Prerequisites is null
+            else if (
+                manifest.Prerequisites is null
                 || manifest.OptionalPeers is null
-                || manifest.Conflicts is null)
+                || manifest.Conflicts is null
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json has a null relation list",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (!DependenciesEqual(manifest.Prerequisites, reference.Prerequisites)
+            else if (
+                !DependenciesEqual(manifest.Prerequisites, reference.Prerequisites)
                 || !DependenciesEqual(manifest.OptionalPeers, reference.OptionalPeers)
-                || !DependenciesEqual(manifest.Conflicts, reference.Conflicts))
+                || !DependenciesEqual(manifest.Conflicts, reference.Conflicts)
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json relations do not match the index",
-                    reference.Path);
+                    reference.Path
+                );
             }
             else if (manifest.Artifact is null)
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json has no artifact object",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (!string.Equals(
-                manifest.Artifact.Rid,
-                reference.Artifact.Rid,
-                StringComparison.OrdinalIgnoreCase))
+            else if (
+                !string.Equals(
+                    manifest.Artifact.Rid,
+                    reference.Artifact.Rid,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json rid does not match the index artifact",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (!DependenciesEqual(manifest.Artifact.Dependencies, reference.Artifact.Dependencies)
-                || !DependenciesEqual(manifest.Artifact.Prerequisites, reference.Artifact.Prerequisites)
-                || !DependenciesEqual(manifest.Artifact.OptionalPeers, reference.Artifact.OptionalPeers)
-                || !DependenciesEqual(manifest.Artifact.Conflicts, reference.Artifact.Conflicts))
+            else if (
+                !DependenciesEqual(manifest.Artifact.Dependencies, reference.Artifact.Dependencies)
+                || !DependenciesEqual(
+                    manifest.Artifact.Prerequisites,
+                    reference.Artifact.Prerequisites
+                )
+                || !DependenciesEqual(
+                    manifest.Artifact.OptionalPeers,
+                    reference.Artifact.OptionalPeers
+                )
+                || !DependenciesEqual(manifest.Artifact.Conflicts, reference.Artifact.Conflicts)
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json artifact relations do not match the index artifact",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (!string.Equals(
-                NormalizeLayout(manifest.Artifact.Layout),
-                NormalizeLayout(reference.Artifact.Layout),
-                StringComparison.Ordinal))
+            else if (
+                !string.Equals(
+                    NormalizeLayout(manifest.Artifact.Layout),
+                    NormalizeLayout(reference.Artifact.Layout),
+                    StringComparison.Ordinal
+                )
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json layout does not match the index artifact",
-                    reference.Path);
+                    reference.Path
+                );
             }
             else if (!ModesEqual(manifest.Artifact.Modes, reference.Artifact.Modes))
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json modes do not match the index artifact",
-                    reference.Path);
+                    reference.Path
+                );
             }
             else if (!PreserveEqual(manifest.Artifact.Preserve, reference.Artifact.Preserve))
             {
@@ -1363,16 +1569,21 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json preserve does not match the index artifact",
-                    reference.Path);
+                    reference.Path
+                );
             }
-            else if (!DependencyGroups.Equal(
-                manifest.Artifact.DependencyGroups,
-                reference.Artifact.DependencyGroups))
+            else if (
+                !DependencyGroups.Equal(
+                    manifest.Artifact.DependencyGroups,
+                    reference.Artifact.DependencyGroups
+                )
+            )
             {
                 context.Error(
                     "manifest-mismatch",
                     $"{prefix}: sei.json dependencyGroups do not match the index artifact",
-                    reference.Path);
+                    reference.Path
+                );
             }
 
             // A 3 manifest may carry external payload; validate it here so CI
@@ -1384,7 +1595,8 @@ public static class IndexVerifier
                     context.Error(
                         "manifest-external",
                         $"{prefix}: external declarations require sei.json schemaVersion 3",
-                        reference.Path);
+                        reference.Path
+                    );
                 }
 
                 var declarationsValid = true;
@@ -1406,10 +1618,13 @@ public static class IndexVerifier
                 // the length or depth limit; its per-prefix lookups would then
                 // hash far more than the rejected string is worth, so the
                 // group is skipped once one error is reported.
-                var declared = (manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path)
-                    .Concat((manifest.Artifact.ExternalArchives ?? [])
-                        .SelectMany(archive => archive.Members)
-                        .Select(member => member.Path));
+                var declared = (manifest.Artifact!.ExternalFiles ?? [])
+                    .Select(file => file.Path)
+                    .Concat(
+                        (manifest.Artifact.ExternalArchives ?? [])
+                            .SelectMany(archive => archive.Members)
+                            .Select(member => member.Path)
+                    );
                 foreach (var target in declarationsValid ? declared : [])
                 {
                     if (collisions.TryFindCollisionWith(target, out var targetCollision))
@@ -1419,7 +1634,8 @@ public static class IndexVerifier
                             targetCollision!.Kind == PathCollisionKind.SamePath
                                 ? $"{prefix}: external target path '{target}' also exists inside the artifact as '{targetCollision.Other}'"
                                 : $"{prefix}: path '{targetCollision.Other}' is both a file and a directory of external target '{target}'",
-                            reference.Path);
+                            reference.Path
+                        );
                     }
                 }
             }
@@ -1434,21 +1650,24 @@ public static class IndexVerifier
                         context.Error(
                             "manifest-mode",
                             $"{prefix}: mode names '{file}', which the artifact does not deploy",
-                            reference.Path);
+                            reference.Path
+                        );
                     }
                     else if (text is null || !FileModes.TryParse(text, out var value))
                     {
                         context.Error(
                             "manifest-mode",
                             $"{prefix}: invalid mode '{text}' for {file}",
-                            reference.Path);
+                            reference.Path
+                        );
                     }
                     else if (FileModes.HasSpecialBits(value))
                     {
                         context.Error(
                             "manifest-mode",
                             $"{prefix}: mode '{text}' for {file} sets setuid/setgid/sticky",
-                            reference.Path);
+                            reference.Path
+                        );
                     }
                 }
             }
@@ -1462,7 +1681,8 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-preserve",
                     $"{prefix}: preserve requires sei.json schemaVersion 4",
-                    reference.Path);
+                    reference.Path
+                );
             }
 
             if (manifest.SchemaVersion < 4 && declaredGroups)
@@ -1470,7 +1690,8 @@ public static class IndexVerifier
                 context.Error(
                     "manifest-group",
                     $"{prefix}: dependencyGroups requires sei.json schemaVersion 4",
-                    reference.Path);
+                    reference.Path
+                );
             }
 
             if (manifest.Artifact?.Preserve is { } preserve)
@@ -1483,7 +1704,8 @@ public static class IndexVerifier
                         context.Error(
                             "manifest-preserve",
                             $"{prefix}: preserve names '{file}', which the artifact does not deploy",
-                            reference.Path);
+                            reference.Path
+                        );
                     }
                 }
             }
@@ -1494,26 +1716,33 @@ public static class IndexVerifier
     // deploys is a typo that would otherwise be applied to nothing and never
     // reported. sei.json is skipped by deployment, so it counts as undeployed
     // here as well.
-    private static HashSet<string> DeployedPaths(SeiManifest manifest, IEnumerable<string> seenNames)
+    private static HashSet<string> DeployedPaths(
+        SeiManifest manifest,
+        IEnumerable<string> seenNames
+    )
     {
         var deployed = new HashSet<string>(
             seenNames.Where(name => name != "sei.json"),
-            StringComparer.Ordinal);
+            StringComparer.Ordinal
+        );
         deployed.UnionWith((manifest.Artifact!.ExternalFiles ?? []).Select(file => file.Path));
-        deployed.UnionWith((manifest.Artifact.ExternalArchives ?? [])
-            .SelectMany(archive => archive.Members)
-            .Select(member => member.Path));
+        deployed.UnionWith(
+            (manifest.Artifact.ExternalArchives ?? [])
+                .SelectMany(archive => archive.Members)
+                .Select(member => member.Path)
+        );
         return deployed;
     }
 
-    private static string artifactCollision(ArtifactRef reference, PathCollision collision)
-        => collision.Kind == PathCollisionKind.SamePath
+    private static string artifactCollision(ArtifactRef reference, PathCollision collision) =>
+        collision.Kind == PathCollisionKind.SamePath
             ? $"sei '{reference.Sei}' {reference.Version}: archive path '{collision.Other}' differs only by case or Unicode normalization from another archive path"
             : $"sei '{reference.Sei}' {reference.Version}: archive path '{collision.Other}' is both a file and a directory of another archive path";
 
     private static bool DependenciesEqual(
         List<SeiDependency>? manifestDependencies,
-        List<SeiDependency> indexDependencies)
+        List<SeiDependency> indexDependencies
+    )
     {
         if (manifestDependencies?.Any(dependency => dependency is null) == true)
         {
@@ -1533,14 +1762,16 @@ public static class IndexVerifier
 
     private static bool ModesEqual(
         IReadOnlyDictionary<string, string>? left,
-        IReadOnlyDictionary<string, string>? right)
+        IReadOnlyDictionary<string, string>? right
+    )
     {
         var a = left ?? new Dictionary<string, string>(StringComparer.Ordinal);
         var b = right ?? new Dictionary<string, string>(StringComparer.Ordinal);
         return a.Count == b.Count
             && a.All(pair =>
                 b.TryGetValue(pair.Key, out var value)
-                && string.Equals(pair.Value, value, StringComparison.Ordinal));
+                && string.Equals(pair.Value, value, StringComparison.Ordinal)
+            );
     }
 
     // Preserve order carries no meaning; duplicates stay visible because the
@@ -1553,11 +1784,12 @@ public static class IndexVerifier
             && a.OrderBy(path => path, StringComparer.Ordinal)
                 .SequenceEqual(
                     b.OrderBy(path => path, StringComparer.Ordinal),
-                    StringComparer.Ordinal);
+                    StringComparer.Ordinal
+                );
     }
 
-    private static string? NormalizeLayout(string? layout)
-        => string.IsNullOrEmpty(layout) ? "root" : layout;
+    private static string? NormalizeLayout(string? layout) =>
+        string.IsNullOrEmpty(layout) ? "root" : layout;
 
     private static bool IsValidRange(string? text)
     {
@@ -1617,20 +1849,22 @@ public static class IndexVerifier
         return end < 0 ? url : url[..end];
     }
 
-    private static bool IsLocalAbsoluteArtifact(string url)
-        => url.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
-            || Path.IsPathRooted(url)
-            || (url.Length >= 2 && char.IsAsciiLetter(url[0]) && url[1] == ':');
+    private static bool IsLocalAbsoluteArtifact(string url) =>
+        url.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+        || Path.IsPathRooted(url)
+        || (url.Length >= 2 && char.IsAsciiLetter(url[0]) && url[1] == ':');
 
-    private static bool IsRemote(string url)
-        => url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    private static bool IsRemote(string url) =>
+        url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryResolveLocal(string root, string url, out string path)
     {
-        if (url.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+        if (
+            url.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
             && Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            && uri.IsFile)
+            && uri.IsFile
+        )
         {
             path = uri.LocalPath;
             return true;
@@ -1659,14 +1893,11 @@ public static class IndexVerifier
             handler.UseProxy = true;
         }
 
-        return new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromMinutes(30),
-        };
+        return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(30) };
     }
 
-    private static string Relative(string root, string path)
-        => Path.GetRelativePath(root, path).Replace('\\', '/');
+    private static string Relative(string root, string path) =>
+        Path.GetRelativePath(root, path).Replace('\\', '/');
 
     private static void TryDeleteFile(string path)
     {
@@ -1677,12 +1908,8 @@ public static class IndexVerifier
                 File.Delete(path);
             }
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static void TryDeleteDirectory(string path)
@@ -1694,12 +1921,8 @@ public static class IndexVerifier
                 Directory.Delete(path, recursive: true);
             }
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private sealed record ArtifactRef(
@@ -1711,7 +1934,8 @@ public static class IndexVerifier
         List<SeiDependency> OptionalPeers,
         List<SeiDependency> Conflicts,
         ArtifactEntry Artifact,
-        string Path);
+        string Path
+    );
 
     private sealed class Context(string root)
     {
@@ -1722,13 +1946,13 @@ public static class IndexVerifier
         public int Versions { get; set; }
         public int ArtifactsCount { get; set; }
 
-        public void Error(string code, string message, string? path = null)
-            => Findings.Add(new IndexFinding("error", code, message, path));
+        public void Error(string code, string message, string? path = null) =>
+            Findings.Add(new IndexFinding("error", code, message, path));
 
-        public void Warning(string code, string message, string? path = null)
-            => Findings.Add(new IndexFinding("warning", code, message, path));
+        public void Warning(string code, string message, string? path = null) =>
+            Findings.Add(new IndexFinding("warning", code, message, path));
 
-        public IndexVerifyResult ToResult(int checkedCount)
-            => new(Root, Sei, Versions, ArtifactsCount, checkedCount, Findings);
+        public IndexVerifyResult ToResult(int checkedCount) =>
+            new(Root, Sei, Versions, ArtifactsCount, checkedCount, Findings);
     }
 }

@@ -24,8 +24,8 @@ internal static class StoreDigests
 {
     public const string DirectoryName = ".meta";
 
-    public static string PathFor(string storeRoot, string artifact)
-        => Path.Combine(storeRoot, DirectoryName, artifact + ".json");
+    public static string PathFor(string storeRoot, string artifact) =>
+        Path.Combine(storeRoot, DirectoryName, artifact + ".json");
 
     public static StoreDigestsState? TryRead(string storeRoot, string artifact)
     {
@@ -39,10 +39,13 @@ internal static class StoreDigests
         {
             var state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
-                SeikoJsonContext.Default.StoreDigestsState);
-            if (state is not { SchemaVersion: 1 }
+                SeikoJsonContext.Default.StoreDigestsState
+            );
+            if (
+                state is not { SchemaVersion: 1 }
                 || !string.Equals(state.Artifact, artifact, StringComparison.Ordinal)
-                || state.Files is null)
+                || state.Files is null
+            )
             {
                 return null;
             }
@@ -50,11 +53,13 @@ internal static class StoreDigests
             var paths = new HashSet<string>(StringComparer.Ordinal);
             foreach (var file in state.Files)
             {
-                if (file is null
+                if (
+                    file is null
                     || !IsSafeRelativePath(file.Path)
                     || !Hashing.IsSha256(file.Sha256)
                     || file.Size < 0
-                    || !paths.Add(file.Path))
+                    || !paths.Add(file.Path)
+                )
                 {
                     return null;
                 }
@@ -62,14 +67,14 @@ internal static class StoreDigests
 
             return state;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex)
+            when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return null;
         }
     }
 
-    public static bool IsSafeRelativePath(string? path)
-        => RelativePath.IsSafeStrict(path);
+    public static bool IsSafeRelativePath(string? path) => RelativePath.IsSafeStrict(path);
 
     public static void Write(string storeRoot, StoreDigestsState state)
     {
@@ -79,23 +84,28 @@ internal static class StoreDigests
         File.WriteAllText(
             temp,
             JsonSerializer.Serialize(state, SeikoJsonContext.Default.StoreDigestsState),
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+        );
         File.Move(temp, path, overwrite: true);
     }
 
     public static StoreDigestsState Compute(string directory, string artifact)
     {
         var files = new List<StoreFileDigest>();
-        foreach (var file in Directory
-            .EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-            .OrderBy(path => path, StringComparer.Ordinal))
+        foreach (
+            var file in Directory
+                .EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                .OrderBy(path => path, StringComparer.Ordinal)
+        )
         {
-            files.Add(new StoreFileDigest
-            {
-                Path = Path.GetRelativePath(directory, file).Replace('\\', '/'),
-                Sha256 = Hashing.Sha256File(file),
-                Size = new FileInfo(file).Length,
-            });
+            files.Add(
+                new StoreFileDigest
+                {
+                    Path = Path.GetRelativePath(directory, file).Replace('\\', '/'),
+                    Sha256 = Hashing.Sha256File(file),
+                    Size = new FileInfo(file).Length,
+                }
+            );
         }
 
         return new StoreDigestsState { Artifact = artifact, Files = files };
@@ -111,12 +121,8 @@ internal static class StoreDigests
                 File.Delete(path);
             }
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     public static void CleanOrphans(string storeRoot)
@@ -142,12 +148,8 @@ internal static class StoreDigests
             {
                 File.Delete(path);
             }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 }

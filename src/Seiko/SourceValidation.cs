@@ -26,27 +26,32 @@ internal static class SourceValidation
             {
                 throw Fail(
                     $"source '{sourceId}': {name} {entry.Version} has no dependency list",
-                    code);
+                    code
+                );
             }
 
-            if (entry.Prerequisites is null
+            if (
+                entry.Prerequisites is null
                 || entry.OptionalPeers is null
-                || entry.Conflicts is null)
+                || entry.Conflicts is null
+            )
             {
                 throw Fail(
                     $"source '{sourceId}': {name} {entry.Version} has no relation list",
-                    code);
+                    code
+                );
             }
 
             if (entry.Artifacts is null)
             {
                 throw Fail(
                     $"source '{sourceId}': {name} {entry.Version} has no artifact list",
-                    code);
+                    code
+                );
             }
 
-            var entryRelations = entry.Dependencies
-                .Concat(entry.Prerequisites)
+            var entryRelations = entry
+                .Dependencies.Concat(entry.Prerequisites)
                 .Concat(entry.OptionalPeers)
                 .Concat(entry.Conflicts)
                 .ToList();
@@ -56,7 +61,8 @@ internal static class SourceValidation
                 {
                     throw Fail(
                         $"source '{sourceId}': invalid relation for {name} {entry.Version}",
-                        code);
+                        code
+                    );
                 }
             }
 
@@ -71,28 +77,33 @@ internal static class SourceValidation
                 {
                     throw Fail(
                         $"source '{sourceId}': invalid artifact for {name} {entry.Version}",
-                        code);
+                        code
+                    );
                 }
 
                 if (artifact.Source is null)
                 {
                     throw Fail(
                         $"source '{sourceId}': artifact for {name} {entry.Version} has no source",
-                        code);
+                        code
+                    );
                 }
 
-                if (artifact.Dependencies is null
+                if (
+                    artifact.Dependencies is null
                     || artifact.Prerequisites is null
                     || artifact.OptionalPeers is null
-                    || artifact.Conflicts is null)
+                    || artifact.Conflicts is null
+                )
                 {
                     throw Fail(
                         $"source '{sourceId}': artifact for {name} {entry.Version} has no relation list",
-                        code);
+                        code
+                    );
                 }
 
-                var artifactRelations = artifact.Dependencies
-                    .Concat(artifact.Prerequisites)
+                var artifactRelations = artifact
+                    .Dependencies.Concat(artifact.Prerequisites)
                     .Concat(artifact.OptionalPeers)
                     .Concat(artifact.Conflicts)
                     .ToList();
@@ -102,7 +113,8 @@ internal static class SourceValidation
                     {
                         throw Fail(
                             $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid relation",
-                            code);
+                            code
+                        );
                     }
                 }
 
@@ -115,19 +127,22 @@ internal static class SourceValidation
                 {
                     foreach (var group in groups)
                     {
-                        if (group is null
+                        if (
+                            group is null
                             || group.Dependencies is null
                             || group.Prerequisites is null
                             || group.OptionalPeers is null
-                            || group.Conflicts is null)
+                            || group.Conflicts is null
+                        )
                         {
                             throw Fail(
                                 $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid dependency group",
-                                code);
+                                code
+                            );
                         }
 
-                        var groupRelations = group.Dependencies
-                            .Concat(group.Prerequisites)
+                        var groupRelations = group
+                            .Dependencies.Concat(group.Prerequisites)
                             .Concat(group.OptionalPeers)
                             .Concat(group.Conflicts)
                             .ToList();
@@ -137,7 +152,8 @@ internal static class SourceValidation
                             {
                                 throw Fail(
                                     $"source '{sourceId}': artifact for {name} {entry.Version} has an invalid relation in a dependency group",
-                                    code);
+                                    code
+                                );
                             }
                         }
 
@@ -152,14 +168,16 @@ internal static class SourceValidation
                 {
                     throw Fail(
                         $"source '{sourceId}': artifact for {name} {entry.Version} has an empty rid",
-                        code);
+                        code
+                    );
                 }
 
                 if (artifact.Layout is not null && artifact.Layout != "root")
                 {
                     throw Fail(
                         $"source '{sourceId}': artifact for {name} {entry.Version} has unsupported layout '{artifact.Layout}'",
-                        code);
+                        code
+                    );
                 }
             }
         }
@@ -173,13 +191,12 @@ internal static class SourceValidation
         SeiDependency relation,
         string sourceId,
         string? version,
-        string code)
+        string code
+    )
     {
         if (string.Equals(relation.Name, name, StringComparison.Ordinal))
         {
-            throw Fail(
-                $"source '{sourceId}': {name} {version} has a self relation",
-                code);
+            throw Fail($"source '{sourceId}': {name} {version} has a self relation", code);
         }
     }
 

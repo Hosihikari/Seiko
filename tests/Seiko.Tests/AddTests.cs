@@ -8,11 +8,14 @@ public sealed class AddTests
     public void Add_WritesMajorRangeForStableVersion()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.2.3",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.2.3",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         new SeikoClient().Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
@@ -24,11 +27,14 @@ public sealed class AddTests
     public void Add_WritesMinorRangeForZeroMajorVersion()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "0.2.3",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "0.2.3",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         new SeikoClient().Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory);
@@ -40,16 +46,20 @@ public sealed class AddTests
     public void Add_RestoresConfigWhenSyncFails()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.2.3",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.2.3",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.CorruptChecksum("hello");
         fixture.WriteConfig("win-x64");
 
-        Assert.Throws<SeikoException>(
-            () => new SeikoClient().Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory));
+        Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Add(fixture.Root, "hello", storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Empty(ConfigLoader.Load(fixture.Root).Sei);
         Assert.False(File.Exists(Path.Combine(fixture.Root, ".seiko", "transaction.json")));
@@ -60,26 +70,31 @@ public sealed class AddTests
     public void Add_LeavesTheLockAndDeploymentUntouchedWhenSyncFails()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
+        fixture.AddSei(
+            "other",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var lockBefore = File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.lock.json"));
         fixture.CorruptChecksum("other");
 
-        Assert.Throws<SeikoException>(() => client.Add(
-            fixture.Root,
-            "other",
-            storeRoot: fixture.StoreDirectory));
+        Assert.Throws<SeikoException>(() =>
+            client.Add(fixture.Root, "other", storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal(lockBefore, File.ReadAllBytes(Path.Combine(fixture.Root, "seiko.lock.json")));
         Assert.Equal("one", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
@@ -91,11 +106,14 @@ public sealed class AddTests
     public void Add_RecoversIncompleteConfigTransactionBeforeReading()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.2.3",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.2.3",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         var configPath = Path.Combine(fixture.Root, "seiko.conf");
         var stateDirectory = Path.Combine(fixture.Root, ".seiko");
@@ -115,11 +133,14 @@ public sealed class AddTests
     public void Add_WithoutRangePreservesExistingRange()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.2.3",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.2.3",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0,2.0.0)"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);

@@ -16,7 +16,8 @@ public sealed class PlatformTests
     public void DefaultRidFor_MapsSupportedArchitectures(
         string os,
         Architecture architecture,
-        string expected)
+        string expected
+    )
     {
         Assert.Equal(expected, SeikoClient.DefaultRidFor(os, architecture));
     }

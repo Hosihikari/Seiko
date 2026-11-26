@@ -26,6 +26,6 @@ internal static class Color
 
     public static string Dim(string text) => Wrap(text, "\u001b[2m");
 
-    private static string Wrap(string text, string code)
-        => _enabled && text.Length > 0 ? code + text + "\u001b[0m" : text;
+    private static string Wrap(string text, string code) =>
+        _enabled && text.Length > 0 ? code + text + "\u001b[0m" : text;
 }

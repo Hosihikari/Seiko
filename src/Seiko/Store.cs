@@ -7,7 +7,8 @@ namespace Seiko;
 public sealed record StoredSei(
     string Directory,
     SeiManifest Manifest,
-    IReadOnlyDictionary<string, StoreFileDigest> Digests);
+    IReadOnlyDictionary<string, StoreFileDigest> Digests
+);
 
 public sealed class Store
 {
@@ -20,14 +21,15 @@ public sealed class Store
         public int Max;
     }
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, EnsureStats> Stats =
-        new(StringComparer.Ordinal);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string,
+        EnsureStats
+    > Stats = new(StringComparer.Ordinal);
 
-    internal static int MaxActiveEnsures(string root)
-        => Stats.TryGetValue(root, out var stats) ? Volatile.Read(ref stats.Max) : 0;
+    internal static int MaxActiveEnsures(string root) =>
+        Stats.TryGetValue(root, out var stats) ? Volatile.Read(ref stats.Max) : 0;
 
-    internal static void ResetEnsureStats(string root)
-        => Stats[root] = new EnsureStats();
+    internal static void ResetEnsureStats(string root) => Stats[root] = new EnsureStats();
 
     public string Root { get; }
 
@@ -42,7 +44,8 @@ public sealed class Store
         sha256 = Hashing.NormalizeSha256(sha256);
         using var artifactLock = ProcessLock.AcquireWaiting(
             Path.Combine(Root, ".locks", sha256 + ".lock"),
-            $"artifact {sha256}");
+            $"artifact {sha256}"
+        );
         var directory = Path.Combine(Root, sha256);
         var manifestPath = Path.Combine(directory, "sei.json");
         if (!File.Exists(manifestPath))
@@ -56,23 +59,27 @@ public sealed class Store
         return new StoredSei(directory, manifest, digests);
     }
 
-    public StoredSei Ensure(ResolvedSei sei, DownloadSession session, CancellationToken cancellationToken)
-        => EnsureAsync(sei, session, cancellationToken).GetAwaiter().GetResult();
+    public StoredSei Ensure(
+        ResolvedSei sei,
+        DownloadSession session,
+        CancellationToken cancellationToken
+    ) => EnsureAsync(sei, session, cancellationToken).GetAwaiter().GetResult();
 
     // Same as EnsureAsync plus the concurrency statistic the scheduling bound
     // is tested with.
     internal async Task<StoredSei> EnsureCountedAsync(
         ResolvedSei sei,
         DownloadSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var stats = Stats.GetOrAdd(Root, _ => new EnsureStats());
         var active = Interlocked.Increment(ref stats.Active);
         int max;
-        while (active > (max = Volatile.Read(ref stats.Max))
-            && Interlocked.CompareExchange(ref stats.Max, active, max) != max)
-        {
-        }
+        while (
+            active > (max = Volatile.Read(ref stats.Max))
+            && Interlocked.CompareExchange(ref stats.Max, active, max) != max
+        ) { }
 
         try
         {
@@ -87,7 +94,8 @@ public sealed class Store
     public async Task<StoredSei> EnsureAsync(
         ResolvedSei sei,
         DownloadSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var expectedSha = Hashing.NormalizeSha256(sei.Artifact.Source.Sha256);
         var directory = Path.Combine(Root, expectedSha);
@@ -101,7 +109,8 @@ public sealed class Store
         using var artifactLock = ProcessLock.AcquireWaiting(
             Path.Combine(Root, ".locks", expectedSha + ".lock"),
             $"artifact {expectedSha}",
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken
+        );
 
         if (File.Exists(manifestPath))
         {
@@ -120,12 +129,14 @@ public sealed class Store
         Directory.CreateDirectory(partialDirectory);
         try
         {
-            await sei.Source.DownloadAsync(
+            await sei
+                .Source.DownloadAsync(
                     sei.Name,
                     sei.Artifact.Source,
                     partialDirectory,
                     session,
-                    cancellationToken)
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -139,7 +150,8 @@ public sealed class Store
                 {
                     throw new SeikoException(
                         $"size mismatch for {sei.Name} {sei.Version}: expected {sei.Artifact.Source.Size}, got {length}",
-                        "checksum");
+                        "checksum"
+                    );
                 }
 
                 var actual = Hashing.Sha256File(artifactPath);
@@ -147,7 +159,8 @@ public sealed class Store
                 {
                     throw new SeikoException(
                         $"checksum mismatch for {sei.Name} {sei.Version}: expected {expectedSha}, got {actual}",
-                        "checksum");
+                        "checksum"
+                    );
                 }
 
                 var temp = Path.Combine(Root, actual + ".tmp-" + Guid.NewGuid().ToString("N"));
@@ -170,14 +183,18 @@ public sealed class Store
                         actual,
                         extracted,
                         session,
-                        cancellationToken);
+                        cancellationToken
+                    );
                     if (Directory.Exists(directory))
                     {
                         Directory.Delete(directory, recursive: true);
                     }
 
                     Directory.Move(temp, directory);
-                    StoreDigests.Write(Root, new StoreDigestsState { Artifact = actual, Files = extracted });
+                    StoreDigests.Write(
+                        Root,
+                        new StoreDigestsState { Artifact = actual, Files = extracted }
+                    );
                 }
                 catch
                 {
@@ -218,9 +235,7 @@ public sealed class Store
         {
             // A later doctor/clean pass can remove leftovers.
         }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (UnauthorizedAccessException) { }
     }
 
     private StoredSei LoadStored(ResolvedSei sei, string directory, string manifestPath)
@@ -239,7 +254,8 @@ public sealed class Store
         ResolvedSei sei,
         string directory,
         string manifestPath,
-        List<StoreFileDigest> extracted)
+        List<StoreFileDigest> extracted
+    )
     {
         var manifest = ReadManifest(directory, manifestPath);
         Validate(sei, manifest);
@@ -259,16 +275,15 @@ public sealed class Store
         {
             throw new SeikoException(
                 $"sei.json in {directory} exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
-                "checksum");
+                "checksum"
+            );
         }
 
         var bytes = File.ReadAllBytes(manifestPath);
         SeiManifest? parsed;
         try
         {
-            parsed = JsonSerializer.Deserialize(
-                bytes,
-                SeikoJsonContext.Default.SeiManifest);
+            parsed = JsonSerializer.Deserialize(bytes, SeikoJsonContext.Default.SeiManifest);
         }
         catch (JsonException ex)
         {
@@ -277,13 +292,13 @@ public sealed class Store
             throw new SeikoException($"invalid sei.json in {directory} ({ex.Message})", "io", ex);
         }
 
-        var manifest = parsed
-            ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
+        var manifest = parsed ?? throw new SeikoException($"invalid sei.json in {directory}", "io");
         if (manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion)
         {
             throw new SeikoException(
                 $"unsupported sei.json schemaVersion {manifest.SchemaVersion} in {directory}",
-                "io");
+                "io"
+            );
         }
 
         // Only a 3 manifest may carry external declarations; 2 is the
@@ -292,7 +307,8 @@ public sealed class Store
         {
             throw new SeikoException(
                 $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare external files",
-                "io");
+                "io"
+            );
         }
 
         // `preserve` and `dependencyGroups` are 4 fields. A lower manifest
@@ -304,7 +320,8 @@ public sealed class Store
         {
             throw new SeikoException(
                 $"{directory}: sei.json schemaVersion {manifest.SchemaVersion} cannot declare {ManifestFields.GatedText(preserve, groups)}",
-                "io");
+                "io"
+            );
         }
 
         return manifest;
@@ -317,7 +334,8 @@ public sealed class Store
     private static void EnsureNoTargetCollision(
         List<StoreFileDigest> extracted,
         SeiManifest manifest,
-        string name)
+        string name
+    )
     {
         var artifact = manifest.Artifact;
         if (artifact is null)
@@ -331,8 +349,15 @@ public sealed class Store
             collisions.Add(digest.Path);
         }
 
-        foreach (var target in (artifact.ExternalFiles ?? []).Select(file => file.Path)
-            .Concat((artifact.ExternalArchives ?? []).SelectMany(archive => archive.Members).Select(member => member.Path)))
+        foreach (
+            var target in (artifact.ExternalFiles ?? [])
+                .Select(file => file.Path)
+                .Concat(
+                    (artifact.ExternalArchives ?? [])
+                        .SelectMany(archive => archive.Members)
+                        .Select(member => member.Path)
+                )
+        )
         {
             collisions.Add(target);
         }
@@ -345,13 +370,15 @@ public sealed class Store
                 collision!.Kind == PathCollisionKind.SamePath
                     ? $"{name}: path '{collision.Other}' also exists inside the artifact by case or Unicode normalization"
                     : $"{name}: path '{collision.Other}' is both a file and a directory of another deployed path",
-                "io");
+                "io"
+            );
         }
     }
 
     private static void VerifyFiles(
         string directory,
-        IReadOnlyDictionary<string, StoreFileDigest> digests)
+        IReadOnlyDictionary<string, StoreFileDigest> digests
+    )
     {
         if (PathSafety.IsLink(directory))
         {
@@ -389,9 +416,11 @@ public sealed class Store
         {
             var path = ResolveStoreFile(directory, relative);
             var info = new FileInfo(path);
-            if (!info.Exists
+            if (
+                !info.Exists
                 || info.Length != digest.Size
-                || !string.Equals(Hashing.Sha256File(path), digest.Sha256, StringComparison.Ordinal))
+                || !string.Equals(Hashing.Sha256File(path), digest.Sha256, StringComparison.Ordinal)
+            )
             {
                 throw CorruptedStore(directory, path);
             }
@@ -406,7 +435,9 @@ public sealed class Store
         }
 
         var root = Path.GetFullPath(directory) + Path.DirectorySeparatorChar;
-        var path = Path.GetFullPath(Path.Combine(directory, relative.Replace('/', Path.DirectorySeparatorChar)));
+        var path = Path.GetFullPath(
+            Path.Combine(directory, relative.Replace('/', Path.DirectorySeparatorChar))
+        );
         if (!path.StartsWith(root, StringComparison.Ordinal))
         {
             throw CorruptedStore(directory, path);
@@ -415,17 +446,23 @@ public sealed class Store
         return path;
     }
 
-    private static SeikoException CorruptedStore(string directory, string path)
-        => new(
+    private static SeikoException CorruptedStore(string directory, string path) =>
+        new(
             $"cache artifact is missing or corrupted ({path}); it will be downloaded again",
-            "cache-repair");
+            "cache-repair"
+        );
 
-    private IReadOnlyDictionary<string, StoreFileDigest> LoadDigests(string artifact, string directory)
+    private IReadOnlyDictionary<string, StoreFileDigest> LoadDigests(
+        string artifact,
+        string directory
+    )
     {
-        var state = StoreDigests.TryRead(Root, artifact)
+        var state =
+            StoreDigests.TryRead(Root, artifact)
             ?? throw new SeikoException(
                 $"cache metadata for {directory} is missing or unreadable",
-                "cache-repair");
+                "cache-repair"
+            );
 
         var digests = new Dictionary<string, StoreFileDigest>(StringComparer.Ordinal);
         foreach (var file in state.Files ?? [])
@@ -458,9 +495,7 @@ public sealed class Store
 
             if (ArchiveLimits.ExceedsEntryNameLimits(name))
             {
-                throw new SeikoException(
-                    $"zip entry path is too long or too deep: {name}",
-                    "io");
+                throw new SeikoException($"zip entry path is too long or too deep: {name}", "io");
             }
 
             if (name.Split('/').Any(segment => segment == ".."))
@@ -500,7 +535,12 @@ public sealed class Store
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             using var input = entry.Open();
-            using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            using var output = new FileStream(
+                destination,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None
+            );
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[81920];
             long size = 0;
@@ -515,12 +555,14 @@ public sealed class Store
                 ArchiveLimits.EnsureTotal(writtenTotal);
             }
 
-            digests.Add(new StoreFileDigest
-            {
-                Path = name,
-                Sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
-                Size = size,
-            });
+            digests.Add(
+                new StoreFileDigest
+                {
+                    Path = name,
+                    Sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
+                    Size = size,
+                }
+            );
         }
 
         if (!seenManifest)
@@ -535,7 +577,10 @@ public sealed class Store
     {
         if (manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion)
         {
-            throw new SeikoException($"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}", "io");
+            throw new SeikoException(
+                $"{sei.Name}: unsupported sei.json schemaVersion {manifest.SchemaVersion}",
+                "io"
+            );
         }
 
         if (!string.Equals(manifest.Name, sei.Name, StringComparison.Ordinal))
@@ -543,40 +588,54 @@ public sealed class Store
             throw new SeikoException($"{sei.Name}: sei.json declares name '{manifest.Name}'", "io");
         }
 
-        if (!NuGet.Versioning.NuGetVersion.TryParse(manifest.Version, out var manifestVersion)
-            || !manifestVersion.Equals(sei.ParsedVersion))
+        if (
+            !NuGet.Versioning.NuGetVersion.TryParse(manifest.Version, out var manifestVersion)
+            || !manifestVersion.Equals(sei.ParsedVersion)
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json declares version '{manifest.Version}', index has '{sei.Version}'", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json declares version '{manifest.Version}', index has '{sei.Version}'",
+                "io"
+            );
         }
 
         var dependencies = manifest.Dependencies;
-        if (dependencies is null
+        if (
+            dependencies is null
             || dependencies.Any(dependency =>
-                dependency is null || string.IsNullOrWhiteSpace(dependency.Name)))
+                dependency is null || string.IsNullOrWhiteSpace(dependency.Name)
+            )
+        )
         {
-            throw new SeikoException(
-                $"{sei.Name}: sei.json has an invalid dependency list",
-                "io");
+            throw new SeikoException($"{sei.Name}: sei.json has an invalid dependency list", "io");
         }
 
         var manifestDeps = dependencies
             .OrderBy(d => d.Name, StringComparer.Ordinal)
             .Select(d => $"{d.Name}|{d.Version}")
             .ToList();
-        var indexDeps = sei.Entry.Dependencies
-            .OrderBy(d => d.Name, StringComparer.Ordinal)
+        var indexDeps = sei
+            .Entry.Dependencies.OrderBy(d => d.Name, StringComparer.Ordinal)
             .Select(d => $"{d.Name}|{d.Version}")
             .ToList();
         if (!manifestDeps.SequenceEqual(indexDeps, StringComparer.Ordinal))
         {
-            throw new SeikoException($"{sei.Name}: sei.json dependencies do not match the index", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json dependencies do not match the index",
+                "io"
+            );
         }
 
-        if (!RelationsEqual(manifest.Prerequisites, sei.Entry.Prerequisites)
+        if (
+            !RelationsEqual(manifest.Prerequisites, sei.Entry.Prerequisites)
             || !RelationsEqual(manifest.OptionalPeers, sei.Entry.OptionalPeers)
-            || !RelationsEqual(manifest.Conflicts, sei.Entry.Conflicts))
+            || !RelationsEqual(manifest.Conflicts, sei.Entry.Conflicts)
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json relations do not match the index", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json relations do not match the index",
+                "io"
+            );
         }
 
         if (manifest.Artifact is null)
@@ -588,37 +647,63 @@ public sealed class Store
         {
             throw new SeikoException(
                 $"{sei.Name}: sei.json has unsupported layout '{manifest.Artifact.Layout}'",
-                "io");
+                "io"
+            );
         }
 
-        if (!string.Equals(manifest.Artifact.Rid, sei.Artifact.Rid, StringComparison.OrdinalIgnoreCase))
+        if (
+            !string.Equals(
+                manifest.Artifact.Rid,
+                sei.Artifact.Rid,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json rid does not match the index artifact", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json rid does not match the index artifact",
+                "io"
+            );
         }
 
-        if (!string.Equals(
-            NormalizeLayout(manifest.Artifact.Layout),
-            NormalizeLayout(sei.Artifact.Layout),
-            StringComparison.Ordinal))
+        if (
+            !string.Equals(
+                NormalizeLayout(manifest.Artifact.Layout),
+                NormalizeLayout(sei.Artifact.Layout),
+                StringComparison.Ordinal
+            )
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json layout does not match the index artifact", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json layout does not match the index artifact",
+                "io"
+            );
         }
 
         // An origin artifact carries its own declaration and its selector
         // condition, and there is no index entry to compare against, so its
         // prerequisite list legitimately differs from the manifest's (ADR-0044).
-        if (!RelationsEqual(manifest.Artifact.Dependencies, sei.Artifact.Dependencies)
-            || (sei.Source is not OriginSource
-                && !RelationsEqual(manifest.Artifact.Prerequisites, sei.Artifact.Prerequisites))
+        if (
+            !RelationsEqual(manifest.Artifact.Dependencies, sei.Artifact.Dependencies)
+            || (
+                sei.Source is not OriginSource
+                && !RelationsEqual(manifest.Artifact.Prerequisites, sei.Artifact.Prerequisites)
+            )
             || !RelationsEqual(manifest.Artifact.OptionalPeers, sei.Artifact.OptionalPeers)
-            || !RelationsEqual(manifest.Artifact.Conflicts, sei.Artifact.Conflicts))
+            || !RelationsEqual(manifest.Artifact.Conflicts, sei.Artifact.Conflicts)
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json artifact relations do not match the index artifact", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json artifact relations do not match the index artifact",
+                "io"
+            );
         }
 
         if (!ModesEqual(manifest.Artifact.Modes, sei.Artifact.Modes))
         {
-            throw new SeikoException($"{sei.Name}: sei.json modes do not match the index artifact", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json modes do not match the index artifact",
+                "io"
+            );
         }
 
         // The index entry selects the group, so the manifest's whole list must
@@ -626,25 +711,44 @@ public sealed class Store
         // sees (ADR-0045). preserve follows the same rule: the index entry is
         // what previews read, so a disagreement would preview the wrong
         // ownership.
-        if (!DependencyGroups.Equal(manifest.Artifact.DependencyGroups, sei.Artifact.DependencyGroups))
+        if (
+            !DependencyGroups.Equal(
+                manifest.Artifact.DependencyGroups,
+                sei.Artifact.DependencyGroups
+            )
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json dependency groups do not match the index artifact", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json dependency groups do not match the index artifact",
+                "io"
+            );
         }
 
-        if (!DependencyGroups.RelationsEqual(
-            (manifest.Artifact.Preserve ?? []).Select(path => new SeiDependency { Name = path }).ToList(),
-            (sei.Artifact.Preserve ?? []).Select(path => new SeiDependency { Name = path }).ToList()))
+        if (
+            !DependencyGroups.RelationsEqual(
+                (manifest.Artifact.Preserve ?? [])
+                    .Select(path => new SeiDependency { Name = path })
+                    .ToList(),
+                (sei.Artifact.Preserve ?? [])
+                    .Select(path => new SeiDependency { Name = path })
+                    .ToList()
+            )
+        )
         {
-            throw new SeikoException($"{sei.Name}: sei.json preserve does not match the index artifact", "io");
+            throw new SeikoException(
+                $"{sei.Name}: sei.json preserve does not match the index artifact",
+                "io"
+            );
         }
     }
 
-    private static string NormalizeLayout(string? layout)
-        => string.IsNullOrEmpty(layout) ? "root" : layout;
+    private static string NormalizeLayout(string? layout) =>
+        string.IsNullOrEmpty(layout) ? "root" : layout;
 
     private static bool RelationsEqual(
         IReadOnlyList<SeiDependency>? left,
-        IReadOnlyList<SeiDependency>? right)
+        IReadOnlyList<SeiDependency>? right
+    )
     {
         var a = (left ?? [])
             .OrderBy(item => item.Name, StringComparer.Ordinal)
@@ -655,21 +759,28 @@ public sealed class Store
             .ThenBy(item => item.Version ?? "", StringComparer.Ordinal)
             .ToList();
         return a.Count == b.Count
-            && a.Zip(b).All(pair =>
-                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
-                && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
+            && a.Zip(b)
+                .All(pair =>
+                    string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                    && string.Equals(
+                        pair.First.Version ?? "",
+                        pair.Second.Version ?? "",
+                        StringComparison.Ordinal
+                    )
+                );
     }
 
     private static bool ModesEqual(
         IReadOnlyDictionary<string, string>? left,
-        IReadOnlyDictionary<string, string>? right)
+        IReadOnlyDictionary<string, string>? right
+    )
     {
         var a = left ?? new Dictionary<string, string>(StringComparer.Ordinal);
         var b = right ?? new Dictionary<string, string>(StringComparer.Ordinal);
         return a.Count == b.Count
             && a.All(pair =>
                 b.TryGetValue(pair.Key, out var value)
-                && string.Equals(pair.Value, value, StringComparison.Ordinal));
+                && string.Equals(pair.Value, value, StringComparison.Ordinal)
+            );
     }
-
 }

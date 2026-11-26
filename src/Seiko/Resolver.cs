@@ -34,12 +34,18 @@ public sealed class Resolver
     private readonly IReadOnlySet<string>? _updateNames;
     private readonly bool _latestInstallable;
     private readonly bool _allowCritical;
-    private readonly SortedDictionary<string, SortedSet<string>> _skippedCritical = new(StringComparer.Ordinal);
+    private readonly SortedDictionary<string, SortedSet<string>> _skippedCritical = new(
+        StringComparer.Ordinal
+    );
     private readonly List<Requirement> _pending = [];
     private readonly Dictionary<string, ResolvedSei> _assigned = new(StringComparer.Ordinal);
     private readonly HashSet<SeiIndex> _validatedIndexes = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<VersionRange>> _prereleaseHints = new(
+        StringComparer.Ordinal
+    );
+    private readonly Dictionary<string, HashSet<string>> _prereleaseHintTexts = new(
+        StringComparer.Ordinal
+    );
     private readonly Dictionary<string, ForcedPick> _forced;
     private readonly bool _checkAmbiguity;
     private readonly SearchBudget _budget;
@@ -47,8 +53,12 @@ public sealed class Resolver
     private readonly bool _collectAll;
     private IReadOnlyList<SeiSpec> _specs = [];
     private HashSet<string> _directNames = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<VersionRange>> _unknownConstraints = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<VersionRange>> _unknownExcluded = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<VersionRange>> _unknownConstraints = new(
+        StringComparer.Ordinal
+    );
+    private readonly Dictionary<string, List<VersionRange>> _unknownExcluded = new(
+        StringComparer.Ordinal
+    );
     private readonly HashSet<string> _shadowed = new(StringComparer.Ordinal);
     private SeikoException? _lastConflict;
     private bool _hintsGrew;
@@ -64,7 +74,8 @@ public sealed class Resolver
         bool latestInstallable = false,
         bool allowCritical = false,
         Action<IReadOnlyList<ResolvedSei>>? onSolution = null,
-        bool collectAll = false)
+        bool collectAll = false
+    )
         : this(
             sources,
             existingLock,
@@ -77,9 +88,8 @@ public sealed class Resolver
             checkAmbiguity: true,
             new SearchBudget(),
             onSolution,
-            collectAll)
-    {
-    }
+            collectAll
+        ) { }
 
     private Resolver(
         IReadOnlyList<ISeiSource> sources,
@@ -94,7 +104,8 @@ public sealed class Resolver
         SearchBudget budget,
         Action<IReadOnlyList<ResolvedSei>>? onSolution = null,
         bool collectAll = false,
-        List<IReadOnlyList<ResolvedSei>>? collected = null)
+        List<IReadOnlyList<ResolvedSei>>? collected = null
+    )
     {
         _sources = sources;
         _lock = existingLock;
@@ -130,7 +141,8 @@ public sealed class Resolver
         foreach (var (name, versions) in _skippedCritical)
         {
             warnings.Add(
-                $"skipped critical version(s) of {name}: {string.Join(", ", versions)}; pass --allow-critical to install");
+                $"skipped critical version(s) of {name}: {string.Join(", ", versions)}; pass --allow-critical to install"
+            );
         }
 
         return warnings;
@@ -175,10 +187,12 @@ public sealed class Resolver
         {
             result = AcceptAfterProbeErrors(ResolveOnce(specs));
         }
-        catch (SeikoException ex) when (_checkAmbiguity
-            && ex.Code == "resolve"
-            && !_budget.Exhausted
-            && !_budget.DepthSpent)
+        catch (SeikoException ex)
+            when (_checkAmbiguity
+                && ex.Code == "resolve"
+                && !_budget.Exhausted
+                && !_budget.DepthSpent
+            )
         {
             // An open tie is settled by forcing it; when that does not help,
             // the tie was not the obstacle and the unfrozen answer stands.
@@ -259,7 +273,10 @@ public sealed class Resolver
     // A tie whose verdict stayed open only because answers kept dropping the
     // candidate is settled by forcing the candidate and searching again,
     // until no new one opens. Null when nothing was newly forced.
-    private IReadOnlyList<ResolvedSei>? RetryOpenTies(SeikoException ex, IReadOnlyList<SeiSpec> specs)
+    private IReadOnlyList<ResolvedSei>? RetryOpenTies(
+        SeikoException ex,
+        IReadOnlyList<SeiSpec> specs
+    )
     {
         if (ex.Code != "resolve" || _openTies.Count == 0)
         {
@@ -269,14 +286,17 @@ public sealed class Resolver
         // When the lock already picked one of these groups, prefer it over
         // the others: it is the answer the user chose last time.
         var ordered = _openTies
-            .OrderBy(item => GetLockedArtifact(item.Name) is { } locked
+            .OrderBy(item =>
+                GetLockedArtifact(item.Name) is { } locked
                 && string.Equals(
                     locked.Sha256,
                     item.Pick.Artifact.Source?.Sha256,
-                    StringComparison.OrdinalIgnoreCase)
+                    StringComparison.OrdinalIgnoreCase
+                )
                 && locked.Group == item.Pick.Group
                     ? 0
-                    : 1)
+                    : 1
+            )
             .ToList();
         // One candidate per name: forcing every tied one would let the last
         // win arbitrarily, and the search can fall back on its own when the
@@ -284,23 +304,27 @@ public sealed class Resolver
         var changed = false;
         foreach (var name in ordered.Select(item => item.Name).Distinct(StringComparer.Ordinal))
         {
-            var pick = ordered.First(item =>
-                string.Equals(item.Name, name, StringComparison.Ordinal)).Pick;
-            if (_forced.TryGetValue(name, out var current)
+            var pick = ordered
+                .First(item => string.Equals(item.Name, name, StringComparison.Ordinal))
+                .Pick;
+            if (
+                _forced.TryGetValue(name, out var current)
                 && current.Group == pick.Group
                 && string.Equals(
                     current.Artifact.Source?.Sha256,
                     pick.Artifact.Source?.Sha256,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 _openTies.RemoveAll(item =>
-                    string.Equals(item.Name, name, StringComparison.Ordinal));
+                    string.Equals(item.Name, name, StringComparison.Ordinal)
+                );
                 continue;
             }
 
             _forced[name] = pick;
-            _openTies.RemoveAll(item =>
-                string.Equals(item.Name, name, StringComparison.Ordinal));
+            _openTies.RemoveAll(item => string.Equals(item.Name, name, StringComparison.Ordinal));
             changed = true;
         }
 
@@ -347,10 +371,14 @@ public sealed class Resolver
                 continue;
             }
 
-            var units = resolved.Entry.Artifacts
-                .Where(artifact => artifact is not null
-                    && (string.IsNullOrWhiteSpace(artifact.Rid)
-                        || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)))
+            var units = resolved
+                .Entry.Artifacts.Where(artifact =>
+                    artifact is not null
+                    && (
+                        string.IsNullOrWhiteSpace(artifact.Rid)
+                        || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)
+                    )
+                )
                 .SelectMany(UnitsOf)
                 .ToList();
             if (units.Count < 2)
@@ -364,11 +392,17 @@ public sealed class Resolver
             // dies on a name nobody will add (prerequisites are not pulled
             // in). Proven-dead units are skipped too.
             var solvable = units
-                .Where(unit => (ReferenceEquals(unit.Artifact, resolved.Artifact)
-                        && unit.Group == resolved.GroupIndex)
-                    || (CanStillMatch(unit, resolved)
+                .Where(unit =>
+                    (
+                        ReferenceEquals(unit.Artifact, resolved.Artifact)
+                        && unit.Group == resolved.GroupIndex
+                    )
+                    || (
+                        CanStillMatch(unit, resolved)
                         && Reachable(unit)
-                        && TrySolveWith(unit, resolved) != SolveVerdict.Unsolvable))
+                        && TrySolveWith(unit, resolved) != SolveVerdict.Unsolvable
+                    )
+                )
                 .ToList();
             var top = solvable.Max(unit => DependencyGroups.Score(unit.Artifact, unit.Group));
             var best = solvable
@@ -377,18 +411,24 @@ public sealed class Resolver
 
             // The lock breaks a tie between equally specific candidates: it is
             // the answer the user settled on last time.
-            var chosen = best.Count > 1 && LockedPick(resolved.Name, best) is { } preferredLock
-                ? preferredLock
-                : best.Count == 1
-                    ? best[0]
-                    : null;
-            if (chosen is null
-                || DependencyGroups.Score(resolved.Artifact, resolved.GroupIndex) >= top)
+            var chosen =
+                best.Count > 1 && LockedPick(resolved.Name, best) is { } preferredLock
+                    ? preferredLock
+                : best.Count == 1 ? best[0]
+                : null;
+            if (
+                chosen is null
+                || DependencyGroups.Score(resolved.Artifact, resolved.GroupIndex) >= top
+            )
             {
                 continue;
             }
 
-            _forced[resolved.Name] = new ForcedPick(resolved.Version, chosen.Artifact, chosen.Group);
+            _forced[resolved.Name] = new ForcedPick(
+                resolved.Version,
+                chosen.Artifact,
+                chosen.Group
+            );
             added.Add(resolved.Name);
         }
 
@@ -421,9 +461,11 @@ public sealed class Resolver
             // fallback group, the order decides which group wins. A pinned
             // root is fully determined, so assigning it first prunes the most;
             // ties fall back to the name.
-            foreach (var spec in specs
-                .OrderByDescending(spec => spec.Version is not null)
-                .ThenBy(spec => spec.Name, StringComparer.Ordinal))
+            foreach (
+                var spec in specs
+                    .OrderByDescending(spec => spec.Version is not null)
+                    .ThenBy(spec => spec.Name, StringComparer.Ordinal)
+            )
             {
                 _pending.Add(CreateRequirement(spec.Name, spec.Version, null));
             }
@@ -458,7 +500,8 @@ public sealed class Resolver
                 {
                     throw new SeikoException(
                         $"{failure.Message} ({string.Join("; ", skipped)})",
-                        failure.Code ?? "resolve");
+                        failure.Code ?? "resolve"
+                    );
                 }
 
                 throw failure;
@@ -473,8 +516,8 @@ public sealed class Resolver
         // Assignment order, not name order: the cross-source check in the
         // real run walks the graph the way it was built, and its first
         // failure decides which later reads never happen.
-        var answer = _assigned.Values
-            .Select(sei => new ResolvedSei
+        var answer = _assigned
+            .Values.Select(sei => new ResolvedSei
             {
                 Name = sei.Name,
                 ParsedVersion = sei.ParsedVersion,
@@ -497,20 +540,33 @@ public sealed class Resolver
     // Constraint bookkeeping is part of the branch, so it is saved here and
     // restored when the branch below fails. A plain deep copy is enough; the
     // searches are small and this only exists in collecting runs.
-    private (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded,
-        HashSet<string> Shadowed) Snapshot()
-        => (Copy(_unknownConstraints), Copy(_unknownExcluded), new HashSet<string>(_shadowed, StringComparer.Ordinal));
+    private (
+        Dictionary<string, List<VersionRange>> Keep,
+        Dictionary<string, List<VersionRange>> Excluded,
+        HashSet<string> Shadowed
+    ) Snapshot() =>
+        (
+            Copy(_unknownConstraints),
+            Copy(_unknownExcluded),
+            new HashSet<string>(_shadowed, StringComparer.Ordinal)
+        );
 
     private static Dictionary<string, List<VersionRange>> Copy(
-        Dictionary<string, List<VersionRange>> source)
-        => source.ToDictionary(
+        Dictionary<string, List<VersionRange>> source
+    ) =>
+        source.ToDictionary(
             pair => pair.Key,
             pair => new List<VersionRange>(pair.Value),
-            StringComparer.Ordinal);
+            StringComparer.Ordinal
+        );
 
     private void Restore(
-        (Dictionary<string, List<VersionRange>> Keep, Dictionary<string, List<VersionRange>> Excluded,
-            HashSet<string> Shadowed) snapshot)
+        (
+            Dictionary<string, List<VersionRange>> Keep,
+            Dictionary<string, List<VersionRange>> Excluded,
+            HashSet<string> Shadowed
+        ) snapshot
+    )
     {
         Replace(_unknownConstraints, snapshot.Keep);
         Replace(_unknownExcluded, snapshot.Excluded);
@@ -520,7 +576,8 @@ public sealed class Resolver
 
     private static void Replace(
         Dictionary<string, List<VersionRange>> target,
-        Dictionary<string, List<VersionRange>> source)
+        Dictionary<string, List<VersionRange>> source
+    )
     {
         // The lists are copied, not shared: a later Add on the working state
         // would otherwise write through into the snapshot and survive the
@@ -533,16 +590,14 @@ public sealed class Resolver
     }
 
     // The known ranges on an untrusted name, created on first use.
-    private List<VersionRange> Constraints(string name)
-        => _unknownConstraints.TryGetValue(name, out var list)
-            ? list
-            : _unknownConstraints[name] = [];
+    private List<VersionRange> Constraints(string name) =>
+        _unknownConstraints.TryGetValue(name, out var list) ? list : _unknownConstraints[name] = [];
 
     // A name whose assignment cannot be trusted: an invented placeholder, or
     // an answer from a later source while an earlier one could not be read.
-    private bool Uncertain(string name)
-        => _assigned.TryGetValue(name, out var sei) && sei.Entry.ProbeUnknown
-            || _shadowed.Contains(name);
+    private bool Uncertain(string name) =>
+        _assigned.TryGetValue(name, out var sei) && sei.Entry.ProbeUnknown
+        || _shadowed.Contains(name);
 
     // Whether the known ranges leave any version once the exclusions from
     // conflicts are cut away. Only a proven-empty remainder counts; a partial
@@ -576,7 +631,12 @@ public sealed class Resolver
     {
         var left = new List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)>
         {
-            (allowed.MinVersion, allowed.IsMinInclusive, allowed.MaxVersion, allowed.IsMaxInclusive),
+            (
+                allowed.MinVersion,
+                allowed.IsMinInclusive,
+                allowed.MaxVersion,
+                allowed.IsMaxInclusive
+            ),
         };
 
         foreach (var range in excluded)
@@ -607,7 +667,8 @@ public sealed class Resolver
         NuGetVersion? hi,
         bool hiInc,
         VersionRange cut,
-        List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)> output)
+        List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)> output
+    )
     {
         var cLo = cut.MinVersion;
         var cHi = cut.MaxVersion;
@@ -615,10 +676,16 @@ public sealed class Resolver
         // Disjoint: the exclusion lies wholly before or after the interval,
         // or touches it only at a point neither side includes.
         var disjoint =
-            (hi is not null && cLo is not null
-                && (cLo > hi || (cLo.Equals(hi) && !(hiInc && cut.IsMinInclusive))))
-            || (lo is not null && cHi is not null
-                && (cHi < lo || (cHi.Equals(lo) && !(loInc && cut.IsMaxInclusive))));
+            (
+                hi is not null
+                && cLo is not null
+                && (cLo > hi || (cLo.Equals(hi) && !(hiInc && cut.IsMinInclusive)))
+            )
+            || (
+                lo is not null
+                && cHi is not null
+                && (cHi < lo || (cHi.Equals(lo) && !(loInc && cut.IsMaxInclusive)))
+            );
         if (disjoint)
         {
             Add(lo, loInc, hi, hiInc, output);
@@ -649,7 +716,8 @@ public sealed class Resolver
         bool loInc,
         NuGetVersion? hi,
         bool hiInc,
-        List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)> output)
+        List<(NuGetVersion? Lo, bool LoInc, NuGetVersion? Hi, bool HiInc)> output
+    )
     {
         if (lo is not null && hi is not null)
         {
@@ -665,12 +733,12 @@ public sealed class Resolver
     // An empty intersection is the degenerate `(0.0.0, 0.0.0)` — a singleton
     // with both ends open. An unbounded answer has no bounds at all, and a
     // real singleton is inclusive.
-    private static bool Empty(VersionRange range)
-        => range.MinVersion is { } min
-            && range.MaxVersion is { } max
-            && min.Equals(max)
-            && !range.IsMinInclusive
-            && !range.IsMaxInclusive;
+    private static bool Empty(VersionRange range) =>
+        range.MinVersion is { } min
+        && range.MaxVersion is { } max
+        && min.Equals(max)
+        && !range.IsMinInclusive
+        && !range.IsMaxInclusive;
 
     // Would this artifact certainly lose against the untrusted names already
     // in the graph? The real run drops it in CanStillMatch as soon as any X is
@@ -680,8 +748,7 @@ public sealed class Resolver
     private bool CannotMatch(ArtifactCandidate candidate)
     {
         var requirements = new List<(string Name, VersionRange Range, bool Keep)>();
-        foreach (var relation in candidate.Prerequisites
-            .Concat(candidate.OptionalPeers))
+        foreach (var relation in candidate.Prerequisites.Concat(candidate.OptionalPeers))
         {
             requirements.Add((relation.Name, ParseRange(relation.Version, relation.Name), true));
         }
@@ -691,10 +758,12 @@ public sealed class Resolver
             requirements.Add((relation.Name, ParseRange(relation.Version, relation.Name), false));
         }
 
-        foreach (var name in requirements
-            .Select(item => item.Name)
-            .Where(Uncertain)
-            .Distinct(StringComparer.Ordinal))
+        foreach (
+            var name in requirements
+                .Select(item => item.Name)
+                .Where(Uncertain)
+                .Distinct(StringComparer.Ordinal)
+        )
         {
             var kept = Constraints(name).ToList();
             var excluded = _unknownExcluded.TryGetValue(name, out var trimmed)
@@ -762,7 +831,8 @@ public sealed class Resolver
             // and wins. Keep walking until neither remains, or the
             // alternatives run out.
             return !_assigned.Values.Any(sei =>
-                sei.Entry.ProbeUnknown || _shadowed.Contains(sei.Name));
+                sei.Entry.ProbeUnknown || _shadowed.Contains(sei.Name)
+            );
         }
 
         var requirement = _pending[index];
@@ -786,8 +856,9 @@ public sealed class Resolver
                 {
                     _lastConflict = new SeikoException(
                         $"version ranges for {requirement.Name} contradict each other ({string.Join(", ", ranges.Distinct())}); "
-                        + $"latest from {Describe(requirement.From)}",
-                        "resolve");
+                            + $"latest from {Describe(requirement.From)}",
+                        "resolve"
+                    );
                     return false;
                 }
 
@@ -801,7 +872,8 @@ public sealed class Resolver
 
             _lastConflict = new SeikoException(
                 $"version conflict for {requirement.Name}: selected {existing.Version}, but {requirement.Range} is required by {Describe(requirement.From)}",
-                "resolve");
+                "resolve"
+            );
             return false;
         }
 
@@ -809,7 +881,8 @@ public sealed class Resolver
         {
             _lastConflict = new SeikoException(
                 $"sei '{requirement.Name}' not found in any source (required by {Describe(requirement.From)})",
-                "resolve");
+                "resolve"
+            );
             return false;
         }
 
@@ -858,11 +931,15 @@ public sealed class Resolver
                 // which is exactly the over-fit this guards against. It holds
                 // for a shadowed answer as much as for a placeholder.
                 _unknownConstraints[requirement.Name] = _pending
-                    .Where(item => string.Equals(item.Name, requirement.Name, StringComparison.Ordinal))
+                    .Where(item =>
+                        string.Equals(item.Name, requirement.Name, StringComparison.Ordinal)
+                    )
                     .Select(item => item.Range)
-                    .Concat(_unknownExcluded.TryGetValue(requirement.Name, out var excluded)
-                        ? excluded
-                        : [])
+                    .Concat(
+                        _unknownExcluded.TryGetValue(requirement.Name, out var excluded)
+                            ? excluded
+                            : []
+                    )
                     .Distinct()
                     .ToList();
             }
@@ -875,9 +952,11 @@ public sealed class Resolver
 
             var pendingBeforeVersion = _pending.Count;
             AddDependencies(entry.Dependencies, requirement.Name, requirement.Name);
-            var ridArtifacts = entry.Artifacts
-                .Where(artifact => string.IsNullOrWhiteSpace(artifact.Rid)
-                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase))
+            var ridArtifacts = entry
+                .Artifacts.Where(artifact =>
+                    string.IsNullOrWhiteSpace(artifact.Rid)
+                    || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)
+                )
                 .ToList();
             if (ridArtifacts.Count == 0)
             {
@@ -908,11 +987,14 @@ public sealed class Resolver
             if (_forced.TryGetValue(requirement.Name, out var forced))
             {
                 artifactCandidates = artifactCandidates
-                    .Where(candidate => SameCandidate(candidate, forced)
+                    .Where(candidate =>
+                        SameCandidate(candidate, forced)
                         && string.Equals(
                             version.ToNormalizedString(),
                             forced.Version,
-                            StringComparison.Ordinal))
+                            StringComparison.Ordinal
+                        )
+                    )
                     .ToList();
             }
 
@@ -939,16 +1021,15 @@ public sealed class Resolver
                 AddDependencies(
                     candidate.Dependencies,
                     requirement.Name,
-                    $"{requirement.Name} (artifact)");
+                    $"{requirement.Name} (artifact)"
+                );
                 if (Search(index + 1))
                 {
                     found = true;
                     break;
                 }
 
-                _pending.RemoveRange(
-                    pendingBeforeArtifact,
-                    _pending.Count - pendingBeforeArtifact);
+                _pending.RemoveRange(pendingBeforeArtifact, _pending.Count - pendingBeforeArtifact);
                 Restore(constraintsBefore);
                 if (_hintsGrew)
                 {
@@ -961,9 +1042,7 @@ public sealed class Resolver
                 return true;
             }
 
-            _pending.RemoveRange(
-                pendingBeforeVersion,
-                _pending.Count - pendingBeforeVersion);
+            _pending.RemoveRange(pendingBeforeVersion, _pending.Count - pendingBeforeVersion);
             _assigned.Remove(requirement.Name);
             Restore(constraintsBefore);
             if (_hintsGrew)
@@ -981,13 +1060,18 @@ public sealed class Resolver
     private void AddDependencies(
         List<SeiDependency>? dependencies,
         string owner,
-        string description)
+        string description
+    )
     {
         // Same reason as the root order: the queue decides which ambiguous
         // name is resolved first, so the declaration order of the list must
         // not reach it.
-        foreach (var dependency in (dependencies ?? [])
-            .OrderBy(dependency => dependency?.Name ?? "", StringComparer.Ordinal))
+        foreach (
+            var dependency in (dependencies ?? []).OrderBy(
+                dependency => dependency?.Name ?? "",
+                StringComparer.Ordinal
+            )
+        )
         {
             if (!SeiName.IsValid(dependency.Name))
             {
@@ -1006,20 +1090,24 @@ public sealed class Resolver
     // Every prerequisite name is already in the graph, or is at least a
     // direct declaration of this operation — prerequisites are not pulled in,
     // so a name outside both can never be satisfied by this run.
-    private bool Reachable(ArtifactCandidate candidate)
-        => candidate.Prerequisites.All(prerequisite =>
+    private bool Reachable(ArtifactCandidate candidate) =>
+        candidate.Prerequisites.All(prerequisite =>
             _assigned.ContainsKey(prerequisite.Name)
             || _specs.Any(spec =>
-                string.Equals(spec.Name, prerequisite.Name, StringComparison.Ordinal)));
+                string.Equals(spec.Name, prerequisite.Name, StringComparison.Ordinal)
+            )
+        );
 
     private bool CanStillMatch(ArtifactCandidate candidate, ResolvedSei owner)
     {
         foreach (var prerequisite in candidate.Prerequisites)
         {
-            if (_assigned.TryGetValue(prerequisite.Name, out var target)
+            if (
+                _assigned.TryGetValue(prerequisite.Name, out var target)
                 && !Uncertain(prerequisite.Name)
                 && !ParseRange(prerequisite.Version, prerequisite.Name)
-                    .Satisfies(target.ParsedVersion))
+                    .Satisfies(target.ParsedVersion)
+            )
             {
                 return false;
             }
@@ -1027,9 +1115,11 @@ public sealed class Resolver
 
         foreach (var peer in candidate.OptionalPeers)
         {
-            if (_assigned.TryGetValue(peer.Name, out var target)
+            if (
+                _assigned.TryGetValue(peer.Name, out var target)
                 && !Uncertain(peer.Name)
-                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion))
+                && !ParseRange(peer.Version, peer.Name).Satisfies(target.ParsedVersion)
+            )
             {
                 return false;
             }
@@ -1037,9 +1127,11 @@ public sealed class Resolver
 
         foreach (var conflict in candidate.Conflicts)
         {
-            if (_assigned.TryGetValue(conflict.Name, out var target)
+            if (
+                _assigned.TryGetValue(conflict.Name, out var target)
                 && !Uncertain(conflict.Name)
-                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion))
+                && ParseRange(conflict.Version, conflict.Name).Satisfies(target.ParsedVersion)
+            )
             {
                 return false;
             }
@@ -1051,22 +1143,23 @@ public sealed class Resolver
     // Specificity first (ADR-0045 counts distinct prerequisite names and at
     // most one group point), then the locked artifact and group, then the
     // index order. Only the search order; the ambiguity verdict is separate.
-    private List<ArtifactCandidate> OrderCandidates(
-        string name,
-        List<ArtifactCandidate> candidates)
+    private List<ArtifactCandidate> OrderCandidates(string name, List<ArtifactCandidate> candidates)
     {
         var locked = GetLockedArtifact(name);
         return candidates
             .Select((candidate, index) => (Candidate: candidate, Index: index))
-            .OrderByDescending(item => DependencyGroups.Score(
-                item.Candidate.Artifact,
-                item.Candidate.Group))
-            .ThenByDescending(item => locked is { } preference
+            .OrderByDescending(item =>
+                DependencyGroups.Score(item.Candidate.Artifact, item.Candidate.Group)
+            )
+            .ThenByDescending(item =>
+                locked is { } preference
                 && string.Equals(
                     item.Candidate.Artifact.Source?.Sha256,
                     preference.Sha256,
-                    StringComparison.OrdinalIgnoreCase)
-                && item.Candidate.Group == preference.Group)
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && item.Candidate.Group == preference.Group
+            )
             .ThenBy(item => item.Index)
             .Select(item => item.Candidate)
             .ToList();
@@ -1084,7 +1177,8 @@ public sealed class Resolver
                 artifact.Dependencies ?? [],
                 artifact.Prerequisites ?? [],
                 artifact.OptionalPeers ?? [],
-                artifact.Conflicts ?? []);
+                artifact.Conflicts ?? []
+            );
             yield break;
         }
 
@@ -1096,14 +1190,16 @@ public sealed class Resolver
                 DependencyGroups.Dependencies(artifact, index),
                 DependencyGroups.Prerequisites(artifact, index),
                 DependencyGroups.OptionalPeers(artifact, index),
-                DependencyGroups.Conflicts(artifact, index));
+                DependencyGroups.Conflicts(artifact, index)
+            );
         }
     }
 
     private string NoArtifactMessage(ResolvedSei resolved)
     {
         var graphNames = _assigned.Keys.OrderBy(name => name, StringComparer.Ordinal);
-        var message = $"no artifact of {resolved.Name} {resolved.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]";
+        var message =
+            $"no artifact of {resolved.Name} {resolved.Version} matches rid '{_rid}' and sei [{string.Join(", ", graphNames)}]";
 
         // A group that lost every candidate is worth naming: without it the
         // error only says "the artifact", and the artifact is often the one
@@ -1147,29 +1243,31 @@ public sealed class Resolver
     }
 
     // True once the name is assigned, certain, and the version no longer fits.
-    private bool AssignedAndFails(SeiDependency relation)
-        => _assigned.TryGetValue(relation.Name, out var target)
-            && !Uncertain(relation.Name)
-            && !ParseRange(relation.Version, relation.Name).Satisfies(target.ParsedVersion);
+    private bool AssignedAndFails(SeiDependency relation) =>
+        _assigned.TryGetValue(relation.Name, out var target)
+        && !Uncertain(relation.Name)
+        && !ParseRange(relation.Version, relation.Name).Satisfies(target.ParsedVersion);
 
     // True once the name is assigned, certain, and the version does fit — the
     // conflict excludes the group.
-    private bool AssignedAndMatches(SeiDependency relation)
-        => _assigned.TryGetValue(relation.Name, out var target)
-            && !Uncertain(relation.Name)
-            && ParseRange(relation.Version, relation.Name).Satisfies(target.ParsedVersion);
+    private bool AssignedAndMatches(SeiDependency relation) =>
+        _assigned.TryGetValue(relation.Name, out var target)
+        && !Uncertain(relation.Name)
+        && ParseRange(relation.Version, relation.Name).Satisfies(target.ParsedVersion);
 
     private List<(SeiVersionEntry Entry, NuGetVersion Version)> Candidates(
         string name,
         ISeiSource source,
         SeiIndex index,
-        List<Requirement> pending)
+        List<Requirement> pending
+    )
     {
         var constraints = pending
             .Where(requirement => string.Equals(requirement.Name, name, StringComparison.Ordinal))
             .ToList();
         var lockedVersion = GetLockedVersion(name);
-        var allowPrerelease = _allowPrerelease
+        var allowPrerelease =
+            _allowPrerelease
             || constraints.Any(constraint => RangeAllowsPrerelease(constraint.Range));
         var candidates = new List<(SeiVersionEntry Entry, NuGetVersion Version)>();
         var seenVersions = new HashSet<NuGetVersion>();
@@ -1194,8 +1292,7 @@ public sealed class Resolver
 
             if (!seenVersions.Add(version))
             {
-                throw Fail(
-                    $"source '{source.Id}': duplicate version '{entry.Version}' for {name}");
+                throw Fail($"source '{source.Id}': duplicate version '{entry.Version}' for {name}");
             }
 
             // A placeholder stands in for metadata the offline probe could not
@@ -1244,12 +1341,15 @@ public sealed class Resolver
 
     private IEnumerable<(SeiVersionEntry Entry, NuGetVersion Version)> Order(
         string name,
-        List<(SeiVersionEntry Entry, NuGetVersion Version)> candidates)
+        List<(SeiVersionEntry Entry, NuGetVersion Version)> candidates
+    )
     {
-        var explicitPrerelease = _allowPrerelease
+        var explicitPrerelease =
+            _allowPrerelease
             || _pending.Any(requirement =>
                 string.Equals(requirement.Name, name, StringComparison.Ordinal)
-                && RangeAllowsPrerelease(requirement.Range));
+                && RangeAllowsPrerelease(requirement.Range)
+            );
         var ordered = explicitPrerelease
             ? candidates.OrderByDescending(candidate => candidate.Version).ToList()
             : candidates
@@ -1259,7 +1359,9 @@ public sealed class Resolver
         var lockedVersion = GetLockedVersion(name);
         if (lockedVersion is not null)
         {
-            var locked = ordered.FirstOrDefault(candidate => candidate.Version.Equals(lockedVersion));
+            var locked = ordered.FirstOrDefault(candidate =>
+                candidate.Version.Equals(lockedVersion)
+            );
             if (locked.Entry is not null)
             {
                 ordered.Remove(locked);
@@ -1273,7 +1375,8 @@ public sealed class Resolver
     private bool TryFindSource(
         string name,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ISeiSource? found,
-        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SeiIndex? index)
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SeiIndex? index
+    )
     {
         foreach (var source in _sources)
         {
@@ -1297,7 +1400,9 @@ public sealed class Resolver
             return null;
         }
 
-        var locked = _lock?.Sei.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+        var locked = _lock?.Sei.FirstOrDefault(p =>
+            string.Equals(p.Name, name, StringComparison.Ordinal)
+        );
         if (locked is null)
         {
             return null;
@@ -1311,14 +1416,16 @@ public sealed class Resolver
     // longer decides between them.
     private bool IsKeptFromLock(ResolvedSei resolved)
     {
-        var locked = _lock?.Sei.FirstOrDefault(
-            sei => string.Equals(sei.Name, resolved.Name, StringComparison.Ordinal));
+        var locked = _lock?.Sei.FirstOrDefault(sei =>
+            string.Equals(sei.Name, resolved.Name, StringComparison.Ordinal)
+        );
         return locked is not null
             && string.Equals(locked.Version, resolved.Version, StringComparison.Ordinal)
             && string.Equals(
                 locked.Artifact.Sha256,
                 resolved.Artifact.Source?.Sha256,
-                StringComparison.OrdinalIgnoreCase)
+                StringComparison.OrdinalIgnoreCase
+            )
             && locked.Artifact.Group == resolved.GroupIndex;
     }
 
@@ -1334,8 +1441,10 @@ public sealed class Resolver
             string.Equals(
                 unit.Artifact.Source?.Sha256,
                 locked.Sha256,
-                StringComparison.OrdinalIgnoreCase)
-            && unit.Group == locked.Group);
+                StringComparison.OrdinalIgnoreCase
+            )
+            && unit.Group == locked.Group
+        );
     }
 
     private (string Sha256, int? Group)? GetLockedArtifact(string name)
@@ -1345,8 +1454,9 @@ public sealed class Resolver
             return null;
         }
 
-        var locked = _lock?.Sei
-            .FirstOrDefault(sei => string.Equals(sei.Name, name, StringComparison.Ordinal));
+        var locked = _lock?.Sei.FirstOrDefault(sei =>
+            string.Equals(sei.Name, name, StringComparison.Ordinal)
+        );
         return locked is null ? null : (locked.Artifact.Sha256, locked.Artifact.Group);
     }
 
@@ -1396,24 +1506,42 @@ public sealed class Resolver
 
             var authorized = _pending.Any(requirement =>
                 string.Equals(requirement.Name, name, StringComparison.Ordinal)
-                && RangeAllowsPrerelease(requirement.Range));
+                && RangeAllowsPrerelease(requirement.Range)
+            );
             if (!authorized)
             {
                 _lastConflict = new SeikoException(
                     $"prerelease {name} {resolved.Version} is not required by the resolved graph",
-                    "resolve");
+                    "resolve"
+                );
                 return false;
             }
         }
 
         foreach (var (name, resolved) in _assigned)
         {
-            if (!ValidateRelations(name, resolved, resolved.Entry.Prerequisites, requirePresent: true, "prerequisite"))
+            if (
+                !ValidateRelations(
+                    name,
+                    resolved,
+                    resolved.Entry.Prerequisites,
+                    requirePresent: true,
+                    "prerequisite"
+                )
+            )
             {
                 return false;
             }
 
-            if (!ValidateRelations(name, resolved, resolved.Entry.OptionalPeers, requirePresent: false, "optional peer"))
+            if (
+                !ValidateRelations(
+                    name,
+                    resolved,
+                    resolved.Entry.OptionalPeers,
+                    requirePresent: false,
+                    "optional peer"
+                )
+            )
             {
                 return false;
             }
@@ -1427,34 +1555,41 @@ public sealed class Resolver
             // checking the merged lists validates both layers at once. The
             // label names the group so a failure points at the declaration
             // that has to change (ADR-0045).
-            var scope = resolved.GroupIndex is { } group
-                ? $" (group #{group})"
-                : "";
-            if (!ValidateRelations(
-                name,
-                resolved,
-                DependencyGroups.Prerequisites(resolved.Artifact, resolved.GroupIndex),
-                requirePresent: true,
-                "artifact prerequisite" + scope))
+            var scope = resolved.GroupIndex is { } group ? $" (group #{group})" : "";
+            if (
+                !ValidateRelations(
+                    name,
+                    resolved,
+                    DependencyGroups.Prerequisites(resolved.Artifact, resolved.GroupIndex),
+                    requirePresent: true,
+                    "artifact prerequisite" + scope
+                )
+            )
             {
                 return false;
             }
 
-            if (!ValidateRelations(
-                name,
-                resolved,
-                DependencyGroups.OptionalPeers(resolved.Artifact, resolved.GroupIndex),
-                requirePresent: false,
-                "artifact optional peer" + scope))
+            if (
+                !ValidateRelations(
+                    name,
+                    resolved,
+                    DependencyGroups.OptionalPeers(resolved.Artifact, resolved.GroupIndex),
+                    requirePresent: false,
+                    "artifact optional peer" + scope
+                )
+            )
             {
                 return false;
             }
 
-            if (!ValidateConflicts(
-                name,
-                resolved,
-                DependencyGroups.Conflicts(resolved.Artifact, resolved.GroupIndex),
-                "artifact conflict" + scope))
+            if (
+                !ValidateConflicts(
+                    name,
+                    resolved,
+                    DependencyGroups.Conflicts(resolved.Artifact, resolved.GroupIndex),
+                    "artifact conflict" + scope
+                )
+            )
             {
                 return false;
             }
@@ -1476,10 +1611,14 @@ public sealed class Resolver
 
         foreach (var resolved in _assigned.Values)
         {
-            var units = resolved.Entry.Artifacts
-                .Where(artifact => artifact is not null
-                    && (string.IsNullOrWhiteSpace(artifact.Rid)
-                        || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)))
+            var units = resolved
+                .Entry.Artifacts.Where(artifact =>
+                    artifact is not null
+                    && (
+                        string.IsNullOrWhiteSpace(artifact.Rid)
+                        || artifact.Rid.Equals(_rid, StringComparison.OrdinalIgnoreCase)
+                    )
+                )
                 .SelectMany(UnitsOf)
                 .ToList();
             if (units.Count < 2)
@@ -1492,10 +1631,12 @@ public sealed class Resolver
             // version is still a real alternative, so it must not be filtered
             // out against the current assignment first.
             var verdicts = units
-                .Select(unit => ReferenceEquals(unit.Artifact, resolved.Artifact)
-                        && unit.Group == resolved.GroupIndex
-                    ? (Unit: unit, Verdict: SolveVerdict.Solvable)
-                    : (Unit: unit, Verdict: TrySolveWith(unit, resolved)))
+                .Select(unit =>
+                    ReferenceEquals(unit.Artifact, resolved.Artifact)
+                    && unit.Group == resolved.GroupIndex
+                        ? (Unit: unit, Verdict: SolveVerdict.Solvable)
+                        : (Unit: unit, Verdict: TrySolveWith(unit, resolved))
+                )
                 .Where(item => item.Verdict != SolveVerdict.Unsolvable)
                 .ToList();
             var solvable = verdicts.Select(item => item.Unit).ToList();
@@ -1506,7 +1647,8 @@ public sealed class Resolver
 
             var top = solvable.Max(unit => DependencyGroups.Score(unit.Artifact, unit.Group));
             var tied = solvable.Count(unit =>
-                DependencyGroups.Score(unit.Artifact, unit.Group) == top);
+                DependencyGroups.Score(unit.Artifact, unit.Group) == top
+            );
             if (tied < 2)
             {
                 continue;
@@ -1519,16 +1661,16 @@ public sealed class Resolver
             // means the top layer was never compared and stays ambiguous
             // (ADR-0045).
             var locked = GetLockedArtifact(resolved.Name);
-            if (locked is { } preference
+            if (
+                locked is { } preference
                 && sheIsOnTop(preference)
-                && (IsKeptFromLock(resolved)
-                    || LockedPick(resolved.Name, solvable) is not null))
+                && (IsKeptFromLock(resolved) || LockedPick(resolved.Name, solvable) is not null)
+            )
             {
                 continue;
             }
 
-            bool sheIsOnTop((string Sha256, int? Group) pick)
-                => NodeScore(pick) == top;
+            bool sheIsOnTop((string Sha256, int? Group) pick) => NodeScore(pick) == top;
 
             int NodeScore((string Sha256, int? Group) pick)
             {
@@ -1536,11 +1678,11 @@ public sealed class Resolver
                     string.Equals(
                         candidate.Artifact.Source?.Sha256,
                         pick.Sha256,
-                        StringComparison.OrdinalIgnoreCase)
-                    && candidate.Group == pick.Group);
-                return unit is null
-                    ? -1
-                    : DependencyGroups.Score(unit.Artifact, unit.Group);
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && candidate.Group == pick.Group
+                );
+                return unit is null ? -1 : DependencyGroups.Score(unit.Artifact, unit.Group);
             }
 
             // With a guessed node in the graph, "solvable" was judged against
@@ -1558,19 +1700,28 @@ public sealed class Resolver
             // candidate cannot change whether the top is ambiguous. An open
             // verdict on the top layer is recorded so the preference round
             // can force the candidate and settle it.
-            foreach (var item in verdicts.Where(item =>
-                DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
-                && item.Verdict == SolveVerdict.Maybe
-                && Reachable(item.Unit)))
+            foreach (
+                var item in verdicts.Where(item =>
+                    DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
+                    && item.Verdict == SolveVerdict.Maybe
+                    && Reachable(item.Unit)
+                )
+            )
             {
-                _openTies.Add((
-                    resolved.Name,
-                    new ForcedPick(resolved.Version, item.Unit.Artifact, item.Unit.Group)));
+                _openTies.Add(
+                    (
+                        resolved.Name,
+                        new ForcedPick(resolved.Version, item.Unit.Artifact, item.Unit.Group)
+                    )
+                );
             }
 
-            if (verdicts.Any(item =>
-                DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
-                && item.Verdict == SolveVerdict.Maybe))
+            if (
+                verdicts.Any(item =>
+                    DependencyGroups.Score(item.Unit.Artifact, item.Unit.Group) == top
+                    && item.Verdict == SolveVerdict.Maybe
+                )
+            )
             {
                 continue;
             }
@@ -1581,13 +1732,15 @@ public sealed class Resolver
             {
                 throw new SeikoException(
                     $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} candidates match at specificity {top}; "
-                    + $"also: {_probeError.Message}",
+                        + $"also: {_probeError.Message}",
                     "resolve",
-                    _probeError);
+                    _probeError
+                );
             }
 
             throw Fail(
-                $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} candidates match at specificity {top}");
+                $"ambiguous artifact for {resolved.Name} {resolved.Version}: {tied} candidates match at specificity {top}"
+            );
         }
     }
 
@@ -1595,8 +1748,8 @@ public sealed class Resolver
     // solution. A local existence check is not enough: the alternative can
     // introduce its own conflicts, missing transitive targets or an
     // unsatisfiable prerequisite, and it must not create a false ambiguity.
-    private bool CanSolveWith(ArtifactCandidate candidate, ResolvedSei owner)
-        => TrySolveWith(candidate, owner) == SolveVerdict.Solvable;
+    private bool CanSolveWith(ArtifactCandidate candidate, ResolvedSei owner) =>
+        TrySolveWith(candidate, owner) == SolveVerdict.Solvable;
 
     // Solvable only when the artifact's own graph is proven: a probe that
     // had to guess is a maybe, not an answer.
@@ -1624,7 +1777,8 @@ public sealed class Resolver
             _budget,
             _onSolution,
             _collectAll,
-            _collectAll ? [] : null);
+            _collectAll ? [] : null
+        );
         try
         {
             probe.ResolveOnce(_specs);
@@ -1634,12 +1788,15 @@ public sealed class Resolver
             // It must not be called dead either — the preference round can
             // still force the upstream choice and try again (ADR-0027's "its
             // own complete graph").
-            if (!probe._assigned.TryGetValue(owner.Name, out var kept)
+            if (
+                !probe._assigned.TryGetValue(owner.Name, out var kept)
                 || kept.GroupIndex != candidate.Group
                 || !string.Equals(
                     kept.Artifact.Source?.Sha256,
                     candidate.Artifact.Source?.Sha256,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 return SolveVerdict.Maybe;
             }
@@ -1697,37 +1854,46 @@ public sealed class Resolver
     // Sources return a fresh object graph per read, so a forced candidate is
     // identified by its content-addressed digest, its group position and the
     // merged relations that position produces.
-    private static bool SameCandidate(ArtifactCandidate candidate, ForcedPick forced)
-        => string.Equals(
-                candidate.Artifact.Source?.Sha256,
-                forced.Artifact.Source?.Sha256,
-                StringComparison.OrdinalIgnoreCase)
-            && candidate.Group == forced.Group
-            && SameRelations(
-                candidate.Dependencies,
-                DependencyGroups.Dependencies(forced.Artifact, forced.Group))
-            && SameRelations(
-                candidate.Prerequisites,
-                DependencyGroups.Prerequisites(forced.Artifact, forced.Group))
-            && SameRelations(
-                candidate.OptionalPeers,
-                DependencyGroups.OptionalPeers(forced.Artifact, forced.Group))
-            && SameRelations(
-                candidate.Conflicts,
-                DependencyGroups.Conflicts(forced.Artifact, forced.Group));
+    private static bool SameCandidate(ArtifactCandidate candidate, ForcedPick forced) =>
+        string.Equals(
+            candidate.Artifact.Source?.Sha256,
+            forced.Artifact.Source?.Sha256,
+            StringComparison.OrdinalIgnoreCase
+        )
+        && candidate.Group == forced.Group
+        && SameRelations(
+            candidate.Dependencies,
+            DependencyGroups.Dependencies(forced.Artifact, forced.Group)
+        )
+        && SameRelations(
+            candidate.Prerequisites,
+            DependencyGroups.Prerequisites(forced.Artifact, forced.Group)
+        )
+        && SameRelations(
+            candidate.OptionalPeers,
+            DependencyGroups.OptionalPeers(forced.Artifact, forced.Group)
+        )
+        && SameRelations(
+            candidate.Conflicts,
+            DependencyGroups.Conflicts(forced.Artifact, forced.Group)
+        );
 
-    private static bool SameRelations(List<SeiDependency>? left, List<SeiDependency>? right)
-        => (left ?? []).Count == (right ?? []).Count
-            && (left ?? []).Zip(right ?? []).All(pair =>
+    private static bool SameRelations(List<SeiDependency>? left, List<SeiDependency>? right) =>
+        (left ?? []).Count == (right ?? []).Count
+        && (left ?? [])
+            .Zip(right ?? [])
+            .All(pair =>
                 string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
-                && string.Equals(pair.First.Version, pair.Second.Version, StringComparison.Ordinal));
+                && string.Equals(pair.First.Version, pair.Second.Version, StringComparison.Ordinal)
+            );
 
     private bool ValidateRelations(
         string owner,
         ResolvedSei resolved,
         List<SeiDependency>? relations,
         bool requirePresent,
-        string label)
+        string label
+    )
     {
         foreach (var relation in relations ?? [])
         {
@@ -1738,8 +1904,9 @@ public sealed class Resolver
                     continue;
                 }
 
-                    _lastConflict = Fail(
-                    $"{label} '{relation.Name}' required by {owner} {resolved.Version} is not in the resolved graph; add it explicitly or through a dependency");
+                _lastConflict = Fail(
+                    $"{label} '{relation.Name}' required by {owner} {resolved.Version} is not in the resolved graph; add it explicitly or through a dependency"
+                );
                 return false;
             }
 
@@ -1755,7 +1922,8 @@ public sealed class Resolver
                 {
                     _lastConflict = Fail(
                         $"version ranges for {relation.Name} contradict each other "
-                        + $"({string.Join(", ", ranges.Distinct())})");
+                            + $"({string.Join(", ", ranges.Distinct())})"
+                    );
                     return false;
                 }
 
@@ -1765,7 +1933,8 @@ public sealed class Resolver
             if (!range.Satisfies(target.ParsedVersion))
             {
                 _lastConflict = Fail(
-                    $"{label} '{relation.Name}' for {owner} {resolved.Version} is {target.Version}, which does not satisfy {relation.Version ?? "*"}");
+                    $"{label} '{relation.Name}' for {owner} {resolved.Version} is {target.Version}, which does not satisfy {relation.Version ?? "*"}"
+                );
                 return false;
             }
         }
@@ -1777,7 +1946,8 @@ public sealed class Resolver
         string owner,
         ResolvedSei resolved,
         List<SeiDependency>? conflicts,
-        string label)
+        string label
+    )
     {
         foreach (var conflict in conflicts ?? [])
         {
@@ -1799,7 +1969,8 @@ public sealed class Resolver
                 if (Contradicts(conflict.Name))
                 {
                     _lastConflict = Fail(
-                        $"{label}: {conflict.Name} cannot satisfy both its ranges and the conflict from {owner} {resolved.Version}");
+                        $"{label}: {conflict.Name} cannot satisfy both its ranges and the conflict from {owner} {resolved.Version}"
+                    );
                     return false;
                 }
 
@@ -1809,7 +1980,8 @@ public sealed class Resolver
             if (range.Satisfies(target.ParsedVersion))
             {
                 _lastConflict = Fail(
-                    $"{label}: {owner} {resolved.Version} cannot coexist with {conflict.Name} {target.Version}");
+                    $"{label}: {owner} {resolved.Version} cannot coexist with {conflict.Name} {target.Version}"
+                );
                 return false;
             }
         }
@@ -1817,14 +1989,14 @@ public sealed class Resolver
         return true;
     }
 
-    private bool HintAllows(string name, NuGetVersion version)
-        => _prereleaseHints.TryGetValue(name, out var ranges)
-            && ranges.Any(range => range.Satisfies(version));
+    private bool HintAllows(string name, NuGetVersion version) =>
+        _prereleaseHints.TryGetValue(name, out var ranges)
+        && ranges.Any(range => range.Satisfies(version));
 
-    internal static bool RangeAllowsPrerelease(VersionRange range)
-        => range.MinVersion?.IsPrerelease == true
-            || range.MaxVersion?.IsPrerelease == true
-            || range.Float is { IncludePrerelease: true };
+    internal static bool RangeAllowsPrerelease(VersionRange range) =>
+        range.MinVersion?.IsPrerelease == true
+        || range.MaxVersion?.IsPrerelease == true
+        || range.Float is { IncludePrerelease: true };
 
     private static VersionRange ParseRange(string? text, string sei)
     {
@@ -1846,11 +2018,13 @@ public sealed class Resolver
         var parts = pending
             .Where(requirement => string.Equals(requirement.Name, name, StringComparison.Ordinal))
             .Select(requirement =>
-                $"{requirement.Range} (required by {Describe(requirement.From)})")
+                $"{requirement.Range} (required by {Describe(requirement.From)})"
+            )
             .Distinct(StringComparer.Ordinal);
         return new SeikoException(
             $"version conflict for {name} in source '{sourceId}': no version satisfies {string.Join(", ", parts)}",
-            "resolve")
+            "resolve"
+        )
         {
             Hint = "relax the version range, or add a source that carries a satisfying version",
             HintKey = "hint.resolve",
@@ -1864,7 +2038,8 @@ public sealed class Resolver
     private static void AddSkipped(
         SortedDictionary<string, SortedSet<string>> target,
         string name,
-        string version)
+        string version
+    )
     {
         if (!target.TryGetValue(name, out var versions))
         {
@@ -1875,8 +2050,8 @@ public sealed class Resolver
         versions.Add(version);
     }
 
-    private static string AdvisoryLabel(SeiVersionEntry entry, string version)
-        => string.IsNullOrWhiteSpace(entry.Advisory?.Url)
+    private static string AdvisoryLabel(SeiVersionEntry entry, string version) =>
+        string.IsNullOrWhiteSpace(entry.Advisory?.Url)
             ? version
             : $"{version} ({entry.Advisory.Url})";
 
@@ -1927,10 +2102,8 @@ public sealed class Resolver
         List<SeiDependency> Dependencies,
         List<SeiDependency> Prerequisites,
         List<SeiDependency> OptionalPeers,
-        List<SeiDependency> Conflicts);
+        List<SeiDependency> Conflicts
+    );
 
-    private sealed record Requirement(
-        string Name,
-        VersionRange Range,
-        string? From);
+    private sealed record Requirement(string Name, VersionRange Range, string? From);
 }

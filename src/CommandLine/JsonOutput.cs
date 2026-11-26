@@ -8,7 +8,8 @@ public sealed record ListItem(
     string Version,
     string Source,
     bool Direct,
-    Dictionary<string, string>? Selectors);
+    Dictionary<string, string>? Selectors
+);
 
 public sealed record SyncData(
     int Sei,
@@ -19,7 +20,8 @@ public sealed record SyncData(
     int External,
     List<string> ExternalHosts,
     // Per package: where it came from and whether an index cross-checked it.
-    List<SyncSeiData>? Packages = null);
+    List<SyncSeiData>? Packages = null
+);
 
 public sealed record SyncSeiData(string Name, string Version, string Source, bool IndexVerified);
 
@@ -32,7 +34,8 @@ public sealed record PreviewData(
     int External,
     long ExternalBytes,
     List<string> ExternalHosts,
-    List<string> ExternalUnknown);
+    List<string> ExternalUnknown
+);
 
 public sealed record PreviewEnvelope(int SchemaVersion, string Command, PreviewData Data);
 
@@ -61,7 +64,8 @@ public sealed record InfoArtifact(
     int External,
     List<string> ExternalHosts,
     bool ExternalKnown,
-    List<DependencyGroup>? DependencyGroups);
+    List<DependencyGroup>? DependencyGroups
+);
 
 public sealed record InfoVersion(
     string Version,
@@ -74,7 +78,8 @@ public sealed record InfoVersion(
     List<SeiDependency> OptionalPeers,
     List<SeiDependency> Conflicts,
     List<InfoArtifact> ArtifactDetails,
-    bool SourceRetired);
+    bool SourceRetired
+);
 
 public sealed record InfoData(
     string Name,
@@ -86,7 +91,8 @@ public sealed record InfoData(
     string? UpstreamHost,
     bool MaintainedHere,
     bool IndexVerified,
-    List<string>? OriginPaths);
+    List<string>? OriginPaths
+);
 
 public sealed record InfoEnvelope(int SchemaVersion, string Command, InfoData Data);
 
@@ -106,19 +112,31 @@ public sealed record ConfigEnvelope(int SchemaVersion, string Command, ConfigDat
 
 public sealed record CacheStatusEnvelope(int SchemaVersion, string Command, CacheStatusInfo Data);
 
-public sealed record CacheVerifyEnvelope(int SchemaVersion, string Command, List<CacheFinding> Data);
+public sealed record CacheVerifyEnvelope(
+    int SchemaVersion,
+    string Command,
+    List<CacheFinding> Data
+);
 
 public sealed record CacheCleanEnvelope(int SchemaVersion, string Command, CacheCleanResult Data);
 
 public sealed record DoctorEnvelope(int SchemaVersion, string Command, DoctorResult Data);
 
-public sealed record SourceStatusEnvelope(int SchemaVersion, string Command, List<SourceStatus> Data);
+public sealed record SourceStatusEnvelope(
+    int SchemaVersion,
+    string Command,
+    List<SourceStatus> Data
+);
 
 public sealed record AuditData(List<AuditFinding> Findings, List<string> Unknown);
 
 public sealed record AuditEnvelope(int SchemaVersion, string Command, AuditData Data);
 
-public sealed record RollbackPreviewEnvelope(int SchemaVersion, string Command, RollbackPreview Data);
+public sealed record RollbackPreviewEnvelope(
+    int SchemaVersion,
+    string Command,
+    RollbackPreview Data
+);
 
 public sealed record GenerationData(List<GenerationInfo> Generations);
 
@@ -132,8 +150,7 @@ public sealed record IndexVerifyEnvelope(int SchemaVersion, string Command, Inde
 
 public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData Error);
 
-[JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(ListEnvelope))]
 [JsonSerializable(typeof(SyncEnvelope))]
 [JsonSerializable(typeof(PreviewEnvelope))]
@@ -178,6 +195,4 @@ public sealed record ErrorEnvelope(int SchemaVersion, string Command, ErrorData 
 [JsonSerializable(typeof(SeiSummary))]
 [JsonSerializable(typeof(DoctorResult))]
 [JsonSerializable(typeof(DoctorFinding))]
-public partial class CliJsonContext : JsonSerializerContext
-{
-}
+public partial class CliJsonContext : JsonSerializerContext { }

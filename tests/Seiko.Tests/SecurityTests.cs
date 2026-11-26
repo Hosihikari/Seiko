@@ -10,23 +10,33 @@ public sealed class SecurityTests
     public void Sync_RejectsMalformedArtifactDigest()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var seiPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
-        var index = JsonSerializer.Deserialize(File.ReadAllBytes(seiPath), SeikoJsonContext.Default.SeiIndex)!;
+        var index = JsonSerializer.Deserialize(
+            File.ReadAllBytes(seiPath),
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         index.Versions[0].Artifacts[0].Source.Sha256 = "../victim";
-        File.WriteAllBytes(seiPath, JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            seiPath,
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex)
+        );
 
         var victim = Path.Combine(fixture.Root, "victim");
         Directory.CreateDirectory(victim);
         File.WriteAllText(Path.Combine(victim, "keep.txt"), "keep");
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("checksum", error.Code);
         Assert.True(File.Exists(Path.Combine(victim, "keep.txt")));
@@ -36,11 +46,14 @@ public sealed class SecurityTests
     public void Sync_RejectsPayloadThroughDirectorySymlink()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["escape/payload.txt"] = "evil" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["escape/payload.txt"] = "evil" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         var outside = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
@@ -51,15 +64,19 @@ public sealed class SecurityTests
             {
                 Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "escape"), outside);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
 
-            var error = Assert.Throws<SeikoException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            var error = Assert.Throws<SeikoException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
 
             Assert.Equal("deploy", error.Code);
             Assert.False(File.Exists(Path.Combine(outside, "payload.txt")));
@@ -74,20 +91,33 @@ public sealed class SecurityTests
     public void Sync_DoesNotSendTokensOverHttp()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         using var indexServer = new TestHttpServer(fixture.SourceDirectory);
         using var artifactServer = new TestHttpServer(fixture.SourceDirectory);
-        fixture.WriteHttpConfig(indexServer.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        fixture.WriteHttpConfig(
+            indexServer.BaseUrl,
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0]")
+        );
 
         var seiPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
-        var index = JsonSerializer.Deserialize(File.ReadAllBytes(seiPath), SeikoJsonContext.Default.SeiIndex)!;
+        var index = JsonSerializer.Deserialize(
+            File.ReadAllBytes(seiPath),
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         index.Versions[0].Artifacts[0].Source.Url =
             artifactServer.BaseUrl + index.Versions[0].Artifacts[0].Source.Url;
-        File.WriteAllBytes(seiPath, JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            seiPath,
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex)
+        );
 
         var host = new Uri(indexServer.BaseUrl).Host;
         var tokenVariable = HttpSource.TokenEnvironmentName(host);
@@ -109,19 +139,32 @@ public sealed class SecurityTests
     public void Sync_SendsTokensOnlyToTheIndexOrigin()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         using var indexServer = new TestHttpServer(fixture.SourceDirectory);
         using var artifactServer = new TestHttpServer(fixture.SourceDirectory);
-        fixture.WriteHttpConfig(indexServer.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
+        fixture.WriteHttpConfig(
+            indexServer.BaseUrl,
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0]")
+        );
         var seiPath = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
-        var index = JsonSerializer.Deserialize(File.ReadAllBytes(seiPath), SeikoJsonContext.Default.SeiIndex)!;
+        var index = JsonSerializer.Deserialize(
+            File.ReadAllBytes(seiPath),
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         index.Versions[0].Artifacts[0].Source.Url =
             artifactServer.BaseUrl + index.Versions[0].Artifacts[0].Source.Url;
-        File.WriteAllBytes(seiPath, JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            seiPath,
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex)
+        );
 
         var tokenVariable = HttpSource.TokenEnvironmentName(new Uri(indexServer.BaseUrl).Host);
         Environment.SetEnvironmentVariable(tokenVariable, "secret-token");
@@ -152,11 +195,14 @@ public sealed class SecurityTests
         {
             var indexJson = JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { Sei = ["hello"] },
-                SeikoJsonContext.Default.IndexRoot);
-            var handler = new RecordingHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(indexJson),
-            });
+                SeikoJsonContext.Default.IndexRoot
+            );
+            var handler = new RecordingHandler(() =>
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(indexJson),
+                }
+            );
             using var session = new DownloadSession(1, CancellationToken.None);
 
             using var sameOrigin = new HttpSource(
@@ -165,7 +211,8 @@ public sealed class SecurityTests
                 session,
                 metadataRoot: null,
                 offline: false,
-                handler);
+                handler
+            );
 
             // The actual index request carried the token.
             var request = Assert.Single(handler.Requests);
@@ -186,7 +233,8 @@ public sealed class SecurityTests
                 session,
                 metadataRoot: null,
                 offline: false,
-                handler);
+                handler
+            );
             Assert.Equal("cdn-token", allowed.TokenFor(new Uri($"https://{CdnHost}/artifact")));
         }
         finally
@@ -202,7 +250,8 @@ public sealed class SecurityTests
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken
+        )
         {
             Requests.Add((request.RequestUri!, request.Headers.Authorization?.ToString()));
             return Task.FromResult(respond());
@@ -214,10 +263,12 @@ public sealed class SecurityTests
     {
         Assert.Equal(
             "SEIKO_TOKEN_PACKAGES_2EEXAMPLE_2ECOM",
-            HttpSource.TokenEnvironmentName("Packages.Example.com"));
+            HttpSource.TokenEnvironmentName("Packages.Example.com")
+        );
         Assert.NotEqual(
             HttpSource.TokenEnvironmentName("packages.example.com"),
-            HttpSource.TokenEnvironmentName("packages-example.com"));
+            HttpSource.TokenEnvironmentName("packages-example.com")
+        );
     }
 
     [Theory]
@@ -230,17 +281,21 @@ public sealed class SecurityTests
     public void Sync_RejectsReservedControlPaths(string path)
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { [path] = "evil" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [path] = "evil" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var configPath = Path.Combine(fixture.Root, "seiko.conf");
         var before = File.ReadAllText(configPath);
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Equal(before, File.ReadAllText(configPath));
@@ -253,18 +308,23 @@ public sealed class SecurityTests
         ArchiveLimits.EnsureEntrySize(ArchiveLimits.MaxEntryBytes);
         ArchiveLimits.EnsureTotal(ArchiveLimits.MaxTotalBytes);
 
-        Assert.Throws<SeikoException>(
-            () => ArchiveLimits.EnsureEntryCount(ArchiveLimits.MaxEntries + 1));
-        Assert.Throws<SeikoException>(
-            () => ArchiveLimits.EnsureEntrySize(ArchiveLimits.MaxEntryBytes + 1));
-        Assert.Throws<SeikoException>(
-            () => ArchiveLimits.EnsureTotal(ArchiveLimits.MaxTotalBytes + 1));
+        Assert.Throws<SeikoException>(() =>
+            ArchiveLimits.EnsureEntryCount(ArchiveLimits.MaxEntries + 1)
+        );
+        Assert.Throws<SeikoException>(() =>
+            ArchiveLimits.EnsureEntrySize(ArchiveLimits.MaxEntryBytes + 1)
+        );
+        Assert.Throws<SeikoException>(() =>
+            ArchiveLimits.EnsureTotal(ArchiveLimits.MaxTotalBytes + 1)
+        );
     }
 
     [Fact]
     public void Urls_RedactDropsCredentialsAndQuery()
     {
-        var redacted = Urls.Redact(new Uri("https://user:pass@example.com/path?token=secret#fragment"));
+        var redacted = Urls.Redact(
+            new Uri("https://user:pass@example.com/path?token=secret#fragment")
+        );
 
         Assert.Equal("https://example.com/path", redacted);
     }
@@ -273,18 +333,23 @@ public sealed class SecurityTests
     public void Sync_FailsWhenTheRootRegistryIsLocked()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         using var registryLock = ProcessLock.Acquire(
             Path.Combine(fixture.StoreDirectory, "roots.lock"),
-            "test registry");
+            "test registry"
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
     }
@@ -293,11 +358,14 @@ public sealed class SecurityTests
     public void CacheClean_HandlesSymlinkedRootAlias()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -309,9 +377,12 @@ public sealed class SecurityTests
             {
                 Directory.CreateSymbolicLink(link, fixture.Root);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
@@ -358,41 +429,65 @@ public sealed class SecurityTests
     public void Deploy_RejectsCaseOnlyPathConflicts()
     {
         using var first = new Fixture();
-        first.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["A.txt"] = "A" } }],
-        });
+        first.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["A.txt"] = "A" } }],
+            }
+        );
         first.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
         using var second = new Fixture();
-        second.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
+        second.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
         second.WriteConfig("win-x64", new SpecFixture("b", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(first.Root, first.StoreDirectory);
         client.Sync(second.Root, second.StoreDirectory);
         var storedA = new Store(first.StoreDirectory).TryGet(
-            client.ReadLock(first.Root)!.Sei.Single().Artifact.Sha256)!;
+            client.ReadLock(first.Root)!.Sei.Single().Artifact.Sha256
+        )!;
         var storedB = new Store(second.StoreDirectory).TryGet(
-            client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256)!;
+            client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256
+        )!;
         var root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         File.WriteAllText(
             Path.Combine(root, "seiko.conf"),
-            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsei = []\n");
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsei = []\n"
+        );
         try
         {
-            var error = Assert.Throws<SeikoException>(() => Deployer.Deploy(
-                root,
-                [
-                    new DeployedSei("a", "1.0.0", storedA.Directory, storedA.Manifest, storedA.Digests),
-                    new DeployedSei("b", "1.0.0", storedB.Directory, storedB.Manifest, storedB.Digests),
-                ],
-                Path.Combine(root, ".seiko"),
-                new SeikoLock { Target = new PlatformInfo { Rid = "win-x64" } }));
+            var error = Assert.Throws<SeikoException>(() =>
+                Deployer.Deploy(
+                    root,
+                    [
+                        new DeployedSei(
+                            "a",
+                            "1.0.0",
+                            storedA.Directory,
+                            storedA.Manifest,
+                            storedA.Digests
+                        ),
+                        new DeployedSei(
+                            "b",
+                            "1.0.0",
+                            storedB.Directory,
+                            storedB.Manifest,
+                            storedB.Digests
+                        ),
+                    ],
+                    Path.Combine(root, ".seiko"),
+                    new SeikoLock { Target = new PlatformInfo { Rid = "win-x64" } }
+                )
+            );
 
             Assert.Equal("deploy", error.Code);
             Assert.Contains("path conflict", error.Message);
@@ -407,41 +502,65 @@ public sealed class SecurityTests
     public void Deploy_RejectsUnicodeEquivalentPathConflicts()
     {
         using var first = new Fixture();
-        first.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["café.txt"] = "NFC" } }],
-        });
+        first.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["café.txt"] = "NFC" } }],
+            }
+        );
         first.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
         using var second = new Fixture();
-        second.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["café.txt"] = "NFD" } }],
-        });
+        second.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["café.txt"] = "NFD" } }],
+            }
+        );
         second.WriteConfig("win-x64", new SpecFixture("b", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(first.Root, first.StoreDirectory);
         client.Sync(second.Root, second.StoreDirectory);
         var storedA = new Store(first.StoreDirectory).TryGet(
-            client.ReadLock(first.Root)!.Sei.Single().Artifact.Sha256)!;
+            client.ReadLock(first.Root)!.Sei.Single().Artifact.Sha256
+        )!;
         var storedB = new Store(second.StoreDirectory).TryGet(
-            client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256)!;
+            client.ReadLock(second.Root)!.Sei.Single().Artifact.Sha256
+        )!;
         var root = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         File.WriteAllText(
             Path.Combine(root, "seiko.conf"),
-            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsei = []\n");
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsei = []\n"
+        );
         try
         {
-            var error = Assert.Throws<SeikoException>(() => Deployer.Deploy(
-                root,
-                [
-                    new DeployedSei("a", "1.0.0", storedA.Directory, storedA.Manifest, storedA.Digests),
-                    new DeployedSei("b", "1.0.0", storedB.Directory, storedB.Manifest, storedB.Digests),
-                ],
-                Path.Combine(root, ".seiko"),
-                new SeikoLock { Target = new PlatformInfo { Rid = "win-x64" } }));
+            var error = Assert.Throws<SeikoException>(() =>
+                Deployer.Deploy(
+                    root,
+                    [
+                        new DeployedSei(
+                            "a",
+                            "1.0.0",
+                            storedA.Directory,
+                            storedA.Manifest,
+                            storedA.Digests
+                        ),
+                        new DeployedSei(
+                            "b",
+                            "1.0.0",
+                            storedB.Directory,
+                            storedB.Manifest,
+                            storedB.Digests
+                        ),
+                    ],
+                    Path.Combine(root, ".seiko"),
+                    new SeikoLock { Target = new PlatformInfo { Rid = "win-x64" } }
+                )
+            );
 
             Assert.Equal("deploy", error.Code);
             Assert.Contains("path conflict", error.Message);
@@ -473,11 +592,15 @@ public sealed class SecurityTests
             RootRegistry.Register(store, actual);
             RootRegistry.Register(store, variant);
 
-            var error = Record.Exception(
-                () => new SeikoClient().CacheClean(actual, store));
+            var error = Record.Exception(() => new SeikoClient().CacheClean(actual, store));
 
-            Assert.True(error is null
-                || !error.Message.Contains("in use by another process", StringComparison.Ordinal));
+            Assert.True(
+                error is null
+                    || !error.Message.Contains(
+                        "in use by another process",
+                        StringComparison.Ordinal
+                    )
+            );
         }
         finally
         {
@@ -492,17 +615,23 @@ public sealed class SecurityTests
         using var first = new Fixture();
         using var second = new Fixture();
         var sharedStore = Path.Combine(first.Root, "shared-store");
-        first.AddSei("first", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["first.txt"] = "first" } }],
-        });
+        first.AddSei(
+            "first",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["first.txt"] = "first" } }],
+            }
+        );
         first.WriteConfig("win-x64", new SpecFixture("first", "[1.0.0]"));
-        second.AddSei("second", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["second.txt"] = "second" } }],
-        });
+        second.AddSei(
+            "second",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["second.txt"] = "second" } }],
+            }
+        );
         second.WriteConfig("win-x64", new SpecFixture("second", "[1.0.0]"));
 
         var client = new SeikoClient();
@@ -510,7 +639,8 @@ public sealed class SecurityTests
         client.Sync(second.Root, sharedStore);
         using var busy = ProcessLock.Acquire(
             Path.Combine(second.Root, ".seiko", "install.lock"),
-            "test root");
+            "test root"
+        );
 
         var error = Assert.Throws<SeikoException>(() => client.CacheClean(first.Root, sharedStore));
 
@@ -520,7 +650,11 @@ public sealed class SecurityTests
     [Fact]
     public void ProcessLock_KeepsItsFileAfterRelease()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
@@ -545,11 +679,14 @@ public sealed class SecurityTests
     public void Sync_RepairsSameSizeStoreCorruptionWithACleanDeployedCopy()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -577,30 +714,40 @@ public sealed class SecurityTests
         }
 
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "same" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "same" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var path = Path.Combine(fixture.Root, "a.txt");
         var mode = File.GetUnixFileMode(path);
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
             {
-                Files = { ["a.txt"] = "same" },
-                Modes = new Dictionary<string, string> { ["a.txt"] = "9999" },
-            }],
-        });
+                Version = "2.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["a.txt"] = "same" },
+                        Modes = new Dictionary<string, string> { ["a.txt"] = "9999" },
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Equal("same", File.ReadAllText(path));
@@ -645,9 +792,12 @@ public sealed class SecurityTests
             {
                 Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "escape"), outside);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
@@ -659,9 +809,15 @@ public sealed class SecurityTests
             };
             File.WriteAllBytes(
                 Path.Combine(stateDirectory, "transaction.json"),
-                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+                JsonSerializer.SerializeToUtf8Bytes(
+                    journal,
+                    SeikoJsonContext.Default.DeploymentJournal
+                )
+            );
 
-            Assert.Throws<SeikoException>(() => DeploymentTransaction.Recover(fixture.Root, stateDirectory));
+            Assert.Throws<SeikoException>(() =>
+                DeploymentTransaction.Recover(fixture.Root, stateDirectory)
+            );
 
             Assert.False(File.Exists(Path.Combine(outside, "payload.txt")));
         }
@@ -689,9 +845,12 @@ public sealed class SecurityTests
             {
                 Directory.CreateSymbolicLink(Path.Combine(stateDirectory, "transaction"), outside);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
@@ -703,10 +862,15 @@ public sealed class SecurityTests
             };
             File.WriteAllBytes(
                 Path.Combine(stateDirectory, "transaction.json"),
-                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+                JsonSerializer.SerializeToUtf8Bytes(
+                    journal,
+                    SeikoJsonContext.Default.DeploymentJournal
+                )
+            );
 
-            Assert.Throws<SeikoException>(
-                () => DeploymentTransaction.Recover(fixture.Root, stateDirectory));
+            Assert.Throws<SeikoException>(() =>
+                DeploymentTransaction.Recover(fixture.Root, stateDirectory)
+            );
 
             Assert.Equal("installed", File.ReadAllText(installed));
             Assert.Equal("external", File.ReadAllText(Path.Combine(outside, "tool")));
@@ -731,9 +895,12 @@ public sealed class SecurityTests
             {
                 Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "escape"), outside);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
@@ -747,9 +914,15 @@ public sealed class SecurityTests
             };
             File.WriteAllBytes(
                 Path.Combine(stateDirectory, "transaction.json"),
-                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+                JsonSerializer.SerializeToUtf8Bytes(
+                    journal,
+                    SeikoJsonContext.Default.DeploymentJournal
+                )
+            );
 
-            Assert.Throws<SeikoException>(() => DeploymentTransaction.Recover(fixture.Root, stateDirectory));
+            Assert.Throws<SeikoException>(() =>
+                DeploymentTransaction.Recover(fixture.Root, stateDirectory)
+            );
 
             Assert.Equal("canary", File.ReadAllText(canary));
         }
@@ -773,9 +946,12 @@ public sealed class SecurityTests
             {
                 Directory.CreateSymbolicLink(Path.Combine(fixture.Root, "escape"), outside);
             }
-            catch (Exception ex) when (ex is IOException
-                or UnauthorizedAccessException
-                or PlatformNotSupportedException)
+            catch (Exception ex)
+                when (ex
+                        is IOException
+                            or UnauthorizedAccessException
+                            or PlatformNotSupportedException
+                )
             {
                 return;
             }
@@ -789,10 +965,15 @@ public sealed class SecurityTests
             };
             File.WriteAllBytes(
                 Path.Combine(stateDirectory, "transaction.json"),
-                JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+                JsonSerializer.SerializeToUtf8Bytes(
+                    journal,
+                    SeikoJsonContext.Default.DeploymentJournal
+                )
+            );
 
-            Assert.Throws<SeikoException>(
-                () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+            Assert.Throws<SeikoException>(() =>
+                new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+            );
 
             Assert.Equal("canary", File.ReadAllText(canary));
         }
@@ -815,12 +996,15 @@ public sealed class SecurityTests
         };
         File.WriteAllBytes(
             Path.Combine(stateDirectory, "transaction.json"),
-            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal));
+            JsonSerializer.SerializeToUtf8Bytes(journal, SeikoJsonContext.Default.DeploymentJournal)
+        );
         var victim = Path.Combine(fixture.Root, "victim");
         Directory.CreateDirectory(victim);
         File.WriteAllText(Path.Combine(victim, "keep.txt"), "keep");
 
-        Assert.Throws<SeikoException>(() => DeploymentTransaction.Recover(fixture.Root, stateDirectory));
+        Assert.Throws<SeikoException>(() =>
+            DeploymentTransaction.Recover(fixture.Root, stateDirectory)
+        );
 
         Assert.True(File.Exists(Path.Combine(victim, "keep.txt")));
     }

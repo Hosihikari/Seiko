@@ -30,15 +30,14 @@ public static class InitTemplate
                     File.Delete(temporary);
                 }
             }
-            catch (IOException)
-            {
-            }
+            catch (IOException) { }
         }
 
         return path;
     }
 
-    public static string Create() => $$"""
+    public static string Create() =>
+        $$"""
 # Seiko install root
 schemaVersion = {{SeikoConfig.CurrentSchemaVersion}}
 

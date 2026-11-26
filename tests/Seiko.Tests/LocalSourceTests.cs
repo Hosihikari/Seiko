@@ -11,15 +11,14 @@ public sealed class LocalSourceTests
         fixture.WriteConfig("win-x64");
         var client = new SeikoClient();
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.SourceAdd(fixture.Root, "extra", Path.Combine(fixture.Root, "missing")));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.SourceAdd(fixture.Root, "extra", Path.Combine(fixture.Root, "missing"))
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Contains("index not found", error.Message);
         Assert.NotNull(error.HintKey);
-        Assert.DoesNotContain(
-            client.ListSources(fixture.Root),
-            source => source.Id == "extra");
+        Assert.DoesNotContain(client.ListSources(fixture.Root), source => source.Id == "extra");
     }
 
     [Fact]
@@ -31,13 +30,15 @@ public sealed class LocalSourceTests
         Directory.CreateDirectory(directory);
         File.WriteAllText(
             Path.Combine(directory, "index.json"),
-            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}"""
+        );
 
         new SeikoClient().SourceAdd(fixture.Root, "extra", directory);
 
         Assert.Contains(
             new SeikoClient().ListSources(fixture.Root),
-            source => source.Id == "extra");
+            source => source.Id == "extra"
+        );
     }
 
     [Fact]
@@ -51,38 +52,41 @@ public sealed class LocalSourceTests
 
         Assert.Contains(
             new SeikoClient().ListSources(fixture.Root),
-            source => source.Id == "remote");
+            source => source.Id == "remote"
+        );
     }
 
     [Fact]
     public void SourceIndexMayNameTheDirectory()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         var directory = fixture.SourceDirectory.Replace('\\', '/');
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
-            $"schemaVersion = 2\nsources = [\n  {{ id = \"local\", index = \"{directory}\" }}\n]\n");
+            $"schemaVersion = 2\nsources = [\n  {{ id = \"local\", index = \"{directory}\" }}\n]\n"
+        );
 
         // A local source is a directory (design §7); the index inside it is
         // implied. The explicit file path stays valid.
-        var status = Assert.Single(new SeikoClient().SourceStatus(
-            fixture.Root,
-            storeRoot: fixture.StoreDirectory));
+        var status = Assert.Single(
+            new SeikoClient().SourceStatus(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
         Assert.True(status.Reachable);
         Assert.Empty(status.Problems);
         Assert.Equal(1, status.SeiCount);
 
         var client = new SeikoClient();
         client.Add(fixture.Root, "hello@[1.0.0]", storeRoot: fixture.StoreDirectory);
-        Assert.Equal(
-            "hello",
-            File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
+        Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
 
     [Fact]
@@ -95,20 +99,20 @@ public sealed class LocalSourceTests
         await File.WriteAllTextAsync(Path.Combine(sourceRoot, "http", "artifact.zip"), "two");
         await File.WriteAllTextAsync(
             Path.Combine(sourceRoot, "index.json"),
-            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}"""
+        );
         var source = new LocalSource(
-            new SourceConfig
-            {
-                Id = "test",
-                Index = Path.Combine(sourceRoot, "index.json"),
-            },
-            sourceRoot);
+            new SourceConfig { Id = "test", Index = Path.Combine(sourceRoot, "index.json") },
+            sourceRoot
+        );
 
-        foreach (var (url, expected) in new[]
-        {
-            ("http-library.zip", "one"),
-            ("http/artifact.zip", "two"),
-        })
+        foreach (
+            var (url, expected) in new[]
+            {
+                ("http-library.zip", "one"),
+                ("http/artifact.zip", "two"),
+            }
+        )
         {
             using var session = new DownloadSession(1, CancellationToken.None);
             var target = Path.Combine(fixture.Root, Guid.NewGuid().ToString("N"));
@@ -123,11 +127,10 @@ public sealed class LocalSourceTests
                 },
                 target,
                 session,
-                CancellationToken.None);
+                CancellationToken.None
+            );
 
-            Assert.Equal(
-                expected,
-                await File.ReadAllTextAsync(Path.Combine(target, "artifact")));
+            Assert.Equal(expected, await File.ReadAllTextAsync(Path.Combine(target, "artifact")));
         }
     }
 
@@ -137,34 +140,37 @@ public sealed class LocalSourceTests
         using var fixture = new Fixture();
         var artifactDirectory = Path.Combine(fixture.SourceDirectory, "artifacts");
         Directory.CreateDirectory(artifactDirectory);
-        await File.WriteAllBytesAsync(
-            Path.Combine(artifactDirectory, "blob.bin"),
-            new byte[128]);
+        await File.WriteAllBytesAsync(Path.Combine(artifactDirectory, "blob.bin"), new byte[128]);
         await File.WriteAllTextAsync(
             Path.Combine(fixture.SourceDirectory, "index.json"),
-            """{"schemaVersion":2,"generatedBy":"test","sei":[]}""");
+            """{"schemaVersion":2,"generatedBy":"test","sei":[]}"""
+        );
         var source = new LocalSource(
             new SourceConfig
             {
                 Id = "test",
                 Index = Path.Combine(fixture.SourceDirectory, "index.json"),
             },
-            fixture.SourceDirectory);
+            fixture.SourceDirectory
+        );
         using var session = new DownloadSession(1, CancellationToken.None);
         var target = Path.Combine(fixture.Root, "download");
         Directory.CreateDirectory(target);
 
-        var error = await Assert.ThrowsAsync<SeikoException>(() => source.DownloadAsync(
-            "hello",
-            new ArtifactLocation
-            {
-                Url = "artifacts/blob.bin",
-                Sha256 = new string('a', 64),
-                Size = 64,
-            },
-            target,
-            session,
-            CancellationToken.None));
+        var error = await Assert.ThrowsAsync<SeikoException>(() =>
+            source.DownloadAsync(
+                "hello",
+                new ArtifactLocation
+                {
+                    Url = "artifacts/blob.bin",
+                    Sha256 = new string('a', 64),
+                    Size = 64,
+                },
+                target,
+                session,
+                CancellationToken.None
+            )
+        );
 
         Assert.Equal("checksum", error.Code);
         Assert.Contains("size mismatch", error.Message);

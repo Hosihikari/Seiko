@@ -5,32 +5,32 @@ namespace Seiko;
 // selected group's relations are added to the artifact's common ones.
 internal static class DependencyGroups
 {
-    public static DependencyGroup? At(ArtifactEntry artifact, int? index)
-        => index is { } value
-            && artifact.DependencyGroups is { } groups
-            && value >= 0
-            && value < groups.Count
-                ? groups[value]
-                : null;
+    public static DependencyGroup? At(ArtifactEntry artifact, int? index) =>
+        index is { } value
+        && artifact.DependencyGroups is { } groups
+        && value >= 0
+        && value < groups.Count
+            ? groups[value]
+            : null;
 
     // The artifact's common relations come first so diagnostics keep the
     // scope order used before groups existed.
     public static List<SeiDependency> Merge(
         List<SeiDependency>? common,
-        List<SeiDependency>? scoped)
-        => [.. common ?? [], .. scoped ?? []];
+        List<SeiDependency>? scoped
+    ) => [.. common ?? [], .. scoped ?? []];
 
-    public static List<SeiDependency> Dependencies(ArtifactEntry artifact, int? index)
-        => Merge(artifact.Dependencies, At(artifact, index)?.Dependencies);
+    public static List<SeiDependency> Dependencies(ArtifactEntry artifact, int? index) =>
+        Merge(artifact.Dependencies, At(artifact, index)?.Dependencies);
 
-    public static List<SeiDependency> Prerequisites(ArtifactEntry artifact, int? index)
-        => Merge(artifact.Prerequisites, At(artifact, index)?.Prerequisites);
+    public static List<SeiDependency> Prerequisites(ArtifactEntry artifact, int? index) =>
+        Merge(artifact.Prerequisites, At(artifact, index)?.Prerequisites);
 
-    public static List<SeiDependency> OptionalPeers(ArtifactEntry artifact, int? index)
-        => Merge(artifact.OptionalPeers, At(artifact, index)?.OptionalPeers);
+    public static List<SeiDependency> OptionalPeers(ArtifactEntry artifact, int? index) =>
+        Merge(artifact.OptionalPeers, At(artifact, index)?.OptionalPeers);
 
-    public static List<SeiDependency> Conflicts(ArtifactEntry artifact, int? index)
-        => Merge(artifact.Conflicts, At(artifact, index)?.Conflicts);
+    public static List<SeiDependency> Conflicts(ArtifactEntry artifact, int? index) =>
+        Merge(artifact.Conflicts, At(artifact, index)?.Conflicts);
 
     // Specificity is counted over distinct prerequisite sei names. The
     // artifact level scores one point per name; the selected group adds at
@@ -49,8 +49,12 @@ internal static class DependencyGroups
         }
 
         var score = names.Count;
-        if (At(artifact, index)?.Prerequisites is { } scoped
-            && scoped.Any(prerequisite => prerequisite is not null && !names.Contains(prerequisite.Name)))
+        if (
+            At(artifact, index)?.Prerequisites is { } scoped
+            && scoped.Any(prerequisite =>
+                prerequisite is not null && !names.Contains(prerequisite.Name)
+            )
+        )
         {
             score++;
         }
@@ -62,17 +66,21 @@ internal static class DependencyGroups
     // reordered list is a metadata change even when the sets are equal.
     public static bool Equal(
         IReadOnlyList<DependencyGroup>? left,
-        IReadOnlyList<DependencyGroup>? right)
+        IReadOnlyList<DependencyGroup>? right
+    )
     {
         var a = left ?? [];
         var b = right ?? [];
         return a.Count == b.Count
-            && a.Zip(b).All(pair => pair.First is not null
-                && pair.Second is not null
-                && RelationsEqual(pair.First.Dependencies, pair.Second.Dependencies)
-                && RelationsEqual(pair.First.Prerequisites, pair.Second.Prerequisites)
-                && RelationsEqual(pair.First.OptionalPeers, pair.Second.OptionalPeers)
-                && RelationsEqual(pair.First.Conflicts, pair.Second.Conflicts));
+            && a.Zip(b)
+                .All(pair =>
+                    pair.First is not null
+                    && pair.Second is not null
+                    && RelationsEqual(pair.First.Dependencies, pair.Second.Dependencies)
+                    && RelationsEqual(pair.First.Prerequisites, pair.Second.Prerequisites)
+                    && RelationsEqual(pair.First.OptionalPeers, pair.Second.OptionalPeers)
+                    && RelationsEqual(pair.First.Conflicts, pair.Second.Conflicts)
+                );
     }
 
     // Applicability conditions are the two gates: a positive one
@@ -81,10 +89,10 @@ internal static class DependencyGroups
     // part of when it applies. Repeated entries are collapsed, and collapsing
     // happens *after* normalization: `[a]` and `[a, a@*]` gate exactly alike
     // even though the raw texts differ.
-    public static string ConditionKey(DependencyGroup group)
-        => ArtifactConditions.Key(null, group.Prerequisites)
-            + "\n--\n"
-            + ArtifactConditions.Key(null, group.Conflicts);
+    public static string ConditionKey(DependencyGroup group) =>
+        ArtifactConditions.Key(null, group.Prerequisites)
+        + "\n--\n"
+        + ArtifactConditions.Key(null, group.Conflicts);
 
     // The rule the index verifier and the origin reader share: two groups
     // gated identically but installing different relations cannot be told
@@ -100,15 +108,19 @@ internal static class DependencyGroups
 
             for (var left = 0; left < right; left++)
             {
-                if (groups[left] is { } existing
+                if (
+                    groups[left] is { } existing
                     && string.Equals(
                         ConditionKey(existing),
                         ConditionKey(current),
-                        StringComparison.Ordinal)
+                        StringComparison.Ordinal
+                    )
                     && !string.Equals(
                         ResultKey(existing),
                         ResultKey(current),
-                        StringComparison.Ordinal))
+                        StringComparison.Ordinal
+                    )
+                )
                 {
                     return right;
                 }
@@ -121,14 +133,15 @@ internal static class DependencyGroups
     // The install side of a group. Two groups that apply under the same
     // conditions but differ here would let environment and source drift pick
     // one silently, so index verification rejects that shape (ADR-0045).
-    public static string ResultKey(DependencyGroup group)
-        => ArtifactConditions.Key(null, group.Dependencies)
-            + "\n--\n"
-            + ArtifactConditions.Key(null, group.OptionalPeers);
+    public static string ResultKey(DependencyGroup group) =>
+        ArtifactConditions.Key(null, group.Dependencies)
+        + "\n--\n"
+        + ArtifactConditions.Key(null, group.OptionalPeers);
 
     public static bool RelationsEqual(
         IReadOnlyList<SeiDependency>? left,
-        IReadOnlyList<SeiDependency>? right)
+        IReadOnlyList<SeiDependency>? right
+    )
     {
         var a = (left ?? [])
             .Where(relation => relation is not null)
@@ -143,8 +156,14 @@ internal static class DependencyGroups
         return a.Count == (left ?? []).Count
             && b.Count == (right ?? []).Count
             && a.Count == b.Count
-            && a.Zip(b).All(pair =>
-                string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
-                && string.Equals(pair.First.Version ?? "", pair.Second.Version ?? "", StringComparison.Ordinal));
+            && a.Zip(b)
+                .All(pair =>
+                    string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal)
+                    && string.Equals(
+                        pair.First.Version ?? "",
+                        pair.Second.Version ?? "",
+                        StringComparison.Ordinal
+                    )
+                );
     }
 }

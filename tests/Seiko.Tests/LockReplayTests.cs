@@ -8,7 +8,11 @@ public sealed class LockReplayTests
     [Fact]
     public void Resolve_UsesTheLockedSourceIdentity()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
@@ -21,7 +25,8 @@ public sealed class LockReplayTests
             var resolved = LockReplay.Resolve(
                 [sourceA, sourceB],
                 lockFile,
-                [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]);
+                [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]
+            );
 
             var sei = Assert.Single(resolved);
             Assert.Equal("b", sei.Source.Id);
@@ -36,7 +41,11 @@ public sealed class LockReplayTests
     [Fact]
     public void Resolve_RejectsAnArtifactForAnotherPlatform()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
@@ -44,10 +53,13 @@ public sealed class LockReplayTests
             var source = CreateSource(Path.Combine(directory, "a"), "a", sha, rid: "linux-x64");
             var lockFile = Lock("a", sha, artifactRid: "linux-x64");
 
-            var error = Assert.Throws<SeikoException>(() => LockReplay.Resolve(
-                [source],
-                lockFile,
-                [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]));
+            var error = Assert.Throws<SeikoException>(() =>
+                LockReplay.Resolve(
+                    [source],
+                    lockFile,
+                    [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]
+                )
+            );
 
             Assert.Equal("lock", error.Code);
             Assert.Contains("linux-x64", error.Message);
@@ -62,14 +74,19 @@ public sealed class LockReplayTests
     [Fact]
     public void Read_RejectsNullLockCollections()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
             var path = Path.Combine(directory, "seiko.lock.json");
             File.WriteAllText(
                 path,
-                """{"schemaVersion":2,"target":{"rid":"win-x64"},"sources":[],"sei":null}""");
+                """{"schemaVersion":2,"target":{"rid":"win-x64"},"sources":[],"sei":null}"""
+            );
 
             var error = Assert.Throws<SeikoException>(() => LockFile.Read(path));
 
@@ -85,7 +102,11 @@ public sealed class LockReplayTests
     [Fact]
     public void Read_RejectsNullRelationElements()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
@@ -108,17 +129,24 @@ public sealed class LockReplayTests
     [Fact]
     public void Resolve_RejectsAMissingLockedSource()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "seiko-tests", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "seiko-tests",
+            Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(directory);
         try
         {
             var sourceA = CreateSource(Path.Combine(directory, "a"), "a", new string('a', 64));
             var lockFile = Lock("missing", new string('b', 64));
 
-            var error = Assert.Throws<SeikoException>(() => LockReplay.Resolve(
-                [sourceA],
-                lockFile,
-                [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]));
+            var error = Assert.Throws<SeikoException>(() =>
+                LockReplay.Resolve(
+                    [sourceA],
+                    lockFile,
+                    [new SeiSpec { Name = "hello", Version = "[1.0.0]" }]
+                )
+            );
 
             Assert.Equal("lock", error.Code);
             Assert.Contains("missing", error.Message);
@@ -129,8 +157,8 @@ public sealed class LockReplayTests
         }
     }
 
-    private static SeikoLock Lock(string source, string sha256, string? artifactRid = null)
-        => new()
+    private static SeikoLock Lock(string source, string sha256, string? artifactRid = null) =>
+        new()
         {
             Target = new PlatformInfo { Rid = "win-x64" },
             Sources = ["a", "b"],
@@ -151,14 +179,17 @@ public sealed class LockReplayTests
         string directory,
         string id,
         string sha256,
-        string? rid = null)
+        string? rid = null
+    )
     {
         Directory.CreateDirectory(Path.Combine(directory, "sei"));
         File.WriteAllBytes(
             Path.Combine(directory, "index.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { GeneratedBy = "test", Sei = ["hello"] },
-                SeikoJsonContext.Default.IndexRoot));
+                SeikoJsonContext.Default.IndexRoot
+            )
+        );
         var index = new SeiIndex
         {
             Name = "hello",
@@ -186,9 +217,11 @@ public sealed class LockReplayTests
         };
         File.WriteAllBytes(
             Path.Combine(directory, "sei", "hello.json"),
-            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex)
+        );
         return new LocalSource(
             new SourceConfig { Id = id, Index = Path.Combine(directory, "index.json") },
-            directory);
+            directory
+        );
     }
 }

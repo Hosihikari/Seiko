@@ -16,8 +16,10 @@ internal static class StoreStaging
     public static bool IsStagingName(string name, out string artifact)
     {
         artifact = "";
-        if (name.Length != HashLength + MarkerLength + GuidLength
-            || !Hashing.IsLowerHex(name.AsSpan(0, HashLength)))
+        if (
+            name.Length != HashLength + MarkerLength + GuidLength
+            || !Hashing.IsLowerHex(name.AsSpan(0, HashLength))
+        )
         {
             return false;
         }
@@ -53,9 +55,8 @@ internal static class StoreStaging
         }
     }
 
-    public static ProcessLock? TryLock(string storePath, string artifact)
-        => ProcessLock.TryAcquire(
-            Path.Combine(storePath, ".locks", artifact + ".lock"));
+    public static ProcessLock? TryLock(string storePath, string artifact) =>
+        ProcessLock.TryAcquire(Path.Combine(storePath, ".locks", artifact + ".lock"));
 
     public static bool TryDelete(string storePath, string directory)
     {
@@ -73,5 +74,4 @@ internal static class StoreStaging
         Directory.Delete(directory, recursive: true);
         return true;
     }
-
 }

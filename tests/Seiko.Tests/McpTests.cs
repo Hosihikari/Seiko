@@ -52,18 +52,42 @@ public sealed class McpTests
         var names = ToolNames(server.Handle("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!);
         string[] expectedRead =
         [
-            "list", "search", "info", "lock", "source_list", "source_status", "config_get",
-            "cache_status", "cache_verify", "why", "outdated", "audit", "index_verify", "index_catalog", "generation_list", "doctor", "check",
+            "list",
+            "search",
+            "info",
+            "lock",
+            "source_list",
+            "source_status",
+            "config_get",
+            "cache_status",
+            "cache_verify",
+            "why",
+            "outdated",
+            "audit",
+            "index_verify",
+            "index_catalog",
+            "generation_list",
+            "doctor",
+            "check",
         ];
         string[] expectedWrite =
         [
-            "add", "remove", "update", "source_add", "source_remove",
-            "config_set", "cache_clean", "sync", "rollback", "init",
+            "add",
+            "remove",
+            "update",
+            "source_add",
+            "source_remove",
+            "config_set",
+            "cache_clean",
+            "sync",
+            "rollback",
+            "init",
         ];
 
         Assert.Equal(
             expectedRead.Concat(expectedWrite).OrderBy(name => name, StringComparer.Ordinal),
-            names.OrderBy(name => name, StringComparer.Ordinal));
+            names.OrderBy(name => name, StringComparer.Ordinal)
+        );
         Assert.DoesNotContain("install", names);
     }
 
@@ -74,12 +98,14 @@ public sealed class McpTests
         fixture.WriteConfig("win-x64");
         var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
 
-        foreach (var request in new[]
-        {
-            """{"jsonrpc":"1.0","id":1,"method":"ping"}""",
-            """{"id":1,"method":"ping"}""",
-            """{"jsonrpc":2,"id":1,"method":"ping"}""",
-        })
+        foreach (
+            var request in new[]
+            {
+                """{"jsonrpc":"1.0","id":1,"method":"ping"}""",
+                """{"id":1,"method":"ping"}""",
+                """{"jsonrpc":2,"id":1,"method":"ping"}""",
+            }
+        )
         {
             var response = JsonNode.Parse(server.Handle(request)!)!.AsObject();
             Assert.Equal(-32600, response["error"]!["code"]!.GetValue<int>());
@@ -125,13 +151,11 @@ public sealed class McpTests
         using var fixture = new Fixture();
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
-            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsources = []\nrid = \"win-x64\"\nsei = []\n");
+            $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\nsources = []\nrid = \"win-x64\"\nsei = []\n"
+        );
         var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
 
-        var result = CallTool(
-            server,
-            "source_list",
-            new JsonObject { ["root"] = fixture.Root });
+        var result = CallTool(server, "source_list", new JsonObject { ["root"] = fixture.Root });
 
         Assert.False(result["isError"]!.GetValue<bool>());
         Assert.Equal("[]", ToolText(result));
@@ -141,20 +165,19 @@ public sealed class McpTests
     public void Search_ReturnsProjectFieldsAndFilters()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "other",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         var index = JsonSerializer.Deserialize<SeiIndex>(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "hello.json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         index.Project = new ProjectMetadata
         {
             Description = "a greeting",
@@ -164,14 +187,21 @@ public sealed class McpTests
         };
         File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
         var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
 
         var result = CallTool(
             server,
             "search",
-            new JsonObject { ["root"] = fixture.Root, ["term"] = "greet", ["tag"] = "greeting" });
+            new JsonObject
+            {
+                ["root"] = fixture.Root,
+                ["term"] = "greet",
+                ["tag"] = "greeting",
+            }
+        );
 
         Assert.False(result["isError"]!.GetValue<bool>());
         var rows = JsonNode.Parse(ToolText(result))!.AsArray();
@@ -185,11 +215,14 @@ public sealed class McpTests
     public void AddTool_WritesDeclarationAndInstalls()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
         var request = new JsonObject
@@ -221,26 +254,32 @@ public sealed class McpTests
     public void InfoTool_ListsDependencyGroups()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("bridge", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["bridge.txt"] = "bridge" } }],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Dependencies: [new DepFixture("bridge", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "bridge",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["bridge.txt"] = "bridge" } }],
+            }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Dependencies: [new DepFixture("bridge", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
         var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
 
@@ -252,7 +291,8 @@ public sealed class McpTests
                 ["root"] = fixture.Root,
                 ["name"] = "hello",
                 ["store"] = fixture.StoreDirectory,
-            });
+            }
+        );
 
         var text = ToolText(result);
         var details = JsonNode.Parse(text)!["versions"]![0]!["artifactDetails"]![0]!;
@@ -277,7 +317,8 @@ public sealed class McpTests
                 ["root"] = fixture.Root,
                 ["id"] = "demo",
                 ["index"] = "https://demo:SECRET@example.invalid/index.json?token=QUERY",
-            });
+            }
+        );
 
         var text = File.ReadAllText(audit);
         Assert.DoesNotContain("SECRET", text);
@@ -300,9 +341,9 @@ public sealed class McpTests
             {
                 ["root"] = fixture.Root,
                 ["id"] = "demo",
-                ["index"] =
-                    "http://demo:PASS,SECRET@127.0.0.1/index.json?token=QUERY",
-            });
+                ["index"] = "http://demo:PASS,SECRET@127.0.0.1/index.json?token=QUERY",
+            }
+        );
 
         var text = File.ReadAllText(audit);
         Assert.DoesNotContain("PASS", text);
@@ -318,7 +359,11 @@ public sealed class McpTests
         fixture.WriteConfig("win-x64");
         var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
 
-        var clean = CallTool(server, "doctor", new JsonObject { ["root"] = fixture.Root, ["clean"] = true });
+        var clean = CallTool(
+            server,
+            "doctor",
+            new JsonObject { ["root"] = fixture.Root, ["clean"] = true }
+        );
         Assert.True(clean["isError"]!.GetValue<bool>());
         Assert.Contains("--allow-mutations", ToolText(clean));
 
@@ -331,8 +376,9 @@ public sealed class McpTests
     {
         using var fixture = new Fixture();
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoMcpServer(fixture.Root, allowMutations: false, auditLog: fixture.Root));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoMcpServer(fixture.Root, allowMutations: false, auditLog: fixture.Root)
+        );
 
         Assert.Equal("usage", error.Code);
     }
@@ -394,7 +440,8 @@ public sealed class McpTests
         var result = CallTool(
             server,
             "index_verify",
-            new JsonObject { ["path"] = Path.Combine(fixture.SourceDirectory, "missing") });
+            new JsonObject { ["path"] = Path.Combine(fixture.SourceDirectory, "missing") }
+        );
 
         Assert.False(result["isError"]!.GetValue<bool>());
         var data = JsonNode.Parse(ToolText(result))!.AsObject();
@@ -406,11 +453,14 @@ public sealed class McpTests
     public void AddTool_DryRunReturnsChangesWithoutWriting()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64");
         var server = new SeikoMcpServer(fixture.Root, allowMutations: true);
 
@@ -423,7 +473,8 @@ public sealed class McpTests
                 ["spec"] = "hello",
                 ["store"] = fixture.StoreDirectory,
                 ["dryRun"] = true,
-            });
+            }
+        );
 
         Assert.False(result["isError"]!.GetValue<bool>());
         var data = JsonNode.Parse(ToolText(result))!.AsObject();
@@ -437,19 +488,25 @@ public sealed class McpTests
     public void OutdatedTool_IncludesBlockers()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "one" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
         var server = new SeikoMcpServer(fixture.Root, allowMutations: false);
 
         var result = CallTool(server, "outdated", new JsonObject { ["root"] = fixture.Root });
@@ -471,49 +528,53 @@ public sealed class McpTests
             var frozen = CallTool(
                 server,
                 "sync",
-                new JsonObject { ["root"] = root, ["frozen"] = "true" });
+                new JsonObject { ["root"] = root, ["frozen"] = "true" }
+            );
             Assert.True(frozen["isError"]!.GetValue<bool>());
             Assert.Contains("frozen must be a boolean", ToolText(frozen));
 
             var jobs = CallTool(
                 server,
                 "add",
-                new JsonObject { ["root"] = root, ["spec"] = "hello", ["jobs"] = "4" });
+                new JsonObject
+                {
+                    ["root"] = root,
+                    ["spec"] = "hello",
+                    ["jobs"] = "4",
+                }
+            );
             Assert.True(jobs["isError"]!.GetValue<bool>());
             Assert.Contains("jobs must be an integer", ToolText(jobs));
 
             var syncJobs = CallTool(
                 server,
                 "sync",
-                new JsonObject { ["root"] = root, ["jobs"] = "4" });
+                new JsonObject { ["root"] = root, ["jobs"] = "4" }
+            );
             Assert.True(syncJobs["isError"]!.GetValue<bool>());
             Assert.Contains("jobs must be an integer", ToolText(syncJobs));
 
             var syncProxy = CallTool(
                 server,
                 "sync",
-                new JsonObject { ["root"] = root, ["proxy"] = 4 });
+                new JsonObject { ["root"] = root, ["proxy"] = 4 }
+            );
             Assert.True(syncProxy["isError"]!.GetValue<bool>());
             Assert.Contains("proxy must be a string", ToolText(syncProxy));
 
-            var readOnly = CallTool(
-                server,
-                "list",
-                new JsonObject { ["root"] = 123 });
+            var readOnly = CallTool(server, "list", new JsonObject { ["root"] = 123 });
             Assert.True(readOnly["isError"]!.GetValue<bool>());
             Assert.Contains("root must be a string", ToolText(readOnly));
 
             var frozenNull = CallTool(
                 server,
                 "sync",
-                new JsonObject { ["root"] = root, ["frozen"] = (JsonNode?)null });
+                new JsonObject { ["root"] = root, ["frozen"] = (JsonNode?)null }
+            );
             Assert.True(frozenNull["isError"]!.GetValue<bool>());
             Assert.Contains("frozen must be a boolean", ToolText(frozenNull));
 
-            var rootNull = CallTool(
-                server,
-                "list",
-                new JsonObject { ["root"] = (JsonNode?)null });
+            var rootNull = CallTool(server, "list", new JsonObject { ["root"] = (JsonNode?)null });
             Assert.True(rootNull["isError"]!.GetValue<bool>());
             Assert.Contains("root must be a string", ToolText(rootNull));
         }
@@ -528,7 +589,8 @@ public sealed class McpTests
     {
         var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: true);
         var response = server.Handle(
-            """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sync","arguments":{}}}""")!;
+            """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sync","arguments":{}}}"""
+        )!;
         var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();
         Assert.True(result["isError"]!.GetValue<bool>());
         var text = result["content"]!.AsArray()[0]!.AsObject()["text"]!.GetValue<string>();
@@ -540,7 +602,8 @@ public sealed class McpTests
     {
         var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: false);
         var response = server.Handle(
-            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")!;
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"""
+        )!;
         var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();
         Assert.Equal("2025-06-18", result["protocolVersion"]!.GetValue<string>());
         Assert.NotNull(result["capabilities"]!.AsObject()["tools"]);
@@ -551,7 +614,8 @@ public sealed class McpTests
     {
         var server = new SeikoMcpServer(Path.GetTempPath(), allowMutations: false);
         var response = server.Handle(
-            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01"}}""")!;
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2099-01-01"}}"""
+        )!;
         var result = JsonNode.Parse(response)!.AsObject()["result"]!.AsObject();
 
         Assert.Equal("2025-06-18", result["protocolVersion"]!.GetValue<string>());
@@ -592,7 +656,8 @@ public sealed class McpTests
             var result = CallTool(
                 server,
                 "index_catalog",
-                new JsonObject { ["path"] = directory, ["check"] = true });
+                new JsonObject { ["path"] = directory, ["check"] = true }
+            );
 
             Assert.False(result["isError"]!.GetValue<bool>());
             Assert.Equal("sentinel", File.ReadAllText(catalog));
@@ -610,10 +675,7 @@ public sealed class McpTests
         var outside = NewDirectory();
         try
         {
-            var server = new SeikoMcpServer(
-                allowed,
-                allowMutations: true,
-                allowedRoots: [allowed]);
+            var server = new SeikoMcpServer(allowed, allowMutations: true, allowedRoots: [allowed]);
 
             var result = CallTool(server, "index_catalog", new JsonObject { ["path"] = outside });
 
@@ -640,17 +702,15 @@ public sealed class McpTests
             {
                 File.CreateSymbolicLink(
                     Path.Combine(allowed, "catalog.json"),
-                    Path.Combine(outside, "sentinel.txt"));
+                    Path.Combine(outside, "sentinel.txt")
+                );
             }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
             {
                 return; // Symlink creation needs privileges on some hosts.
             }
 
-            var server = new SeikoMcpServer(
-                allowed,
-                allowMutations: true,
-                allowedRoots: [allowed]);
+            var server = new SeikoMcpServer(allowed, allowMutations: true, allowedRoots: [allowed]);
 
             var result = CallTool(server, "index_catalog", new JsonObject { ["path"] = allowed });
 
@@ -734,7 +794,11 @@ public sealed class McpTests
         var outside = NewDirectory();
         try
         {
-            var server = new SeikoMcpServer(allowed, allowMutations: false, allowedRoots: [allowed]);
+            var server = new SeikoMcpServer(
+                allowed,
+                allowMutations: false,
+                allowedRoots: [allowed]
+            );
 
             var result = CallTool(server, "list", new JsonObject { ["root"] = outside });
 
@@ -759,12 +823,14 @@ public sealed class McpTests
                 allowed,
                 allowMutations: true,
                 allowedRoots: [allowed],
-                allowedStores: [store]);
+                allowedStores: [store]
+            );
 
             var result = CallTool(
                 server,
                 "sync",
-                new JsonObject { ["root"] = allowed, ["store"] = outside });
+                new JsonObject { ["root"] = allowed, ["store"] = outside }
+            );
 
             Assert.True(result["isError"]!.GetValue<bool>());
             Assert.Contains("outside --allowed-store", ToolText(result));
@@ -785,15 +851,13 @@ public sealed class McpTests
         var outside = NewDirectory();
         try
         {
-            var server = new SeikoMcpServer(
-                root,
-                allowMutations: true,
-                allowedStores: [store]);
+            var server = new SeikoMcpServer(root, allowMutations: true, allowedStores: [store]);
 
             var result = CallTool(
                 server,
                 "sync",
-                new JsonObject { ["root"] = root, ["store"] = outside });
+                new JsonObject { ["root"] = root, ["store"] = outside }
+            );
 
             Assert.True(result["isError"]!.GetValue<bool>());
             Assert.Contains("outside --allowed-store", ToolText(result));
@@ -818,12 +882,10 @@ public sealed class McpTests
                 root,
                 allowMutations: true,
                 allowedStores: [store],
-                defaultStore: outside);
+                defaultStore: outside
+            );
 
-            var result = CallTool(
-                server,
-                "sync",
-                new JsonObject { ["root"] = root });
+            var result = CallTool(server, "sync", new JsonObject { ["root"] = root });
 
             Assert.True(result["isError"]!.GetValue<bool>());
             Assert.Contains("outside --allowed-store", ToolText(result));
@@ -842,24 +904,32 @@ public sealed class McpTests
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture(
-                            "extra.txt",
-                            server.BaseUrl + "external/vendor/extra.txt",
-                            "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
         var mcp = new SeikoMcpServer(fixture.Root, allowMutations: true);
 
         var previewResult = CallTool(
@@ -870,26 +940,30 @@ public sealed class McpTests
                 ["root"] = fixture.Root,
                 ["store"] = fixture.StoreDirectory,
                 ["dryRun"] = true,
-            });
+            }
+        );
         Assert.False(previewResult["isError"]!.GetValue<bool>());
         var preview = JsonNode.Parse(ToolText(previewResult))!.AsObject();
         Assert.Equal(1, preview["external"]!.GetValue<int>());
         Assert.Contains(
             "127.0.0.1",
-            preview["externalHosts"]!.AsArray().Select(host => host!.GetValue<string>()));
+            preview["externalHosts"]!.AsArray().Select(host => host!.GetValue<string>())
+        );
         Assert.NotNull(preview["externalBytes"]);
         Assert.NotNull(preview["externalUnknown"]);
 
         var syncResult = CallTool(
             mcp,
             "sync",
-            new JsonObject { ["root"] = fixture.Root, ["store"] = fixture.StoreDirectory });
+            new JsonObject { ["root"] = fixture.Root, ["store"] = fixture.StoreDirectory }
+        );
         Assert.False(syncResult["isError"]!.GetValue<bool>());
         var sync = JsonNode.Parse(ToolText(syncResult))!.AsObject();
         Assert.Equal(1, sync["external"]!.GetValue<int>());
         Assert.Contains(
             "127.0.0.1",
-            sync["externalHosts"]!.AsArray().Select(host => host!.GetValue<string>()));
+            sync["externalHosts"]!.AsArray().Select(host => host!.GetValue<string>())
+        );
     }
 
     private static string NewDirectory()
@@ -906,17 +980,13 @@ public sealed class McpTests
             ["jsonrpc"] = "2.0",
             ["id"] = 1,
             ["method"] = "tools/call",
-            ["params"] = new JsonObject
-            {
-                ["name"] = name,
-                ["arguments"] = arguments,
-            },
+            ["params"] = new JsonObject { ["name"] = name, ["arguments"] = arguments },
         }.ToJsonString();
         return JsonNode.Parse(server.Handle(request)!)!.AsObject()["result"]!.AsObject();
     }
 
-    private static string ToolText(JsonObject result)
-        => result["content"]!.AsArray()[0]!.AsObject()["text"]!.GetValue<string>();
+    private static string ToolText(JsonObject result) =>
+        result["content"]!.AsArray()[0]!.AsObject()["text"]!.GetValue<string>();
 
     private static List<string> ToolNames(string response)
     {

@@ -19,29 +19,40 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture(
-                            "server/server.bin",
-                            server.BaseUrl + "external/vendor/server.bin",
-                            "payload"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "server/server.bin",
+                                server.BaseUrl + "external/vendor/server.bin",
+                                "payload"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal(1, result.FilesDeployed);
-        Assert.Equal("payload", File.ReadAllText(Path.Combine(fixture.Root, "server", "server.bin")));
+        Assert.Equal(
+            "payload",
+            File.ReadAllText(Path.Combine(fixture.Root, "server", "server.bin"))
+        );
     }
 
     [Fact]
@@ -50,31 +61,41 @@ public sealed class ExternalFilesTests
         var (fixture, server) = Setup();
         using var _ = fixture;
         using var __ = server;
-        var archive = Fixture.Zip(new Dictionary<string, byte[]>
-        {
-            ["assets/icon.png"] = "icon"u8.ToArray(),
-            ["assets/ignored.txt"] = "ignored"u8.ToArray(),
-        });
+        var archive = Fixture.Zip(
+            new Dictionary<string, byte[]>
+            {
+                ["assets/icon.png"] = "icon"u8.ToArray(),
+                ["assets/ignored.txt"] = "ignored"u8.ToArray(),
+            }
+        );
         fixture.WriteExternal("vendor/assets.zip", archive);
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/assets.zip",
-                            "zip",
-                            archive,
-                            new ExternalMemberFixture("assets/icon.png", "server/icon.png")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/assets.zip",
+                                "zip",
+                                archive,
+                                new ExternalMemberFixture("assets/icon.png", "server/icon.png")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -92,30 +113,39 @@ public sealed class ExternalFilesTests
         var tarGz = Fixture.Gzip(tar);
         fixture.WriteExternal("vendor/tool.tar", tar);
         fixture.WriteExternal("vendor/tool.tar.gz", tarGz);
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/tool.tar",
-                            "tar",
-                            tar,
-                            new ExternalMemberFixture("bin/tool", "plain/tool")),
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/tool.tar.gz",
-                            "tar.gz",
-                            tarGz,
-                            new ExternalMemberFixture("bin/tool", "gzip/tool")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/tool.tar",
+                                "tar",
+                                tar,
+                                new ExternalMemberFixture("bin/tool", "plain/tool")
+                            ),
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/tool.tar.gz",
+                                "tar.gz",
+                                tarGz,
+                                new ExternalMemberFixture("bin/tool", "gzip/tool")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -130,21 +160,28 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("mixed", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hosted.txt"] = "hosted" },
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("extra.txt", server.BaseUrl + "external/vendor/extra.txt", "extra"),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "mixed",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hosted.txt"] = "hosted" },
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("mixed", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -160,33 +197,47 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = new Dictionary<string, string>(StringComparer.Ordinal)
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
                     {
-                        [".external/hosted.txt"] = "hosted",
+                        Files = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            [".external/hosted.txt"] = "hosted",
+                        },
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                ".external/extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
                     },
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture(
-                            ".external/extra.txt",
-                            server.BaseUrl + "external/vendor/extra.txt",
-                            "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
-        Assert.Equal("hosted", File.ReadAllText(Path.Combine(fixture.Root, ".external", "hosted.txt")));
-        Assert.Equal("extra", File.ReadAllText(Path.Combine(fixture.Root, ".external", "extra.txt")));
+        Assert.Equal(
+            "hosted",
+            File.ReadAllText(Path.Combine(fixture.Root, ".external", "hosted.txt"))
+        );
+        Assert.Equal(
+            "extra",
+            File.ReadAllText(Path.Combine(fixture.Root, ".external", "extra.txt"))
+        );
     }
 
     [Fact]
@@ -195,18 +246,20 @@ public sealed class ExternalFilesTests
         var files = new List<ExternalFile>();
         for (var i = 0; i < 5; i++)
         {
-            files.Add(new ExternalFile
-            {
-                Path = $"f{i}.bin",
-                Url = $"https://example.invalid/f{i}.bin",
-                Sha256 = new string('a', 64),
-                Size = ArchiveLimits.MaxEntryBytes,
-            });
+            files.Add(
+                new ExternalFile
+                {
+                    Path = $"f{i}.bin",
+                    Url = $"https://example.invalid/f{i}.bin",
+                    Sha256 = new string('a', 64),
+                    Size = ArchiveLimits.MaxEntryBytes,
+                }
+            );
         }
 
-        var error = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
-            new ArtifactManifest { ExternalFiles = files },
-            "hello"));
+        var error = Assert.Throws<SeikoException>(() =>
+            ExternalFiles.Validate(new ArtifactManifest { ExternalFiles = files }, "hello")
+        );
 
         Assert.Contains("external payloads declare", error.Message, StringComparison.Ordinal);
     }
@@ -215,16 +268,31 @@ public sealed class ExternalFilesTests
     public void Validate_RejectsRepeatedFileWithDifferentIdentity()
     {
         const string Url = "https://example.invalid/extra.bin";
-        var error = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
-            new ArtifactManifest
-            {
-                ExternalFiles =
-                [
-                    new ExternalFile { Path = "one.bin", Url = Url, Sha256 = new string('a', 64), Size = 1 },
-                    new ExternalFile { Path = "two.bin", Url = Url, Sha256 = new string('b', 64), Size = 1 },
-                ],
-            },
-            "hello"));
+        var error = Assert.Throws<SeikoException>(() =>
+            ExternalFiles.Validate(
+                new ArtifactManifest
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFile
+                        {
+                            Path = "one.bin",
+                            Url = Url,
+                            Sha256 = new string('a', 64),
+                            Size = 1,
+                        },
+                        new ExternalFile
+                        {
+                            Path = "two.bin",
+                            Url = Url,
+                            Sha256 = new string('b', 64),
+                            Size = 1,
+                        },
+                    ],
+                },
+                "hello"
+            )
+        );
 
         Assert.Contains("repeated external file", error.Message, StringComparison.Ordinal);
     }
@@ -237,29 +305,37 @@ public sealed class ExternalFilesTests
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
         var url = server.BaseUrl + "external/vendor/extra.txt";
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("one.txt", url, "extra"),
-                        new ExternalFileFixture("two.txt", url, "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture("one.txt", url, "extra"),
+                            new ExternalFileFixture("two.txt", url, "extra"),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("extra", File.ReadAllText(Path.Combine(fixture.Root, "one.txt")));
         Assert.Equal("extra", File.ReadAllText(Path.Combine(fixture.Root, "two.txt")));
         var downloads = server.Requests.Count(request =>
-            request.Method == "GET" && request.Path == "/external/vendor/extra.txt");
+            request.Method == "GET" && request.Path == "/external/vendor/extra.txt"
+        );
         Assert.Equal(1, downloads);
     }
 
@@ -271,34 +347,41 @@ public sealed class ExternalFilesTests
         using var __ = server;
         var archive = Fixture.Zip(new Dictionary<string, byte[]> { ["a.txt"] = "a"u8.ToArray() });
         fixture.WriteExternal("vendor/a.zip", archive);
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/a.zip",
-                            "zip",
-                            archive,
-                            new ExternalMemberFixture("a.txt", "one.txt"),
-                            new ExternalMemberFixture("a.txt", "two.txt")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/a.zip",
+                                "zip",
+                                archive,
+                                new ExternalMemberFixture("a.txt", "one.txt"),
+                                new ExternalMemberFixture("a.txt", "two.txt")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.Equal("a", File.ReadAllText(Path.Combine(fixture.Root, "one.txt")));
         Assert.Equal("a", File.ReadAllText(Path.Combine(fixture.Root, "two.txt")));
         // The archive may be probed with HEAD before the ranged GET.
-        var archiveRequests = server.Authorizations.Count(header =>
-            header is null) + 0;
+        var archiveRequests = server.Authorizations.Count(header => header is null) + 0;
         Assert.True(archiveRequests >= 2);
     }
 
@@ -308,37 +391,48 @@ public sealed class ExternalFilesTests
         var (fixture, server) = Setup();
         using var _ = fixture;
         using var __ = server;
-        var archive = Fixture.Zip(new Dictionary<string, byte[]>
-        {
-            ["a.txt"] = "a"u8.ToArray(),
-            ["b.txt"] = "b"u8.ToArray(),
-        });
+        var archive = Fixture.Zip(
+            new Dictionary<string, byte[]>
+            {
+                ["a.txt"] = "a"u8.ToArray(),
+                ["b.txt"] = "b"u8.ToArray(),
+            }
+        );
         fixture.WriteExternal("vendor/ab.zip", archive);
         var url = server.BaseUrl + "external/vendor/ab.zip";
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            url,
-                            "zip",
-                            archive,
-                            new ExternalMemberFixture("a.txt", "a.txt")),
-                        new ExternalArchiveFixture(
-                            url,
-                            "zip",
-                            archive,
-                            new ExternalMemberFixture("b.txt", "b.txt")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                url,
+                                "zip",
+                                archive,
+                                new ExternalMemberFixture("a.txt", "a.txt")
+                            ),
+                            new ExternalArchiveFixture(
+                                url,
+                                "zip",
+                                archive,
+                                new ExternalMemberFixture("b.txt", "b.txt")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -355,33 +449,43 @@ public sealed class ExternalFilesTests
         var archive = Fixture.Zip(new Dictionary<string, byte[]> { ["a.txt"] = "a"u8.ToArray() });
         fixture.WriteExternal("vendor/a.zip", archive);
         var url = server.BaseUrl + "external/vendor/a.zip";
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            url,
-                            "zip",
-                            archive,
-                            new ExternalMemberFixture("a.txt", "a.txt")),
-                        new ExternalArchiveFixture(
-                            url,
-                            "tar",
-                            archive,
-                            new ExternalMemberFixture("a.txt", "b.txt")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                url,
+                                "zip",
+                                archive,
+                                new ExternalMemberFixture("a.txt", "a.txt")
+                            ),
+                            new ExternalArchiveFixture(
+                                url,
+                                "tar",
+                                archive,
+                                new ExternalMemberFixture("a.txt", "b.txt")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("same digest, format, and size", error.Message, StringComparison.Ordinal);
     }
@@ -393,24 +497,32 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture(
-                            "server/server.bin",
-                            server.BaseUrl + "external/vendor/server.bin",
-                            "payload"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "server/server.bin",
+                                server.BaseUrl + "external/vendor/server.bin",
+                                "payload"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         // An old index has neither the derived summary nor the declarations,
         // but the manifest inside the artifact still declares the file.
@@ -422,10 +534,9 @@ public sealed class ExternalFilesTests
         artifact.Remove("external");
         File.WriteAllText(path, node.ToJsonString());
 
-        var preview = new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            dryRun: true).Preview!;
+        var preview = new SeikoClient()
+            .Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
+            .Preview!;
         Assert.Equal(0, preview.ExternalItems);
         Assert.Contains("proprietary", preview.ExternalUnknown);
 
@@ -445,7 +556,10 @@ public sealed class ExternalFilesTests
         File.WriteAllText(path, node.ToJsonString());
 
         var again = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
-        Assert.Contains(again.Warnings, warning => warning.Contains("does not match", StringComparison.Ordinal));
+        Assert.Contains(
+            again.Warnings,
+            warning => warning.Contains("does not match", StringComparison.Ordinal)
+        );
         Assert.Equal(1, again.ExternalItems);
 
         // Correct counts but a wrong host is still a disclosure mismatch.
@@ -459,7 +573,10 @@ public sealed class ExternalFilesTests
         File.WriteAllText(path, node.ToJsonString());
 
         var wrongHost = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
-        Assert.Contains(wrongHost.Warnings, warning => warning.Contains("does not match", StringComparison.Ordinal));
+        Assert.Contains(
+            wrongHost.Warnings,
+            warning => warning.Contains("does not match", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -471,25 +588,33 @@ public sealed class ExternalFilesTests
         var tar = Fixture.Tar(new Dictionary<string, byte[]> { ["empty.txt"] = [] });
         var tarGz = Fixture.Gzip(tar);
         fixture.WriteExternal("vendor/empty.tar.gz", tarGz);
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/empty.tar.gz",
-                            "tar.gz",
-                            tarGz,
-                            new ExternalMemberFixture("empty.txt", "empty.txt")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/empty.tar.gz",
+                                "tar.gz",
+                                tarGz,
+                                new ExternalMemberFixture("empty.txt", "empty.txt")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -506,33 +631,45 @@ public sealed class ExternalFilesTests
         using var __ = server;
         fixture.WriteExternal("vendor/server.bin", "payload"u8.ToArray());
         var signed = server.BaseUrl + "external/vendor/server.bin?token=REREVIEW_SIGNED_SENTINEL";
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles = [new ExternalFileFixture("server.bin", signed, "payload")],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles = [new ExternalFileFixture("server.bin", signed, "payload")],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         var logs = new List<string>();
         new SeikoClient().Sync(
             fixture.Root,
             fixture.StoreDirectory,
-            log: message => logs.Add(message));
+            log: message => logs.Add(message)
+        );
 
         Assert.Contains(logs, message => message.Contains("server.bin", StringComparison.Ordinal));
-        Assert.DoesNotContain(logs, message => message.Contains("SENTINEL", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            logs,
+            message => message.Contains("SENTINEL", StringComparison.Ordinal)
+        );
 
         // A mismatching download also reports through the error text.
         fixture.WriteExternal("vendor/server.bin", "PAYLOAD"u8.ToArray());
         var store = Path.Combine(fixture.Root, "other-store");
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, store));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, store)
+        );
 
         Assert.Contains("server.bin", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("SENTINEL", error.Message, StringComparison.Ordinal);
@@ -552,17 +689,29 @@ public sealed class ExternalFilesTests
             targets.Add(new ExternalFileFixture($"t{i}.bin", url, "payload"));
         }
 
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { ExternalFiles = targets }],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { ExternalFiles = targets }],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
-        Assert.Contains($"limit is {ArchiveLimits.MaxEntries}", error.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            $"limit is {ArchiveLimits.MaxEntries}",
+            error.Message,
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -570,43 +719,61 @@ public sealed class ExternalFilesTests
     {
         const string Url = "https://example.invalid/extra.bin?token=VALIDATION_SIGNED_SENTINEL";
 
-        var fileError = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
-            new ArtifactManifest
-            {
-                ExternalFiles =
-                [
-                    new ExternalFile { Path = "one.bin", Url = Url, Sha256 = new string('a', 64), Size = 1 },
-                    new ExternalFile { Path = "two.bin", Url = Url, Sha256 = new string('b', 64), Size = 1 },
-                ],
-            },
-            "hello"));
+        var fileError = Assert.Throws<SeikoException>(() =>
+            ExternalFiles.Validate(
+                new ArtifactManifest
+                {
+                    ExternalFiles =
+                    [
+                        new ExternalFile
+                        {
+                            Path = "one.bin",
+                            Url = Url,
+                            Sha256 = new string('a', 64),
+                            Size = 1,
+                        },
+                        new ExternalFile
+                        {
+                            Path = "two.bin",
+                            Url = Url,
+                            Sha256 = new string('b', 64),
+                            Size = 1,
+                        },
+                    ],
+                },
+                "hello"
+            )
+        );
         Assert.DoesNotContain("SENTINEL", fileError.Message, StringComparison.Ordinal);
         Assert.Contains("extra.bin", fileError.Message, StringComparison.Ordinal);
 
-        var archiveError = Assert.Throws<SeikoException>(() => ExternalFiles.Validate(
-            new ArtifactManifest
-            {
-                ExternalArchives =
-                [
-                    new ExternalArchive
-                    {
-                        Url = Url,
-                        Sha256 = new string('a', 64),
-                        Format = "zip",
-                        Size = 1,
-                        Members = [new ExternalArchiveMember { Member = "a", Path = "a" }],
-                    },
-                    new ExternalArchive
-                    {
-                        Url = Url,
-                        Sha256 = new string('b', 64),
-                        Format = "zip",
-                        Size = 1,
-                        Members = [new ExternalArchiveMember { Member = "b", Path = "b" }],
-                    },
-                ],
-            },
-            "hello"));
+        var archiveError = Assert.Throws<SeikoException>(() =>
+            ExternalFiles.Validate(
+                new ArtifactManifest
+                {
+                    ExternalArchives =
+                    [
+                        new ExternalArchive
+                        {
+                            Url = Url,
+                            Sha256 = new string('a', 64),
+                            Format = "zip",
+                            Size = 1,
+                            Members = [new ExternalArchiveMember { Member = "a", Path = "a" }],
+                        },
+                        new ExternalArchive
+                        {
+                            Url = Url,
+                            Sha256 = new string('b', 64),
+                            Format = "zip",
+                            Size = 1,
+                            Members = [new ExternalArchiveMember { Member = "b", Path = "b" }],
+                        },
+                    ],
+                },
+                "hello"
+            )
+        );
         Assert.DoesNotContain("SENTINEL", archiveError.Message, StringComparison.Ordinal);
         Assert.Contains("extra.bin", archiveError.Message, StringComparison.Ordinal);
     }
@@ -625,20 +792,31 @@ public sealed class ExternalFilesTests
             targets.Add(new ExternalFileFixture($"t{i}.bin", url, "payload"));
         }
 
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { ExternalFiles = targets }],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { ExternalFiles = targets }],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
-        Assert.Empty(Directory.EnumerateDirectories(
-            fixture.StoreDirectory,
-            "*.ext-*",
-            SearchOption.TopDirectoryOnly));
+        Assert.Empty(
+            Directory.EnumerateDirectories(
+                fixture.StoreDirectory,
+                "*.ext-*",
+                SearchOption.TopDirectoryOnly
+            )
+        );
     }
 
     [Fact]
@@ -647,7 +825,10 @@ public sealed class ExternalFilesTests
         var (fixture, server) = Setup();
         using var _ = fixture;
         using var __ = server;
-        var entries = new Dictionary<string, byte[]>(ArchiveLimits.MaxEntries + 1, StringComparer.Ordinal);
+        var entries = new Dictionary<string, byte[]>(
+            ArchiveLimits.MaxEntries + 1,
+            StringComparer.Ordinal
+        );
         for (var i = 0; i <= ArchiveLimits.MaxEntries; i++)
         {
             entries[$"f{i}"] = [];
@@ -655,30 +836,43 @@ public sealed class ExternalFilesTests
 
         var tarGz = Fixture.Gzip(Fixture.Tar(entries));
         fixture.WriteExternal("vendor/many.tar.gz", tarGz);
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/many.tar.gz",
-                            "tar.gz",
-                            tarGz,
-                            new ExternalMemberFixture("f0", "f0")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/many.tar.gz",
+                                "tar.gz",
+                                tarGz,
+                                new ExternalMemberFixture("f0", "f0")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
-        Assert.Contains($"limit is {ArchiveLimits.MaxEntries}", error.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            $"limit is {ArchiveLimits.MaxEntries}",
+            error.Message,
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]
@@ -690,24 +884,36 @@ public sealed class ExternalFilesTests
         // Same length as the declared digest content, so the failure is the
         // digest and not the declared size.
         fixture.WriteExternal("vendor/extra.txt", "actual"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("extra.txt", server.BaseUrl + "external/vendor/extra.txt", "expect"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "expect"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("checksum", error.Code);
         Assert.False(File.Exists(Path.Combine(fixture.Root, "extra.txt")));
@@ -719,30 +925,41 @@ public sealed class ExternalFilesTests
         var (fixture, server) = Setup();
         using var _ = fixture;
         using var __ = server;
-        var archive = Fixture.Zip(new Dictionary<string, byte[]> { ["other.txt"] = "other"u8.ToArray() });
+        var archive = Fixture.Zip(
+            new Dictionary<string, byte[]> { ["other.txt"] = "other"u8.ToArray() }
+        );
         fixture.WriteExternal("vendor/a.zip", archive);
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalArchives =
-                    [
-                        new ExternalArchiveFixture(
-                            server.BaseUrl + "external/vendor/a.zip",
-                            "zip",
-                            archive,
-                            new ExternalMemberFixture("missing.txt", "missing.txt")),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalArchives =
+                        [
+                            new ExternalArchiveFixture(
+                                server.BaseUrl + "external/vendor/a.zip",
+                                "zip",
+                                archive,
+                                new ExternalMemberFixture("missing.txt", "missing.txt")
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("checksum", error.Code);
     }
@@ -754,25 +971,37 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["dup.txt"] = "zip" },
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("dup.txt", server.BaseUrl + "external/vendor/extra.txt", "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["dup.txt"] = "zip" },
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "dup.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("also exists inside the artifact", error.Message);
@@ -784,11 +1013,14 @@ public sealed class ExternalFilesTests
         var (fixture, server) = Setup();
         using var _ = fixture;
         using var __ = server;
-        fixture.AddSei("plain", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["plain.txt"] = "plain" } }],
-        });
+        fixture.AddSei(
+            "plain",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["plain.txt"] = "plain" } }],
+            }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("plain", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -803,25 +1035,37 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ManifestSchemaVersion = 2,
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("extra.txt", server.BaseUrl + "external/vendor/extra.txt", "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ManifestSchemaVersion = 2,
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("schemaVersion 2", error.Message);
@@ -834,21 +1078,32 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("extra.txt", server.BaseUrl + "external/vendor/extra.txt", "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, "extra.txt"));
@@ -867,24 +1122,32 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         // Never written to the server root: a dry-run that fetched would fail.
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture(
-                            "extra.txt",
-                            server.BaseUrl + "external/vendor/extra.txt",
-                            "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         var preview = new SeikoClient()
             .Sync(fixture.Root, fixture.StoreDirectory, dryRun: true)
@@ -902,22 +1165,29 @@ public sealed class ExternalFilesTests
         using var __ = server;
         // The declaration is rejected by validation, but the preview reaches
         // the size sum without validating; it must estimate, not throw.
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("a.txt", server.BaseUrl + "external/a", "a"),
-                        new ExternalFileFixture("b.txt", server.BaseUrl + "external/b", "b"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture("a.txt", server.BaseUrl + "external/a", "a"),
+                            new ExternalFileFixture("b.txt", server.BaseUrl + "external/b", "b"),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
         var path = Path.Combine(fixture.SourceDirectory, "sei", "proprietary.json");
         var node = JsonNode.Parse(File.ReadAllText(path))!;
         node["versions"]![0]!["artifacts"]![0]!["externalFiles"]![0]!["size"] = long.MaxValue;
@@ -939,30 +1209,46 @@ public sealed class ExternalFilesTests
         using var __ = server;
         // Each artifact saturates on its own; the running total across
         // artifacts must not wrap back around.
-        fixture.AddSei("alpha", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles = [new ExternalFileFixture("a.txt", server.BaseUrl + "external/a", "a")],
-                },
-            ],
-        });
-        fixture.AddSei("beta", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles = [new ExternalFileFixture("b.txt", server.BaseUrl + "external/b", "b")],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "alpha",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture("a.txt", server.BaseUrl + "external/a", "a"),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.AddSei(
+            "beta",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture("b.txt", server.BaseUrl + "external/b", "b"),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteHttpConfig(
-            server.BaseUrl, "win-x64", new SpecFixture("alpha", "[1.0.0]"), new SpecFixture("beta", "[1.0.0]"));
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("alpha", "[1.0.0]"),
+            new SpecFixture("beta", "[1.0.0]")
+        );
         var path = Path.Combine(fixture.SourceDirectory, "sei", "alpha.json");
         var node = JsonNode.Parse(File.ReadAllText(path))!;
         node["versions"]![0]!["artifacts"]![0]!["externalFiles"]![0]!["size"] = long.MaxValue;
@@ -983,11 +1269,14 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         // Without declarations the index summary supplies the counts; a huge
         // file count per artifact overflows the int running total.
-        fixture.AddSei("gamma", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["g.txt"] = "x" } }],
-        });
+        fixture.AddSei(
+            "gamma",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["g.txt"] = "x" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("gamma", "[1.0.0]"));
         var path = Path.Combine(fixture.SourceDirectory, "sei", "gamma.json");
         var node = JsonNode.Parse(File.ReadAllText(path))!;
@@ -995,7 +1284,8 @@ public sealed class ExternalFilesTests
         artifact["externalFiles"] = null;
         artifact["externalArchives"] = null;
         artifact["external"] = JsonNode.Parse(
-            "{\"files\":2147483647,\"archives\":1,\"size\":7,\"hosts\":[\"vendor.invalid\"]}");
+            "{\"files\":2147483647,\"archives\":1,\"size\":7,\"hosts\":[\"vendor.invalid\"]}"
+        );
         File.WriteAllText(path, node.ToJsonString());
 
         var preview = new SeikoClient()
@@ -1011,10 +1301,12 @@ public sealed class ExternalFilesTests
     {
         // Sizes reach this sum without validation, so a negative first element
         // is possible; clamping against a negative total must not saturate.
-        var summary = ExternalFiles.Summarize(new ArtifactManifest
-        {
-            ExternalFiles = [new ExternalFile { Size = -1 }, new ExternalFile { Size = 1 }],
-        });
+        var summary = ExternalFiles.Summarize(
+            new ArtifactManifest
+            {
+                ExternalFiles = [new ExternalFile { Size = -1 }, new ExternalFile { Size = 1 }],
+            }
+        );
 
         Assert.Equal(0, summary.Size);
     }
@@ -1038,21 +1330,32 @@ public sealed class ExternalFilesTests
         using var _ = fixture;
         using var __ = server;
         fixture.WriteExternal("vendor/extra.txt", "extra"u8.ToArray());
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    ExternalFiles =
-                    [
-                        new ExternalFileFixture("extra.txt", server.BaseUrl + "external/vendor/extra.txt", "extra"),
-                    ],
-                },
-            ],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        ExternalFiles =
+                        [
+                            new ExternalFileFixture(
+                                "extra.txt",
+                                server.BaseUrl + "external/vendor/extra.txt",
+                                "extra"
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
 
         var info = new SeikoClient().Info(fixture.Root, "proprietary");
 
@@ -1068,12 +1371,15 @@ public sealed class ExternalFilesTests
         var (fixture, server) = Setup();
         using var _ = fixture;
         using var __ = server;
-        fixture.AddSei("proprietary", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("proprietary", "[1.0.0]"));
+        fixture.AddSei(
+            "proprietary",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.WriteHttpConfig(
+            server.BaseUrl,
+            "win-x64",
+            new SpecFixture("proprietary", "[1.0.0]")
+        );
         var path = Path.Combine(fixture.SourceDirectory, "sei", "proprietary.json");
         var node = JsonNode.Parse(File.ReadAllText(path))!;
         var artifact = node["versions"]![0]!["artifacts"]![0]!.AsObject();
@@ -1084,7 +1390,8 @@ public sealed class ExternalFilesTests
 
         var (stdout, stderr, _) = Cli.Run(
             ["info", "proprietary", "--root", fixture.Root, "--json"],
-            new Dictionary<string, string> { ["SEIKO_STORE"] = fixture.StoreDirectory });
+            new Dictionary<string, string> { ["SEIKO_STORE"] = fixture.StoreDirectory }
+        );
 
         Assert.Contains("\"externalKnown\":false", stdout + stderr, StringComparison.Ordinal);
     }

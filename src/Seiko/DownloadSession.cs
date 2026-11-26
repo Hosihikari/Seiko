@@ -8,7 +8,8 @@ public sealed class DownloadSession : IDisposable
     public DownloadSession(
         int jobs,
         CancellationToken cancellationToken,
-        long chunkThreshold = 32L * 1024 * 1024)
+        long chunkThreshold = 32L * 1024 * 1024
+    )
     {
         if (jobs < 1 || jobs > MaxJobs)
         {
@@ -42,25 +43,17 @@ public sealed class DownloadSession : IDisposable
 
     public void ReportDownloading(string name, long downloaded, long total)
     {
-        Progress?.Report(new SyncProgress(
-            SyncPhase.Downloading,
-            name,
-            downloaded,
-            total,
-            SeiCompleted,
-            SeiTotal));
+        Progress?.Report(
+            new SyncProgress(SyncPhase.Downloading, name, downloaded, total, SeiCompleted, SeiTotal)
+        );
     }
 
     public void ReportCompleted(string name, long total)
     {
         var completed = Interlocked.Increment(ref _seiCompleted);
-        Progress?.Report(new SyncProgress(
-            SyncPhase.Completed,
-            name,
-            total,
-            total,
-            completed,
-            SeiTotal));
+        Progress?.Report(
+            new SyncProgress(SyncPhase.Completed, name, total, total, completed, SeiTotal)
+        );
     }
 
     public void Dispose()

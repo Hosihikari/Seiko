@@ -14,8 +14,10 @@ internal static class OriginPaths
 
     public static bool IsPathLike(string specification, string workingDirectory)
     {
-        if (specification.Contains('/', StringComparison.Ordinal)
-            || specification.Contains('\\', StringComparison.Ordinal))
+        if (
+            specification.Contains('/', StringComparison.Ordinal)
+            || specification.Contains('\\', StringComparison.Ordinal)
+        )
         {
             return true;
         }
@@ -37,8 +39,10 @@ internal static class OriginPaths
         // absolute path C:\x, and combining it blindly would bury the drive
         // inside a relative path. Strip the prefixes before judging the shape.
         var trimmed = specification;
-        while (trimmed.StartsWith("./", StringComparison.Ordinal)
-            || trimmed.StartsWith(".\\", StringComparison.Ordinal))
+        while (
+            trimmed.StartsWith("./", StringComparison.Ordinal)
+            || trimmed.StartsWith(".\\", StringComparison.Ordinal)
+        )
         {
             trimmed = trimmed[2..];
         }
@@ -50,8 +54,9 @@ internal static class OriginPaths
         {
             throw new SeikoException(
                 $"{specification} must be relative to the install root, "
-                + "or to the working directory when adding it",
-                "usage");
+                    + "or to the working directory when adding it",
+                "usage"
+            );
         }
 
         var full = Path.GetFullPath(Path.Combine(workingDirectory, trimmed));
@@ -62,7 +67,8 @@ internal static class OriginPaths
             // Different volume on Windows; there is no relative form to store.
             throw new SeikoException(
                 $"{specification} is on another volume; move it under {root} and use a relative path",
-                "usage");
+                "usage"
+            );
         }
 
         return relative.Replace('\\', '/');
@@ -70,8 +76,8 @@ internal static class OriginPaths
 
     // Resolving is always relative to the install root, never to the working
     // directory, so a replay from anywhere behaves the same (ADR-0044).
-    public static string Resolve(string stored, string root)
-        => Path.GetFullPath(Path.Combine(root, stored.Replace('/', Path.DirectorySeparatorChar)));
+    public static string Resolve(string stored, string root) =>
+        Path.GetFullPath(Path.Combine(root, stored.Replace('/', Path.DirectorySeparatorChar)));
 
     // The file name stem must equal the sei name; hello-1.0.0.sei passes so
     // releases can carry their version in the name.
@@ -91,20 +97,20 @@ internal static class OriginPaths
     }
 
     // The only accepted shape, for input, config and lock alike.
-    public static bool IsStoredForm(string value)
-        => !Path.IsPathRooted(value)
-            && !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
+    public static bool IsStoredForm(string value) =>
+        !Path.IsPathRooted(value) && !value.StartsWith("file:", StringComparison.OrdinalIgnoreCase);
 
     // Whether two stored paths name the same file. Both are compared after
     // resolution; the filesystem decides case, not the OS name: a differently
     // cased spelling only adopts the entry's own spelling where the volume is
     // case-insensitive, so a case-sensitive APFS volume keeps two distinct
     // files apart and symlink components fold (ADR-0044).
-    public static bool SameFile(string left, string right, string root)
-        => string.Equals(
+    public static bool SameFile(string left, string right, string root) =>
+        string.Equals(
             RootRegistry.Resolve(Resolve(left, root)),
             RootRegistry.Resolve(Resolve(right, root)),
-            StringComparison.Ordinal);
+            StringComparison.Ordinal
+        );
 
     // The form a declaration and a lock must hold.
     public static void EnsureStored(string path, string what)
@@ -113,7 +119,8 @@ internal static class OriginPaths
         {
             throw new SeikoException(
                 $"{what} '{path}' must be relative to the install root",
-                "lock");
+                "lock"
+            );
         }
     }
 }

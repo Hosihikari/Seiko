@@ -8,11 +8,14 @@ public sealed class DoctorTests
     public void Doctor_HealthyAfterSync()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -28,7 +31,8 @@ public sealed class DoctorTests
         fixture.WriteConfig("win-x64");
         using var held = ProcessLock.Acquire(
             Path.Combine(fixture.Root, ".seiko", "install.lock"),
-            "test root");
+            "test root"
+        );
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
 
@@ -41,18 +45,22 @@ public sealed class DoctorTests
     public void Doctor_ReportsBusyArtifactInsteadOfMissing()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var digest = Assert.Single(client.ReadLock(fixture.Root)!.Sei).Artifact.Sha256;
         using var held = ProcessLock.Acquire(
             Path.Combine(fixture.StoreDirectory, ".locks", digest + ".lock"),
-            "test artifact");
+            "test artifact"
+        );
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
 
@@ -69,7 +77,8 @@ public sealed class DoctorTests
         Directory.CreateDirectory(stateDirectory);
         File.WriteAllText(
             Path.Combine(stateDirectory, "state.json"),
-            $$"""{"schemaVersion":{{LocalState.CurrentSchemaVersion}},"generation":1,"files":null}""");
+            $$"""{"schemaVersion":{{LocalState.CurrentSchemaVersion}},"generation":1,"files":null}"""
+        );
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
 
@@ -85,13 +94,12 @@ public sealed class DoctorTests
         Directory.CreateDirectory(stateDirectory);
         File.WriteAllText(
             Path.Combine(stateDirectory, "state.json"),
-            """{"schemaVersion":0,"generation":1,"files":{}}""");
+            """{"schemaVersion":0,"generation":1,"files":{}}"""
+        );
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory);
 
-        var finding = Assert.Single(
-            result.Findings,
-            finding => finding.Code == "deploy-state");
+        var finding = Assert.Single(result.Findings, finding => finding.Code == "deploy-state");
         Assert.Contains("unsupported deployment state schemaVersion", finding.Message);
         Assert.Equal("error", finding.Severity);
     }
@@ -100,11 +108,14 @@ public sealed class DoctorTests
     public void Doctor_ReportsNullDeployedFileRecord()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         var statePath = Path.Combine(fixture.Root, ".seiko", "state.json");
@@ -125,11 +136,14 @@ public sealed class DoctorTests
     public void Doctor_ReportsMissingDeployedFile()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.Root, "hello.txt"));
@@ -163,7 +177,8 @@ public sealed class DoctorTests
         Directory.CreateDirectory(partial);
         using var held = ProcessLock.Acquire(
             Path.Combine(fixture.StoreDirectory, ".locks", artifact + ".lock"),
-            "test artifact");
+            "test artifact"
+        );
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory, clean: true);
 
@@ -194,7 +209,8 @@ public sealed class DoctorTests
         fixture.WriteConfig("win-x64");
         using var held = ProcessLock.Acquire(
             Path.Combine(fixture.Root, ".seiko", "install.lock"),
-            "test install root");
+            "test install root"
+        );
 
         var result = new Doctor().Run(fixture.Root, fixture.StoreDirectory, clean: true);
 

@@ -5,29 +5,39 @@ namespace Seiko.Tests;
 
 public sealed class DependencyGroupTests
 {
-    private static void AddPackage(Fixture fixture, string name)
-        => fixture.AddSei(name, new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { [name + ".txt"] = name } }],
-        });
+    private static void AddPackage(Fixture fixture, string name) =>
+        fixture.AddSei(
+            name,
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { [name + ".txt"] = name } }],
+            }
+        );
 
-    private static string FileOf(Fixture fixture, string name)
-        => Path.Combine(fixture.Root, name + ".txt");
+    private static string FileOf(Fixture fixture, string name) =>
+        Path.Combine(fixture.Root, name + ".txt");
 
     // Rewrites the stored manifest and re-points the index at the new bytes,
     // so an artifact-level field can be changed without breaking the rest.
     private static void RewriteArtifact(
         Fixture fixture,
         string name,
-        Action<System.Text.Json.Nodes.JsonObject> mutate)
+        Action<System.Text.Json.Nodes.JsonObject> mutate
+    )
     {
-        var zip = Directory.EnumerateFiles(
-            Path.Combine(fixture.SourceDirectory, "artifacts"),
-            $"{name}-1.0.0-*.zip").Single();
-        using (var archive = System.IO.Compression.ZipFile.Open(
-            zip,
-            System.IO.Compression.ZipArchiveMode.Update))
+        var zip = Directory
+            .EnumerateFiles(
+                Path.Combine(fixture.SourceDirectory, "artifacts"),
+                $"{name}-1.0.0-*.zip"
+            )
+            .Single();
+        using (
+            var archive = System.IO.Compression.ZipFile.Open(
+                zip,
+                System.IO.Compression.ZipArchiveMode.Update
+            )
+        )
         {
             var entry = archive.GetEntry("sei.json")!;
             string text;
@@ -48,35 +58,44 @@ public sealed class DependencyGroupTests
         var indexPath = Path.Combine(fixture.SourceDirectory, "sei", $"{name}.json");
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(indexPath),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions[0].Artifacts[0].Source.Sha256 = Hashing.Sha256File(zip);
         sei.Versions[0].Artifacts[0].Source.Size = new FileInfo(zip).Length;
-        File.WriteAllBytes(indexPath, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            indexPath,
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
     }
 
     private static void AddTwoGroupApp(Fixture fixture)
     {
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("bridge-a", "*")],
-                            Prerequisites: [new DepFixture("host-a", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("bridge-b", "*")],
-                            Prerequisites: [new DepFixture("host-b", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("bridge-a", "*")],
+                                Prerequisites: [new DepFixture("host-a", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("bridge-b", "*")],
+                                Prerequisites: [new DepFixture("host-b", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
     }
 
     [Fact]
@@ -92,7 +111,8 @@ public sealed class DependencyGroupTests
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host-a", "[1.0.0]"));
+            new SpecFixture("host-a", "[1.0.0]")
+        );
 
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -118,28 +138,33 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    Dependencies = [new DepFixture("common", "*")],
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("scoped", "*")],
-                            Prerequisites: [new DepFixture("marker", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        Dependencies = [new DepFixture("common", "*")],
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("scoped", "*")],
+                                Prerequisites: [new DepFixture("marker", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("marker", "[1.0.0]"));
+            new SpecFixture("marker", "[1.0.0]")
+        );
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -153,23 +178,27 @@ public sealed class DependencyGroupTests
         using var fixture = new Fixture();
         AddPackage(fixture, "bridge");
         AddPackage(fixture, "legacy");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("bridge", "*")],
-                            Conflicts: [new DepFixture("legacy", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("bridge", "*")],
+                                Conflicts: [new DepFixture("legacy", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -183,31 +212,37 @@ public sealed class DependencyGroupTests
         using var fixture = new Fixture();
         AddPackage(fixture, "bridge");
         AddPackage(fixture, "legacy");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("bridge", "*")],
-                            Prerequisites: [new DepFixture("host", "*")],
-                            Conflicts: [new DepFixture("legacy", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("bridge", "*")],
+                                Prerequisites: [new DepFixture("host", "*")],
+                                Conflicts: [new DepFixture("legacy", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("legacy", "[1.0.0]"));
+            new SpecFixture("legacy", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("#0", error.Message);
         Assert.Contains("host", error.Message);
@@ -219,35 +254,41 @@ public sealed class DependencyGroupTests
         using var fixture = new Fixture();
         AddPackage(fixture, "bridge");
         AddPackage(fixture, "alpha");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    // Only artifact is for another rid, so no artifact can be
-                    // picked and the diagnosis has to explain why.
-                    Rid = "linux-x64",
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("bridge", "*")],
-                            Conflicts: [new DepFixture("alpha", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        // Only artifact is for another rid, so no artifact can be
+                        // picked and the diagnosis has to explain why.
+                        Rid = "linux-x64",
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("bridge", "*")],
+                                Conflicts: [new DepFixture("alpha", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         // alpha sorts before app, so it is already assigned when app is
         // reached and the conflict is decidable.
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("alpha", "[1.0.0]"));
+            new SpecFixture("alpha", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         // The conflict matches (alpha is installed and excluded), so the
         // group is unavailable. Judging "not alpha" as a positive condition
@@ -261,25 +302,27 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "bridge");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Dependencies: [new DepFixture("bridge", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Dependencies: [new DepFixture("bridge", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
-        var (stdout, stderr, exitCode) = Cli.Run(
-            ["info", "app", "--root", fixture.Root]);
+        var (stdout, stderr, exitCode) = Cli.Run(["info", "app", "--root", fixture.Root]);
 
         Assert.True(exitCode == 0, stdout + stderr);
         Assert.Contains("group #0", stdout + stderr);
@@ -291,30 +334,36 @@ public sealed class DependencyGroupTests
         using var fixture = new Fixture();
         AddPackage(fixture, "bridge");
         AddPackage(fixture, "legacy");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("bridge", "*")],
-                            Conflicts: [new DepFixture("legacy", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("bridge", "*")],
+                                Conflicts: [new DepFixture("legacy", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("legacy", "[1.0.0]"));
+            new SpecFixture("legacy", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("artifact conflict", error.Message);
@@ -330,38 +379,44 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    Prerequisites = [new DepFixture("host", "*")],
-                    DependencyGroups =
-                    [
-                        // Repeats an artifact-level prerequisite: no bonus.
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("base-bridge", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        // Introduces a new prerequisite name: one bonus point.
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("extra-bridge", "*")],
-                            Prerequisites:
-                            [
-                                new DepFixture("host", "*"),
-                                new DepFixture("extra", "*"),
-                            ]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        Prerequisites = [new DepFixture("host", "*")],
+                        DependencyGroups =
+                        [
+                            // Repeats an artifact-level prerequisite: no bonus.
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("base-bridge", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            // Introduces a new prerequisite name: one bonus point.
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("extra-bridge", "*")],
+                                Prerequisites:
+                                [
+                                    new DepFixture("host", "*"),
+                                    new DepFixture("extra", "*"),
+                                ]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
             new SpecFixture("host", "[1.0.0]"),
-            new SpecFixture("extra", "[1.0.0]"));
+            new SpecFixture("extra", "[1.0.0]")
+        );
 
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -370,7 +425,8 @@ public sealed class DependencyGroupTests
         Assert.False(File.Exists(FileOf(fixture, "base-bridge")));
         Assert.Equal(
             1,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
     }
 
     [Fact]
@@ -378,21 +434,24 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "backend");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Dependencies: [new DepFixture("backend", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Dependencies: [new DepFixture("backend", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
 
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
@@ -412,48 +471,58 @@ public sealed class DependencyGroupTests
         // app's high group pulls x; its low group does not. x's first group
         // depends on a missing package, the second on y. Only the second can
         // hold while app stays on its high group.
-        fixture.AddSei("ax", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["ax.txt"] = "ax" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("missing", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("y", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("ax", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "ax",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["ax.txt"] = "ax" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("missing", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("y", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("ax", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host", "[1.0.0]"));
+            new SpecFixture("host", "[1.0.0]")
+        );
 
         // Probing x's dead group may fall back to app's low group, which makes
         // x disappear; the probe must not read that as "this group works".
@@ -468,59 +537,72 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "host");
-        fixture.AddSei("common", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["common.txt"] = "c1" } }],
-        });
+        fixture.AddSei(
+            "common",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["common.txt"] = "c1" } }],
+            }
+        );
 
         // aaa is declared first, so its high group pins common@1 before app is
         // reached and app's high groups fail in the current graph. Their own
         // probes can drop aaa's high group, so both are solvable there.
-        fixture.AddSei("aaa", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["aaa.txt"] = "aaa" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("common", "[1.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("common", "[2.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("common", "[3.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "aaa",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["aaa.txt"] = "aaa" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("common", "[1.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("common", "[2.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("common", "[3.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("aaa", "[1.0.0]"),
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host", "[1.0.0]"));
+            new SpecFixture("host", "[1.0.0]")
+        );
         var client = new SeikoClient();
 
         // Only common 1.0.0 exists, so both specific groups are unsolvable
@@ -528,7 +610,8 @@ public sealed class DependencyGroupTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // Later versions make both specific groups solvable in their own
         // graphs. The lock group sits below the top layer, so it must not
@@ -536,28 +619,35 @@ public sealed class DependencyGroupTests
         var path = Path.Combine(fixture.SourceDirectory, "sei", "common.json");
         var common = JsonSerializer.Deserialize(
             File.ReadAllBytes(path),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         foreach (var version in new[] { "2.0.0", "3.0.0" })
         {
-            common.Versions.Add(new SeiVersionEntry
-            {
-                Version = version,
-                Artifacts =
-                [
-                    new ArtifactEntry
-                    {
-                        Layout = "root",
-                        Source = common.Versions[0].Artifacts[0].Source,
-                    },
-                ],
-            });
+            common.Versions.Add(
+                new SeiVersionEntry
+                {
+                    Version = version,
+                    Artifacts =
+                    [
+                        new ArtifactEntry
+                        {
+                            Layout = "root",
+                            Source = common.Versions[0].Artifacts[0].Source,
+                        },
+                    ],
+                }
+            );
         }
 
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(common, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(common, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("ambiguous artifact for app 1.0.0", error.Message);
@@ -581,50 +671,60 @@ public sealed class DependencyGroupTests
             {
                 Version = "2.0.0",
                 Artifacts = [new ArtifactFixture { Files = { ["two.txt"] = "two" } }],
-            });
+            }
+        );
 
-        fixture.AddSei("aa", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["aa.txt"] = "aa" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("common", "[1.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
-        fixture.AddSei("bb", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["bb.txt"] = "bb" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("common", "[2.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "aa",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["aa.txt"] = "aa" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("common", "[1.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
+        fixture.AddSei(
+            "bb",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["bb.txt"] = "bb" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("common", "[2.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         return fixture;
     }
 
-    private static List<(string Name, int? Group)> Roots(Fixture fixture, SeikoClient client)
-        => client.ReadLock(fixture.Root)!.Sei
-            .Where(sei => sei.Name is "aa" or "bb")
+    private static List<(string Name, int? Group)> Roots(Fixture fixture, SeikoClient client) =>
+        client
+            .ReadLock(fixture.Root)!
+            .Sei.Where(sei => sei.Name is "aa" or "bb")
             .Select(sei => (sei.Name, sei.Artifact.Group))
             .ToList();
 
@@ -636,7 +736,8 @@ public sealed class DependencyGroupTests
             "win-x64",
             new SpecFixture("aa", "[1.0.0]"),
             new SpecFixture("bb", "[1.0.0]"),
-            new SpecFixture("host", "[1.0.0]"));
+            new SpecFixture("host", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(first.Root, first.StoreDirectory);
 
@@ -645,7 +746,8 @@ public sealed class DependencyGroupTests
             "win-x64",
             new SpecFixture("host", "[1.0.0]"),
             new SpecFixture("bb", "[1.0.0]"),
-            new SpecFixture("aa", "[1.0.0]"));
+            new SpecFixture("aa", "[1.0.0]")
+        );
         client.Sync(second.Root, second.StoreDirectory);
 
         Assert.Equal(Roots(first, client), Roots(second, client));
@@ -662,33 +764,39 @@ public sealed class DependencyGroupTests
 
         // Group 0 gates on host and is therefore the specific one; group 1 is
         // the unconditional fallback.
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("ax", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("ax", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host", "[1.0.0]"));
+            new SpecFixture("host", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // Pretend the lock recorded the fallback group, relations and all:
         // version, bytes and rid stay the same and only the group differs.
@@ -697,14 +805,16 @@ public sealed class DependencyGroupTests
         var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
         var lockFile = JsonSerializer.Deserialize(
             File.ReadAllBytes(lockPath),
-            SeikoJsonContext.Default.SeikoLock)!;
+            SeikoJsonContext.Default.SeikoLock
+        )!;
         var app = lockFile.Sei.Single(sei => sei.Name == "app");
         app.Artifact.Group = 1;
         app.Artifact.Dependencies = [];
         app.Artifact.Prerequisites = [];
         File.WriteAllBytes(
             lockPath,
-            JsonSerializer.SerializeToUtf8Bytes(lockFile, SeikoJsonContext.Default.SeikoLock));
+            JsonSerializer.SerializeToUtf8Bytes(lockFile, SeikoJsonContext.Default.SeikoLock)
+        );
 
         var preview = client.Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
 
@@ -723,35 +833,42 @@ public sealed class DependencyGroupTests
 
         // Group 0 holds while a is installed; removing a makes group 1 the
         // only one left, with a different set of sei behind it.
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("ax", "*")],
-                            Prerequisites: [new DepFixture("a", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("y", "*")],
-                            Prerequisites: [new DepFixture("b", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("ax", "*")],
+                                Prerequisites: [new DepFixture("a", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("y", "*")],
+                                Prerequisites: [new DepFixture("b", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("a", "[1.0.0]"));
+            new SpecFixture("a", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // b joins after group 0 is locked; on its own, group 1 would now be
         // the only eligible one, but the lock keeps 0 and the tie is silent.
@@ -759,12 +876,14 @@ public sealed class DependencyGroupTests
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
             new SpecFixture("a", "[1.0.0]"),
-            new SpecFixture("b", "[1.0.0]"));
+            new SpecFixture("b", "[1.0.0]")
+        );
 
         // Version, digest and rid all stay the same; only the group changes,
         // and with it the installed set (x out, y in).
-        var error = Assert.Throws<SeikoException>(
-            () => client.Remove(fixture.Root, "a", storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Remove(fixture.Root, "a", storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("app", error.Message);
@@ -781,68 +900,81 @@ public sealed class DependencyGroupTests
 
         // ax's two equally specific groups: one needs a package that does not
         // exist, the other needs y. Only the second is viable.
-        fixture.AddSei("ax", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["ax.txt"] = "ax" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("missing", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("y", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "ax",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["ax.txt"] = "ax" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("missing", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("y", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
 
         // r's specific group pulls ax, its fallback does not. A probe of x's
         // dead group can therefore answer with a complete graph that has no
         // ax in it; that answer must not count as proof and must not tip the
         // tie between x's groups into a false ambiguity.
-        fixture.AddSei("r", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["r.txt"] = "r" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("ax", "*")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "r",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["r.txt"] = "r" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("ax", "*")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("r", "[1.0.0]"),
-            new SpecFixture("host", "[1.0.0]"));
+            new SpecFixture("host", "[1.0.0]")
+        );
 
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var lockedGroups = string.Join(
             ", ",
-            client.ReadLock(fixture.Root)!.Sei.Select(sei => $"{sei.Name}@{sei.Artifact.Group}"));
+            client.ReadLock(fixture.Root)!.Sei.Select(sei => $"{sei.Name}@{sei.Artifact.Group}")
+        );
 
         Assert.True(File.Exists(FileOf(fixture, "ax")), lockedGroups);
         Assert.True(File.Exists(FileOf(fixture, "y")));
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "r").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "r").Artifact.Group
+        );
         Assert.Equal(
             1,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "ax").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "ax").Artifact.Group
+        );
     }
 
     [Fact]
@@ -861,36 +993,43 @@ public sealed class DependencyGroupTests
             {
                 Version = "2.0.0",
                 Artifacts = [new ArtifactFixture { Files = { ["b2.txt"] = "b2" } }],
-            });
+            }
+        );
 
         // Two equally specific groups, each pinned to one b version, plus an
         // unconditional fallback.
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("b", "[2.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("b", "[3.0.0]")],
-                            Prerequisites: [new DepFixture("host", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("b", "[2.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("b", "[3.0.0]")],
+                                Prerequisites: [new DepFixture("host", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
             new SpecFixture("host", "[1.0.0]"),
-            new SpecFixture("b", "*"));
+            new SpecFixture("b", "*")
+        );
         var client = new SeikoClient();
 
         // Only b 1 and 2 exist, so group 2 has nothing to match and group 1
@@ -898,7 +1037,8 @@ public sealed class DependencyGroupTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal(
             1,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // Publish 3 and 4. Updating b lets it climb to 4, which neither high
         // group accepts; the initial answer falls to the fallback while both
@@ -914,7 +1054,8 @@ public sealed class DependencyGroupTests
             {
                 Version = "4.0.0",
                 Artifacts = [new ArtifactFixture { Files = { ["b4.txt"] = "b4" } }],
-            });
+            }
+        );
 
         client.Update(fixture.Root, "b", storeRoot: fixture.StoreDirectory);
 
@@ -922,7 +1063,8 @@ public sealed class DependencyGroupTests
         // instead of raising an ambiguity on every later run.
         Assert.Equal(
             1,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
     }
 
     [Fact]
@@ -942,33 +1084,39 @@ public sealed class DependencyGroupTests
                 {
                     Version = "2.0.0",
                     Artifacts = [new ArtifactFixture { Files = { ["c2.txt"] = "c2" } }],
-                });
+                }
+            );
 
             foreach (var name in new[] { "aa", "bb" })
             {
-                fixture.AddSei(name, new VersionFixture
-                {
-                    Version = "1.0.0",
-                    Artifacts =
-                    [
-                        new ArtifactFixture
-                        {
-                            Files = { [name + ".txt"] = name },
-                            DependencyGroups =
-                            [
-                                new GroupFixture(),
-                                new GroupFixture(
-                                    Dependencies:
-                                    [
-                                        new DepFixture(
-                                            "common",
-                                            name == "aa" ? "[1.0.0]" : "[2.0.0]"),
-                                    ],
-                                    Prerequisites: [new DepFixture("host", "*")]),
-                            ],
-                        },
-                    ],
-                });
+                fixture.AddSei(
+                    name,
+                    new VersionFixture
+                    {
+                        Version = "1.0.0",
+                        Artifacts =
+                        [
+                            new ArtifactFixture
+                            {
+                                Files = { [name + ".txt"] = name },
+                                DependencyGroups =
+                                [
+                                    new GroupFixture(),
+                                    new GroupFixture(
+                                        Dependencies:
+                                        [
+                                            new DepFixture(
+                                                "common",
+                                                name == "aa" ? "[1.0.0]" : "[2.0.0]"
+                                            ),
+                                        ],
+                                        Prerequisites: [new DepFixture("host", "*")]
+                                    ),
+                                ],
+                            },
+                        ],
+                    }
+                );
             }
 
             return fixture;
@@ -984,24 +1132,29 @@ public sealed class DependencyGroupTests
                     "root.txt",
                     "root",
                     dependencies: [("bb", null), ("aa", null)],
-                    dependencyLevel: "artifact")
+                    dependencyLevel: "artifact"
+                )
                 : fixture.WriteOrigin(
                     "root",
                     "1.0.0",
                     "root.txt",
                     "root",
                     dependencies: [("aa", null), ("bb", null)],
-                    dependencyLevel: "artifact");
+                    dependencyLevel: "artifact"
+                );
             fixture.WriteConfig("win-x64", new SpecFixture("host", "[1.0.0]"));
             var client = new SeikoClient();
             client.Add(
                 fixture.Root,
                 Path.GetRelativePath(
                     Directory.GetCurrentDirectory(),
-                    Path.Combine(fixture.Root, root)),
-                storeRoot: fixture.StoreDirectory);
-            return client.ReadLock(fixture.Root)!.Sei
-                .Where(sei => sei.Name is "aa" or "bb")
+                    Path.Combine(fixture.Root, root)
+                ),
+                storeRoot: fixture.StoreDirectory
+            );
+            return client
+                .ReadLock(fixture.Root)!
+                .Sei.Where(sei => sei.Name is "aa" or "bb")
                 .OrderBy(sei => sei.Name, StringComparer.Ordinal)
                 .Select(sei => (sei.Name, sei.Artifact.Group))
                 .ToList();
@@ -1024,10 +1177,12 @@ public sealed class DependencyGroupTests
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
             new SpecFixture("host-a", "[1.0.0]"),
-            new SpecFixture("host-b", "[1.0.0]"));
+            new SpecFixture("host-b", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("ambiguous artifact for app 1.0.0", error.Message);
@@ -1046,12 +1201,14 @@ public sealed class DependencyGroupTests
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host-a", "[1.0.0]"));
+            new SpecFixture("host-a", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // Adding the second host makes both groups equally specific and
         // solvable; the lock decides instead of re-reporting ambiguity.
@@ -1059,14 +1216,16 @@ public sealed class DependencyGroupTests
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
             new SpecFixture("host-a", "[1.0.0]"),
-            new SpecFixture("host-b", "[1.0.0]"));
+            new SpecFixture("host-b", "[1.0.0]")
+        );
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
         Assert.True(File.Exists(FileOf(fixture, "bridge-a")));
         Assert.False(File.Exists(FileOf(fixture, "bridge-b")));
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
     }
 
     [Fact]
@@ -1078,46 +1237,53 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    Prerequisites = [new DepFixture("host", "*")],
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Prerequisites:
-                            [
-                                new DepFixture("host", "*"),
-                                new DepFixture("p1", "*"),
-                            ]),
-                        // Three new names still add only one point, so both
-                        // groups tie at specificity 2.
-                        new GroupFixture(
-                            Prerequisites:
-                            [
-                                new DepFixture("host", "*"),
-                                new DepFixture("p2", "*"),
-                                new DepFixture("p3", "*"),
-                            ]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        Prerequisites = [new DepFixture("host", "*")],
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Prerequisites:
+                                [
+                                    new DepFixture("host", "*"),
+                                    new DepFixture("p1", "*"),
+                                ]
+                            ),
+                            // Three new names still add only one point, so both
+                            // groups tie at specificity 2.
+                            new GroupFixture(
+                                Prerequisites:
+                                [
+                                    new DepFixture("host", "*"),
+                                    new DepFixture("p2", "*"),
+                                    new DepFixture("p3", "*"),
+                                ]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
             new SpecFixture("host", "[1.0.0]"),
             new SpecFixture("p1", "[1.0.0]"),
             new SpecFixture("p2", "[1.0.0]"),
-            new SpecFixture("p3", "[1.0.0]"));
+            new SpecFixture("p3", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("resolve", error.Code);
         Assert.Contains("ambiguous artifact for app 1.0.0", error.Message);
@@ -1137,14 +1303,17 @@ public sealed class DependencyGroupTests
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host-a", "[1.0.0]"));
+            new SpecFixture("host-a", "[1.0.0]")
+        );
 
         var result = new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, dryRun: true);
 
         Assert.Contains(
             result.Preview!.Diagnostics,
-            diagnostic => diagnostic.Kind == "artifact-group"
-                && diagnostic.Message.Contains("#0", StringComparison.Ordinal));
+            diagnostic =>
+                diagnostic.Kind == "artifact-group"
+                && diagnostic.Message.Contains("#0", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1152,29 +1321,34 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "marker");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Prerequisites: [new DepFixture("marker", "*")]),
-                    ],
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Prerequisites: [new DepFixture("marker", "*")]),
+                        ],
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("marker", "[1.0.0]"));
+            new SpecFixture("marker", "[1.0.0]")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("schemaVersion 3 cannot declare dependencyGroups", error.Message);
     }
@@ -1184,29 +1358,31 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "marker");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("marker", "[1.0.0]"));
-        RewriteArtifact(
-            fixture,
-            "app",
-            node => node["artifact"]!["dependencyGroups"] = null);
+            new SpecFixture("marker", "[1.0.0]")
+        );
+        RewriteArtifact(fixture, "app", node => node["artifact"]!["dependencyGroups"] = null);
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Contains("schemaVersion 3 cannot declare dependencyGroups", error.Message);
     }
@@ -1216,29 +1392,32 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "marker");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
-        fixture.WriteConfig("win-x64");
-        RewriteArtifact(
-            fixture,
+        fixture.AddSei(
             "app",
-            node => node["artifact"]!["dependencyGroups"] = null);
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
+        fixture.WriteConfig("win-x64");
+        RewriteArtifact(fixture, "app", node => node["artifact"]!["dependencyGroups"] = null);
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-group"
-            && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-group"
+                && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1246,21 +1425,24 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "backend");
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Dependencies: [new DepFixture("backend", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Dependencies: [new DepFixture("backend", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1277,31 +1459,37 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        // Both unconditional, different installs: source or
-                        // environment drift would silently pick a backend.
-                        new GroupFixture(Dependencies: [new DepFixture("backend-a", "*")]),
-                        new GroupFixture(Dependencies: [new DepFixture("backend-b", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            // Both unconditional, different installs: source or
+                            // environment drift would silently pick a backend.
+                            new GroupFixture(Dependencies: [new DepFixture("backend-a", "*")]),
+                            new GroupFixture(Dependencies: [new DepFixture("backend-b", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "artifact-group-ambiguous"
-            && finding.Message.Contains("same conditions", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "artifact-group-ambiguous"
+                && finding.Message.Contains("same conditions", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1313,32 +1501,33 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        // The same condition written twice: [a] and [a, a]
-                        // gate identically, so these two are indistinguishable.
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("ax", "*")],
-                            Prerequisites: [new DepFixture("a", "*")]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("y", "*")],
-                            Prerequisites:
-                            [
-                                new DepFixture("a", "*"),
-                                new DepFixture("a", "*"),
-                            ]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            // The same condition written twice: [a] and [a, a]
+                            // gate identically, so these two are indistinguishable.
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("ax", "*")],
+                                Prerequisites: [new DepFixture("a", "*")]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("y", "*")],
+                                Prerequisites: [new DepFixture("a", "*"), new DepFixture("a", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1355,35 +1544,36 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        // `a` and `a@*` are the same qualification, so the
-                        // second group's two entries collapse into one. The
-                        // raw texts differ, so deduplicating before
-                        // normalization would leave `[a]` and `[a, a@*]`
-                        // distinct and let the pair through.
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("ax", "*")],
-                            Prerequisites: [new DepFixture("a", null)]),
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("y", "*")],
-                            Prerequisites:
-                            [
-                                new DepFixture("a", "*"),
-                                new DepFixture("a", null),
-                            ]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            // `a` and `a@*` are the same qualification, so the
+                            // second group's two entries collapse into one. The
+                            // raw texts differ, so deduplicating before
+                            // normalization would leave `[a]` and `[a, a@*]`
+                            // distinct and let the pair through.
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("ax", "*")],
+                                Prerequisites: [new DepFixture("a", null)]
+                            ),
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("y", "*")],
+                                Prerequisites: [new DepFixture("a", "*"), new DepFixture("a", null)]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1402,31 +1592,34 @@ public sealed class DependencyGroupTests
 
         // Same two gates in the other order: the environments that pick
         // either artifact are identical, so the pair is ambiguous.
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Prerequisites: [new DepFixture("host-a", "*")]),
-                        new GroupFixture(Prerequisites: [new DepFixture("host-b", "*")]),
-                    ],
-                },
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Prerequisites: [new DepFixture("host-b", "*")]),
-                        new GroupFixture(Prerequisites: [new DepFixture("host-a", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Prerequisites: [new DepFixture("host-a", "*")]),
+                            new GroupFixture(Prerequisites: [new DepFixture("host-b", "*")]),
+                        ],
+                    },
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Prerequisites: [new DepFixture("host-b", "*")]),
+                            new GroupFixture(Prerequisites: [new DepFixture("host-a", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1448,23 +1641,26 @@ public sealed class DependencyGroupTests
         // ADR-0045 allows a repeated group. The two artifacts apply in exactly
         // the same environments, so the pair is ambiguous even though the
         // second declares the gate twice.
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups = [group],
-                },
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups = [group, group],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups = [group],
+                    },
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups = [group, group],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1484,33 +1680,38 @@ public sealed class DependencyGroupTests
         // Same rid, no artifact-level gates; the groups themselves are the
         // conditions and no environment can satisfy both. They are not
         // equivalent artifacts even though the artifact-level keys match.
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Prerequisites: [new DepFixture("endstone", "*")],
-                            Conflicts: [new DepFixture("levilamina", "*")]),
-                    ],
-                },
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Prerequisites: [new DepFixture("levilamina", "*")],
-                            Conflicts: [new DepFixture("endstone", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Prerequisites: [new DepFixture("endstone", "*")],
+                                Conflicts: [new DepFixture("levilamina", "*")]
+                            ),
+                        ],
+                    },
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Prerequisites: [new DepFixture("levilamina", "*")],
+                                Conflicts: [new DepFixture("endstone", "*")]
+                            ),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1539,15 +1740,20 @@ public sealed class DependencyGroupTests
             [
                 new GroupFixture(Dependencies: [new DepFixture("ax", "*")]),
                 new GroupFixture(Dependencies: [new DepFixture("y", "*")]),
-            ]);
+            ]
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("x", "[1.0.0]"));
 
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
-            fixture.Root,
-            Path.GetRelativePath(
-                Directory.GetCurrentDirectory(),
-                Path.Combine(fixture.Root, origin)),
-            storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Add(
+                fixture.Root,
+                Path.GetRelativePath(
+                    Directory.GetCurrentDirectory(),
+                    Path.Combine(fixture.Root, origin)
+                ),
+                storeRoot: fixture.StoreDirectory
+            )
+        );
 
         Assert.Contains("same conditions", error.Message);
     }
@@ -1561,24 +1767,28 @@ public sealed class DependencyGroupTests
             AddPackage(fixture, name);
         }
 
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["hello.txt"] = "hello" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(
-                            Dependencies: [new DepFixture("backend-a", "*")],
-                            Conflicts: [new DepFixture("legacy", "*")]),
-                        new GroupFixture(Dependencies: [new DepFixture("backend-b", "*")]),
-                    ],
-                },
-            ],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["hello.txt"] = "hello" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(
+                                Dependencies: [new DepFixture("backend-a", "*")],
+                                Conflicts: [new DepFixture("legacy", "*")]
+                            ),
+                            new GroupFixture(Dependencies: [new DepFixture("backend-b", "*")]),
+                        ],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
@@ -1591,29 +1801,35 @@ public sealed class DependencyGroupTests
     {
         using var fixture = new Fixture();
         AddPackage(fixture, "marker");
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts =
-            [
-                new ArtifactFixture
-                {
-                    Files = { ["app.txt"] = "app" },
-                    DependencyGroups =
-                    [
-                        new GroupFixture(Prerequisites: [new DepFixture("marker", "*")]),
-                    ],
-                    ManifestSchemaVersion = 3,
-                },
-            ],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Files = { ["app.txt"] = "app" },
+                        DependencyGroups =
+                        [
+                            new GroupFixture(Prerequisites: [new DepFixture("marker", "*")]),
+                        ],
+                        ManifestSchemaVersion = 3,
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-group"
-            && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-group"
+                && finding.Message.Contains("schemaVersion 4", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1631,16 +1847,23 @@ public sealed class DependencyGroupTests
         var path = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(path),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         sei.Versions[0].Artifacts[0].DependencyGroups = null;
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
 
         var result = IndexVerifier.Verify(fixture.SourceDirectory, checkArtifacts: true);
 
-        Assert.Contains(result.Findings, finding =>
-            finding.Code == "manifest-mismatch"
-            && finding.Message.Contains("dependencyGroups", StringComparison.Ordinal));
+        Assert.Contains(
+            result.Findings,
+            finding =>
+                finding.Code == "manifest-mismatch"
+                && finding.Message.Contains("dependencyGroups", StringComparison.Ordinal)
+        );
     }
 
     [Fact]
@@ -1657,8 +1880,10 @@ public sealed class DependencyGroupTests
             [
                 new GroupFixture(
                     Dependencies: [new DepFixture("host-a", "*")],
-                    Prerequisites: [new DepFixture("host-a", "*")]),
-            ]);
+                    Prerequisites: [new DepFixture("host-a", "*")]
+                ),
+            ]
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("host-a", "[1.0.0]"));
         var client = new SeikoClient();
 
@@ -1666,8 +1891,10 @@ public sealed class DependencyGroupTests
             fixture.Root,
             Path.GetRelativePath(
                 Directory.GetCurrentDirectory(),
-                Path.Combine(fixture.Root, origin)),
-            storeRoot: fixture.StoreDirectory);
+                Path.Combine(fixture.Root, origin)
+            ),
+            storeRoot: fixture.StoreDirectory
+        );
 
         var locked = client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app");
         Assert.Equal(0, locked.Artifact.Group);
@@ -1695,12 +1922,14 @@ public sealed class DependencyGroupTests
                 // same name.
                 new GroupFixture(
                     Dependencies: [new DepFixture("host", "[1.0.0,4.0.0)")],
-                    Prerequisites: [new DepFixture("host", "*")]),
+                    Prerequisites: [new DepFixture("host", "*")]
+                ),
             ],
             // Declared high range first; the lock sorts low range first, so
             // replaying rebuilds the artifact-level share in the other order.
             dependencies: [("host", "[1.0.0,4.0.0)"), ("host", "[0.0.0,4.0.0)")],
-            dependencyLevel: "artifact");
+            dependencyLevel: "artifact"
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("host", "[1.0.0]"));
         var client = new SeikoClient();
 
@@ -1708,8 +1937,10 @@ public sealed class DependencyGroupTests
             fixture.Root,
             Path.GetRelativePath(
                 Directory.GetCurrentDirectory(),
-                Path.Combine(fixture.Root, origin)),
-            storeRoot: fixture.StoreDirectory);
+                Path.Combine(fixture.Root, origin)
+            ),
+            storeRoot: fixture.StoreDirectory
+        );
 
         // Lock entries are written sorted by range, so the group's range can
         // land before the artifact-level one even though it was declared
@@ -1737,31 +1968,34 @@ public sealed class DependencyGroupTests
                 // the two apart.
                 new GroupFixture(Prerequisites: [new DepFixture("a", "*")]),
                 new GroupFixture(),
-            ]);
+            ]
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("a", "[1.0.0]"));
         var client = new SeikoClient();
         client.Add(
             fixture.Root,
             Path.GetRelativePath(
                 Directory.GetCurrentDirectory(),
-                Path.Combine(fixture.Root, origin)),
-            storeRoot: fixture.StoreDirectory);
+                Path.Combine(fixture.Root, origin)
+            ),
+            storeRoot: fixture.StoreDirectory
+        );
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // Hand-swap the recorded group. The merged relations still satisfy
         // the "1" replay because the lock's own list keeps "a", so replaying
         // blindly would accept a group the manifest does not support.
         var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
-        var text = File.ReadAllText(lockPath).Replace(
-            "\"group\": 0",
-            "\"group\": 1",
-            StringComparison.Ordinal);
+        var text = File.ReadAllText(lockPath)
+            .Replace("\"group\": 0", "\"group\": 1", StringComparison.Ordinal);
         File.WriteAllText(lockPath, text);
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Contains("changed", error.Message);
     }
@@ -1783,7 +2017,8 @@ public sealed class DependencyGroupTests
             [
                 new GroupFixture(Prerequisites: [new DepFixture("b", "*")]),
                 new GroupFixture(),
-            ]);
+            ]
+        );
         var originPath = Path.GetRelativePath(fixture.Root, Path.Combine(fixture.Root, origin))
             .Replace('\\', '/');
         var movedPath = "dist/moved.sei";
@@ -1793,17 +2028,19 @@ public sealed class DependencyGroupTests
         // config names only movedPath, gated on nothing, so replay has no
         // selector that can match the locked path and falls back to the bare
         // declaration.
-        void WriteConfig(string path, string selector)
-            => File.WriteAllText(
+        void WriteConfig(string path, string selector) =>
+            File.WriteAllText(
                 Path.Combine(fixture.Root, "seiko.conf"),
                 $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
-                + $"sources = [ {{ id = \"local\", index = \"{indexPath}\" }} ]\n"
-                + "rid = \"win-x64\"\n"
-                + $"origin = [ {{ name = \"app\", paths = [\"{path}\"], "
-                + $"selectors = [ {selector} ] }} ]\n"
-                + "sei = [ { name = \"a\", version = \"[1.0.0]\" }, { name = \"b\", version = \"[1.0.0]\" }, { name = \"app\" } ]\n");
+                    + $"sources = [ {{ id = \"local\", index = \"{indexPath}\" }} ]\n"
+                    + "rid = \"win-x64\"\n"
+                    + $"origin = [ {{ name = \"app\", paths = [\"{path}\"], "
+                    + $"selectors = [ {selector} ] }} ]\n"
+                    + "sei = [ { name = \"a\", version = \"[1.0.0]\" }, { name = \"b\", version = \"[1.0.0]\" }, { name = \"app\" } ]\n"
+            );
 
-        const string Gated = "{ rid = \"*\", prerequisites = [ { name = \"a\", version = \"[1.0.0]\" } ] }";
+        const string Gated =
+            "{ rid = \"*\", prerequisites = [ { name = \"a\", version = \"[1.0.0]\" } ] }";
         fixture.WriteConfig("win-x64");
         WriteConfig(originPath, Gated);
         var client = new SeikoClient();
@@ -1811,22 +2048,27 @@ public sealed class DependencyGroupTests
         var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
         Assert.Equal(
             0,
-            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group);
+            client.ReadLock(fixture.Root)!.Sei.Single(sei => sei.Name == "app").Artifact.Group
+        );
 
         // Hand-swap the group: the lock keeps A's merge, so a share rebuilt
         // without the selector fails to match the file's groups.
         File.WriteAllText(
             lockPath,
-            File.ReadAllText(lockPath).Replace("\"group\": 0", "\"group\": 1", StringComparison.Ordinal));
+            File.ReadAllText(lockPath)
+                .Replace("\"group\": 0", "\"group\": 1", StringComparison.Ordinal)
+        );
 
         File.Copy(
             Path.Combine(fixture.Root, origin),
             Path.Combine(fixture.Root, movedPath),
-            overwrite: true);
+            overwrite: true
+        );
         WriteConfig(movedPath, "{ rid = \"*\" }");
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Contains("changed", error.Message);
     }
@@ -1835,16 +2077,22 @@ public sealed class DependencyGroupTests
     public void Frozen_UsesTheLockedSelectorOfASharedPath()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("host1", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["h1.txt"] = "h1" } }],
-        });
-        fixture.AddSei("host2", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["h2.txt"] = "h2" } }],
-        });
+        fixture.AddSei(
+            "host1",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["h1.txt"] = "h1" } }],
+            }
+        );
+        fixture.AddSei(
+            "host2",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["h2.txt"] = "h2" } }],
+            }
+        );
         var origin = fixture.WriteOrigin("app", "1.0.0", "app.txt", "app");
         var indexDirectory = Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/');
         // HOCON reads backslashes as escapes, so a Windows path needs the
@@ -1859,14 +2107,15 @@ public sealed class DependencyGroupTests
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             $"schemaVersion = {SeikoConfig.CurrentSchemaVersion}\n"
-            + $"sources = [ {{ id = \"local\", index = \"{indexDirectory}\" }} ]\n"
-            + "rid = \"win-x64\"\n"
-            + $"origin = [ {{ name = \"app\", paths = [\"{originPath}\", \"{originPath}\"], "
-            + "selectors = [ "
-            + "{ rid = \"*\", prerequisites = [ { name = \"host1\", version = \"[1.0.0]\" } ] }, "
-            + "{ rid = \"*\", prerequisites = [ { name = \"host2\", version = \"[1.0.0]\" } ] } "
-            + "] } ]\n"
-            + "sei = [ { name = \"app\" }, { name = \"host2\", version = \"[1.0.0]\" } ]\n");
+                + $"sources = [ {{ id = \"local\", index = \"{indexDirectory}\" }} ]\n"
+                + "rid = \"win-x64\"\n"
+                + $"origin = [ {{ name = \"app\", paths = [\"{originPath}\", \"{originPath}\"], "
+                + "selectors = [ "
+                + "{ rid = \"*\", prerequisites = [ { name = \"host1\", version = \"[1.0.0]\" } ] }, "
+                + "{ rid = \"*\", prerequisites = [ { name = \"host2\", version = \"[1.0.0]\" } ] } "
+                + "] } ]\n"
+                + "sei = [ { name = \"app\" }, { name = \"host2\", version = \"[1.0.0]\" } ]\n"
+        );
 
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -1889,7 +2138,8 @@ public sealed class DependencyGroupTests
         fixture.WriteConfig(
             "win-x64",
             new SpecFixture("app", "[1.0.0]"),
-            new SpecFixture("host-a", "[1.0.0]"));
+            new SpecFixture("host-a", "[1.0.0]")
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
@@ -1898,14 +2148,19 @@ public sealed class DependencyGroupTests
         var path = Path.Combine(fixture.SourceDirectory, "sei", "app.json");
         var sei = JsonSerializer.Deserialize(
             File.ReadAllBytes(path),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         var groups = sei.Versions[0].Artifacts[0].DependencyGroups!;
         groups.Reverse();
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(sei, SeikoJsonContext.Default.SeiIndex)
+        );
         fixture.RefreshCatalog();
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Contains("artifact metadata of app 1.0.0 changed", error.Message);
     }

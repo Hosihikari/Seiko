@@ -13,12 +13,14 @@ internal static class Cli
         // while a local run is usually Debug, so try the matching one first.
         var configuration = AppContext.BaseDirectory.Contains(
             $"{System.IO.Path.DirectorySeparatorChar}Release{System.IO.Path.DirectorySeparatorChar}",
-            StringComparison.Ordinal)
+            StringComparison.Ordinal
+        )
             ? "Release"
             : "Debug";
-        var configurations = configuration == "Release"
-            ? new[] { "Release", "Debug" }
-            : new[] { "Debug", "Release" };
+        var configurations =
+            configuration == "Release"
+                ? new[] { "Release", "Debug" }
+                : new[] { "Debug", "Release" };
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
@@ -31,7 +33,8 @@ internal static class Cli
                     "bin",
                     candidateConfiguration,
                     "net10.0",
-                    OperatingSystem.IsWindows() ? "sk.exe" : "sk");
+                    OperatingSystem.IsWindows() ? "sk.exe" : "sk"
+                );
                 if (File.Exists(candidate))
                 {
                     return candidate;
@@ -43,12 +46,14 @@ internal static class Cli
 
         // Returning empty output made every CLI assertion pass vacuously.
         throw new InvalidOperationException(
-            "sk was not found; build src/CommandLine before running the CLI tests");
+            "sk was not found; build src/CommandLine before running the CLI tests"
+        );
     }
 
     public static (string Stdout, string Stderr, int ExitCode) Run(
         IEnumerable<string> args,
-        IDictionary<string, string>? environment = null)
+        IDictionary<string, string>? environment = null
+    )
     {
         var path = Path();
         var start = new ProcessStartInfo(path)
@@ -97,7 +102,8 @@ internal static class Cli
             var partialErr = stderrTask.IsCompletedSuccessfully ? stderrTask.Result : "";
             throw new TimeoutException(
                 $"sk {string.Join(' ', args)} timed out after {TimeoutMilliseconds} ms\n"
-                + $"stdout:\n{partialOut}\nstderr:\n{partialErr}");
+                    + $"stdout:\n{partialOut}\nstderr:\n{partialErr}"
+            );
         }
 
         var stdout = stdoutTask.GetAwaiter().GetResult();

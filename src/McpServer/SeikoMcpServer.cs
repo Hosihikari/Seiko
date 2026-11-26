@@ -10,7 +10,9 @@ public sealed class SeikoMcpServer
     private const string ProtocolVersion = "2025-06-18";
 
     public static string Version { get; } =
-        typeof(SeikoMcpServer).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        typeof(SeikoMcpServer)
+            .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
         ?? typeof(SeikoMcpServer).Assembly.GetName().Version?.ToString()
         ?? "0.0.0";
 
@@ -35,7 +37,8 @@ public sealed class SeikoMcpServer
         IReadOnlyList<string>? allowedRoots = null,
         IReadOnlyList<string>? allowedStores = null,
         string? defaultStore = null,
-        string? auditLog = null)
+        string? auditLog = null
+    )
     {
         // A bad audit path must fail at startup, while failures to append at
         // call time must not change the outcome of a completed operation.
@@ -50,7 +53,9 @@ public sealed class SeikoMcpServer
             .Select(SeikoClient.CanonicalizePath)
             .Distinct(PathComparer)
             .ToList();
-        _defaultStore = SeikoClient.CanonicalizePath(defaultStore ?? SeikoClient.DefaultStorePath());
+        _defaultStore = SeikoClient.CanonicalizePath(
+            defaultStore ?? SeikoClient.DefaultStorePath()
+        );
     }
 
     public string? Handle(string line)
@@ -71,18 +76,21 @@ public sealed class SeikoMcpServer
         }
 
         var version = request["jsonrpc"];
-        if (version is null
+        if (
+            version is null
             || version.GetValueKind() != JsonValueKind.String
-            || !string.Equals(version.GetValue<string>(), "2.0", StringComparison.Ordinal))
+            || !string.Equals(version.GetValue<string>(), "2.0", StringComparison.Ordinal)
+        )
         {
             return Error(null, -32600, "invalid jsonrpc version");
         }
 
         var idNode = request["id"];
-        if (idNode is not null
-            && idNode.GetValueKind() is not (JsonValueKind.String
-                or JsonValueKind.Number
-                or JsonValueKind.Null))
+        if (
+            idNode is not null
+            && idNode.GetValueKind()
+                is not (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.Null)
+        )
         {
             return Error(null, -32600, "invalid id");
         }
@@ -107,11 +115,15 @@ public sealed class SeikoMcpServer
         {
             return method switch
             {
-                "initialize" => id is null ? null : Result(id, Initialize(request["params"] as JsonObject)),
+                "initialize" => id is null
+                    ? null
+                    : Result(id, Initialize(request["params"] as JsonObject)),
                 "notifications/initialized" => null,
                 "ping" => id is null ? null : Result(id, new JsonObject()),
                 "tools/list" => id is null ? null : Result(id, ToolsList()),
-                "tools/call" => id is null ? null : Result(id, ToolsCall(request["params"] as JsonObject)),
+                "tools/call" => id is null
+                    ? null
+                    : Result(id, ToolsCall(request["params"] as JsonObject)),
                 _ => id is null ? null : Error(id, -32601, $"unknown method '{method}'"),
             };
         }
@@ -145,31 +157,80 @@ public sealed class SeikoMcpServer
             Tool("info", "Show versions, dependencies, and artifact counts.", InfoSchema()),
             Tool("lock", "Return the current lock file.", RootSchema(required: false)),
             Tool("source_list", "List configured sources.", RootSchema(required: false)),
-            Tool("source_status", "Check source reachability, index, and catalog.", SourceStatusSchema()),
+            Tool(
+                "source_status",
+                "Check source reachability, index, and catalog.",
+                SourceStatusSchema()
+            ),
             Tool("config_get", "Read an install-root configuration value.", ConfigGetSchema()),
             Tool("cache_status", "Show store artifact and partial counts.", StoreSchema()),
             Tool("cache_verify", "Verify stored artifacts.", StoreSchema()),
             Tool("why", "Explain why a sei is in the dependency graph.", WhySchema()),
             Tool("outdated", "Report sei that have newer versions.", OutdatedSchema()),
             Tool("audit", "Check installed sei against advisories and retirement.", AuditSchema()),
-            Tool("index_verify", "Validate an index directory or a sei-index.json file.", IndexVerifySchema()),
-            Tool("index_catalog", "Generate catalog.json, or check it with check=true.", IndexCatalogSchema()),
-            Tool("generation_list", "List deployment generations, newest first.", GenerationListSchema()),
-            Tool("doctor", "Check the lock, store, deployment, and partial downloads.", DoctorSchema()),
-            Tool("check", "Read-only doctor without cleaning.", RootSchema(required: true)));
+            Tool(
+                "index_verify",
+                "Validate an index directory or a sei-index.json file.",
+                IndexVerifySchema()
+            ),
+            Tool(
+                "index_catalog",
+                "Generate catalog.json, or check it with check=true.",
+                IndexCatalogSchema()
+            ),
+            Tool(
+                "generation_list",
+                "List deployment generations, newest first.",
+                GenerationListSchema()
+            ),
+            Tool(
+                "doctor",
+                "Check the lock, store, deployment, and partial downloads.",
+                DoctorSchema()
+            ),
+            Tool("check", "Read-only doctor without cleaning.", RootSchema(required: true))
+        );
 
         if (_allowMutations)
         {
             tools.Add((JsonNode)Tool("add", "Add a direct sei declaration and sync.", AddSchema()));
-            tools.Add((JsonNode)Tool("remove", "Remove a direct sei declaration and sync.", RemoveSchema()));
-            tools.Add((JsonNode)Tool("update", "Update direct declarations and sync.", UpdateSchema()));
+            tools.Add(
+                (JsonNode)Tool(
+                    "remove",
+                    "Remove a direct sei declaration and sync.",
+                    RemoveSchema()
+                )
+            );
+            tools.Add(
+                (JsonNode)Tool("update", "Update direct declarations and sync.", UpdateSchema())
+            );
             tools.Add((JsonNode)Tool("source_add", "Add a source.", SourceAddSchema()));
             tools.Add((JsonNode)Tool("source_remove", "Remove a source.", SourceRemoveSchema()));
-            tools.Add((JsonNode)Tool("config_set", "Write an install-root configuration value.", ConfigSetSchema()));
-            tools.Add((JsonNode)Tool("cache_clean", "Remove artifacts not referenced by this root.", CacheCleanSchema()));
+            tools.Add(
+                (JsonNode)Tool(
+                    "config_set",
+                    "Write an install-root configuration value.",
+                    ConfigSetSchema()
+                )
+            );
+            tools.Add(
+                (JsonNode)Tool(
+                    "cache_clean",
+                    "Remove artifacts not referenced by this root.",
+                    CacheCleanSchema()
+                )
+            );
             tools.Add((JsonNode)Tool("sync", "Resolve and deploy sei.", SyncSchema()));
-            tools.Add((JsonNode)Tool("rollback", "Restore a previous generation, or preview it with dryRun.", RollbackSchema()));
-            tools.Add((JsonNode)Tool("init", "Write a minimal seiko.conf.", RootSchema(required: true)));
+            tools.Add(
+                (JsonNode)Tool(
+                    "rollback",
+                    "Restore a previous generation, or preview it with dryRun.",
+                    RollbackSchema()
+                )
+            );
+            tools.Add(
+                (JsonNode)Tool("init", "Write a minimal seiko.conf.", RootSchema(required: true))
+            );
         }
 
         return new JsonObject { ["tools"] = tools };
@@ -246,27 +307,20 @@ public sealed class SeikoMcpServer
             {
                 parsed = JsonNode.Parse(text);
             }
-            catch (System.Text.Json.JsonException)
-            {
-            }
+            catch (System.Text.Json.JsonException) { }
         }
 
         if (parsed is null)
         {
-            Audit(
-                outcome,
-                tool,
-                arguments,
-                null,
-                Truncate(Urls.RedactText(text)));
+            Audit(outcome, tool, arguments, null, Truncate(Urls.RedactText(text)));
             return;
         }
 
         Audit(outcome, tool, arguments, RedactUrls(parsed), null);
     }
 
-    private static string Truncate(string text)
-        => text.Length > MaxAuditLength ? text[..MaxAuditLength] : text;
+    private static string Truncate(string text) =>
+        text.Length > MaxAuditLength ? text[..MaxAuditLength] : text;
 
     // Already-redacted JSON, cut so that its serialized form fits the budget,
     // with a marker naming what was lost. The cut is inside a JSON string, so
@@ -285,8 +339,7 @@ public sealed class SeikoMcpServer
         while (true)
         {
             keep /= 2;
-            var candidate = JsonValue.Create(
-                $"[truncated, {json.Length} chars] {json[..keep]}");
+            var candidate = JsonValue.Create($"[truncated, {json.Length} chars] {json[..keep]}");
             if (candidate!.ToJsonString().Length <= budget || keep == 0)
             {
                 return candidate;
@@ -301,7 +354,8 @@ public sealed class SeikoMcpServer
         string tool,
         JsonObject arguments,
         JsonNode? resultTree,
-        string? resultText)
+        string? resultText
+    )
     {
         if (_auditLog is null)
         {
@@ -376,7 +430,10 @@ public sealed class SeikoMcpServer
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                throw new SeikoException($"cannot create audit log directory '{directory}': {ex.Message}", "usage");
+                throw new SeikoException(
+                    $"cannot create audit log directory '{directory}': {ex.Message}",
+                    "usage"
+                );
             }
         }
 
@@ -418,7 +475,8 @@ public sealed class SeikoMcpServer
                 // whole URI, so characters the text scanner must treat as
                 // separators cannot cut it short.
                 return JsonValue.Create(
-                    Urls.TryGetHttp(text, out var uri) ? Urls.Redact(uri!) : Urls.RedactText(text))!;
+                    Urls.TryGetHttp(text, out var uri) ? Urls.Redact(uri!) : Urls.RedactText(text)
+                )!;
             default:
                 return node ?? JsonValue.Create((string?)null)!;
         }
@@ -433,14 +491,17 @@ public sealed class SeikoMcpServer
         {
             foreach (var item in lockFile.Sei)
             {
-                sei.Add((JsonNode)new JsonObject
-                {
-                    ["name"] = item.Name,
-                    ["version"] = item.Version,
-                    ["source"] = item.Source,
-                    ["direct"] = item.Direct,
-                    ["selectors"] = RidNode(item.Artifact.Rid),
-                });
+                sei.Add(
+                    (JsonNode)
+                        new JsonObject
+                        {
+                            ["name"] = item.Name,
+                            ["version"] = item.Version,
+                            ["source"] = item.Source,
+                            ["direct"] = item.Direct,
+                            ["selectors"] = RidNode(item.Artifact.Rid),
+                        }
+                );
             }
         }
 
@@ -452,33 +513,43 @@ public sealed class SeikoMcpServer
         var term = RequiredString(arguments, "term");
         var root = Root(arguments, required: false);
         var results = new JsonArray();
-        foreach (var result in _client.Search(
-            root,
-            term,
-            OptionalString(arguments, "proxy"),
-            Bool(arguments, "offline"),
-            StorePath(arguments),
-            OptionalString(arguments, "tag"),
-            OptionalString(arguments, "license"),
-            arguments["limit"] is JsonValue limit && limit.TryGetValue<int>(out var max) ? max : null))
+        foreach (
+            var result in _client.Search(
+                root,
+                term,
+                OptionalString(arguments, "proxy"),
+                Bool(arguments, "offline"),
+                StorePath(arguments),
+                OptionalString(arguments, "tag"),
+                OptionalString(arguments, "license"),
+                arguments["limit"] is JsonValue limit && limit.TryGetValue<int>(out var max)
+                    ? max
+                    : null
+            )
+        )
         {
-            results.Add((JsonNode)new JsonObject
-            {
-                ["name"] = result.Name,
-                ["version"] = result.Version,
-                ["source"] = result.Source,
-                ["description"] = result.Description,
-                ["tags"] = result.Tags is null ? null : new JsonArray(result.Tags.Select(TagNode).ToArray()),
-                ["license"] = result.License,
-                ["deprecated"] = result.Deprecated,
-                ["advisory"] = result.Advisory is null
-                    ? null
-                    : new JsonObject
+            results.Add(
+                (JsonNode)
+                    new JsonObject
                     {
-                        ["severity"] = result.Advisory.Severity,
-                        ["url"] = result.Advisory.Url,
-                    },
-            });
+                        ["name"] = result.Name,
+                        ["version"] = result.Version,
+                        ["source"] = result.Source,
+                        ["description"] = result.Description,
+                        ["tags"] = result.Tags is null
+                            ? null
+                            : new JsonArray(result.Tags.Select(TagNode).ToArray()),
+                        ["license"] = result.License,
+                        ["deprecated"] = result.Deprecated,
+                        ["advisory"] = result.Advisory is null
+                            ? null
+                            : new JsonObject
+                            {
+                                ["severity"] = result.Advisory.Severity,
+                                ["url"] = result.Advisory.Url,
+                            },
+                    }
+            );
         }
 
         return results.ToJsonString();
@@ -495,30 +566,34 @@ public sealed class SeikoMcpServer
             name,
             OptionalString(arguments, "proxy"),
             Bool(arguments, "offline"),
-            StorePath(arguments));
+            StorePath(arguments)
+        );
         var versions = new JsonArray();
         foreach (var version in info.Versions)
         {
-            versions.Add((JsonNode)new JsonObject
-            {
-                ["version"] = version.Version,
-                ["yanked"] = version.Yanked,
-                ["sourceRetired"] = version.SourceRetired,
-                ["deprecated"] = version.Deprecated,
-                ["advisory"] = version.Advisory is null
-                    ? null
-                    : new JsonObject
+            versions.Add(
+                (JsonNode)
+                    new JsonObject
                     {
-                        ["severity"] = version.Advisory.Severity,
-                        ["url"] = version.Advisory.Url,
-                    },
-                ["artifacts"] = version.ArtifactCount,
-                ["dependencies"] = DependenciesNode(version.Dependencies),
-                ["prerequisites"] = DependenciesNode(version.Prerequisites),
-                ["optionalPeers"] = DependenciesNode(version.OptionalPeers),
-                ["conflicts"] = DependenciesNode(version.Conflicts),
-                ["artifactDetails"] = ArtifactDetailsNode(version.Artifacts),
-            });
+                        ["version"] = version.Version,
+                        ["yanked"] = version.Yanked,
+                        ["sourceRetired"] = version.SourceRetired,
+                        ["deprecated"] = version.Deprecated,
+                        ["advisory"] = version.Advisory is null
+                            ? null
+                            : new JsonObject
+                            {
+                                ["severity"] = version.Advisory.Severity,
+                                ["url"] = version.Advisory.Url,
+                            },
+                        ["artifacts"] = version.ArtifactCount,
+                        ["dependencies"] = DependenciesNode(version.Dependencies),
+                        ["prerequisites"] = DependenciesNode(version.Prerequisites),
+                        ["optionalPeers"] = DependenciesNode(version.OptionalPeers),
+                        ["conflicts"] = DependenciesNode(version.Conflicts),
+                        ["artifactDetails"] = ArtifactDetailsNode(version.Artifacts),
+                    }
+            );
         }
 
         return new JsonObject
@@ -560,35 +635,41 @@ public sealed class SeikoMcpServer
             : JsonSerializer.Serialize(lockFile, SeikoJsonContext.Default.SeikoLock);
     }
 
-    private string SourceList(JsonObject arguments)
-        => SourcesJson(_client.ListSources(Root(arguments, required: false)));
+    private string SourceList(JsonObject arguments) =>
+        SourcesJson(_client.ListSources(Root(arguments, required: false)));
 
     private string SourceStatus(JsonObject arguments)
     {
         var root = Root(arguments, required: false);
         var array = new JsonArray();
-        foreach (var status in _client.SourceStatus(
-            root,
-            OptionalString(arguments, "id"),
-            OptionalString(arguments, "proxy"),
-            Bool(arguments, "offline"),
-            StorePath(arguments)))
+        foreach (
+            var status in _client.SourceStatus(
+                root,
+                OptionalString(arguments, "id"),
+                OptionalString(arguments, "proxy"),
+                Bool(arguments, "offline"),
+                StorePath(arguments)
+            )
+        )
         {
-            array.Add((JsonNode)new JsonObject
-            {
-                ["id"] = status.Id,
-                ["reachable"] = status.Reachable,
-                ["sei"] = status.SeiCount,
-                ["catalog"] = status.CatalogPresent,
-                ["problems"] = Strings(status.Problems),
-            });
+            array.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["id"] = status.Id,
+                        ["reachable"] = status.Reachable,
+                        ["sei"] = status.SeiCount,
+                        ["catalog"] = status.CatalogPresent,
+                        ["problems"] = Strings(status.Problems),
+                    }
+            );
         }
 
         return array.ToJsonString();
     }
 
-    private static JsonObject SourceStatusSchema()
-        => new()
+    private static JsonObject SourceStatusSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -634,11 +715,7 @@ public sealed class SeikoMcpServer
         var root = Root(arguments, required: true);
         var id = RequiredString(arguments, "id");
         var index = RequiredString(arguments, "index");
-        var sources = _client.SourceAdd(
-            root,
-            id,
-            index,
-            StringArray(arguments, "tokenHosts"));
+        var sources = _client.SourceAdd(root, id, index, StringArray(arguments, "tokenHosts"));
         return SourcesJson(sources);
     }
 
@@ -683,14 +760,16 @@ public sealed class SeikoMcpServer
         var findings = new JsonArray();
         foreach (var finding in _client.CacheVerify(OptionalString(arguments, "store")))
         {
-            findings.Add((JsonNode)new JsonObject
-            {
-                ["severity"] = finding.Severity,
-                ["code"] = finding.Code,
-                ["message"] = finding.Message,
-                ["path"] = finding.Path,
-
-            });
+            findings.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["severity"] = finding.Severity,
+                        ["code"] = finding.Code,
+                        ["message"] = finding.Message,
+                        ["path"] = finding.Path,
+                    }
+            );
         }
 
         return findings.ToJsonString();
@@ -717,11 +796,7 @@ public sealed class SeikoMcpServer
             var path = new JsonArray();
             foreach (var link in chain)
             {
-                path.Add((JsonNode)new JsonObject
-                {
-                    ["name"] = link.Name,
-                    ["kind"] = link.Kind,
-                });
+                path.Add((JsonNode)new JsonObject { ["name"] = link.Name, ["kind"] = link.Kind });
             }
 
             chains.Add((JsonNode)path);
@@ -734,34 +809,43 @@ public sealed class SeikoMcpServer
     {
         var root = Root(arguments, required: false);
         var items = new JsonArray();
-        foreach (var item in _client.Outdated(
-            root,
-            OptionalString(arguments, "proxy"),
-            Bool(arguments, "pre"),
-            Bool(arguments, "offline"),
-            StorePath(arguments)))
+        foreach (
+            var item in _client.Outdated(
+                root,
+                OptionalString(arguments, "proxy"),
+                Bool(arguments, "pre"),
+                Bool(arguments, "offline"),
+                StorePath(arguments)
+            )
+        )
         {
             var blockers = new JsonArray();
             foreach (var blocker in item.Blockers)
             {
-                blockers.Add((JsonNode)new JsonObject
-                {
-                    ["relation"] = blocker.Relation,
-                    ["target"] = blocker.Target,
-                    ["range"] = blocker.Range,
-                    ["source"] = blocker.Source,
-                });
+                blockers.Add(
+                    (JsonNode)
+                        new JsonObject
+                        {
+                            ["relation"] = blocker.Relation,
+                            ["target"] = blocker.Target,
+                            ["range"] = blocker.Range,
+                            ["source"] = blocker.Source,
+                        }
+                );
             }
 
-            items.Add((JsonNode)new JsonObject
-            {
-                ["name"] = item.Name,
-                ["current"] = item.Current,
-                ["latestInRange"] = item.LatestInRange,
-                ["latest"] = item.Latest,
-                ["latestInstallable"] = item.LatestInstallable,
-                ["blockers"] = blockers,
-            });
+            items.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["name"] = item.Name,
+                        ["current"] = item.Current,
+                        ["latestInRange"] = item.LatestInRange,
+                        ["latest"] = item.Latest,
+                        ["latestInstallable"] = item.LatestInstallable,
+                        ["blockers"] = blockers,
+                    }
+            );
         }
 
         return items.ToJsonString();
@@ -797,7 +881,8 @@ public sealed class SeikoMcpServer
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
             offline: Bool(arguments, "offline"),
-            resetPreserved: Bool(arguments, "resetPreserved"));
+            resetPreserved: Bool(arguments, "resetPreserved")
+        );
         return MutationResult(result, dryRun);
     }
 
@@ -819,7 +904,8 @@ public sealed class SeikoMcpServer
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
             offline: Bool(arguments, "offline"),
-            resetPreserved: Bool(arguments, "resetPreserved"));
+            resetPreserved: Bool(arguments, "resetPreserved")
+        );
         return MutationResult(result, dryRun);
     }
 
@@ -841,55 +927,62 @@ public sealed class SeikoMcpServer
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
             offline: Bool(arguments, "offline"),
-            resetPreserved: Bool(arguments, "resetPreserved"));
+            resetPreserved: Bool(arguments, "resetPreserved")
+        );
         return MutationResult(result, dryRun);
     }
 
-    private static string MutationResult(SyncResult result, bool dryRun)
-        => dryRun ? PreviewJson(result.Preview!) : SyncResultJson(result);
+    private static string MutationResult(SyncResult result, bool dryRun) =>
+        dryRun ? PreviewJson(result.Preview!) : SyncResultJson(result);
 
     private static string PreviewJson(PreviewResult preview)
     {
         var changes = new JsonArray();
         foreach (var change in preview.Changes)
         {
-            changes.Add((JsonNode)new JsonObject
-            {
-                ["action"] = change.Action,
-                ["name"] = change.Name,
-                ["from"] = change.From,
-                ["to"] = change.To,
-                ["source"] = change.Source,
-                ["artifact"] = change.Artifact,
-            });
+            changes.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["action"] = change.Action,
+                        ["name"] = change.Name,
+                        ["from"] = change.From,
+                        ["to"] = change.To,
+                        ["source"] = change.Source,
+                        ["artifact"] = change.Artifact,
+                    }
+            );
         }
 
         var blocked = new JsonArray();
         foreach (var block in preview.Blocked)
         {
-            blocked.Add((JsonNode)new JsonObject
-            {
-                ["code"] = block.Code,
-                ["message"] = block.Message,
-            });
+            blocked.Add(
+                (JsonNode)new JsonObject { ["code"] = block.Code, ["message"] = block.Message }
+            );
         }
 
         var diagnostics = new JsonArray();
         foreach (var diagnostic in preview.Diagnostics)
         {
-            diagnostics.Add((JsonNode)new JsonObject
-            {
-                ["name"] = diagnostic.Name,
-                ["kind"] = diagnostic.Kind,
-                ["message"] = diagnostic.Message,
-            });
+            diagnostics.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["name"] = diagnostic.Name,
+                        ["kind"] = diagnostic.Kind,
+                        ["message"] = diagnostic.Message,
+                    }
+            );
         }
 
         return new JsonObject
         {
             ["changes"] = changes,
             ["blocked"] = blocked,
-            ["warnings"] = new JsonArray([.. preview.Warnings.Select(warning => (JsonNode?)JsonValue.Create(warning))]),
+            ["warnings"] = new JsonArray([
+                .. preview.Warnings.Select(warning => (JsonNode?)JsonValue.Create(warning)),
+            ]),
             ["diagnostics"] = diagnostics,
             ["downloaded"] = false,
             ["external"] = preview.ExternalItems,
@@ -904,12 +997,15 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var diagnostic in diagnostics)
         {
-            array.Add((JsonNode)new JsonObject
-            {
-                ["name"] = diagnostic.Name,
-                ["kind"] = diagnostic.Kind,
-                ["message"] = diagnostic.Message,
-            });
+            array.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["name"] = diagnostic.Name,
+                        ["kind"] = diagnostic.Kind,
+                        ["message"] = diagnostic.Message,
+                    }
+            );
         }
 
         return array;
@@ -926,8 +1022,8 @@ public sealed class SeikoMcpServer
         return warnings;
     }
 
-    private static string SyncResultJson(SyncResult result)
-        => new JsonObject
+    private static string SyncResultJson(SyncResult result) =>
+        new JsonObject
         {
             ["sei"] = result.SeiInstalled,
             ["files"] = result.FilesDeployed,
@@ -948,7 +1044,10 @@ public sealed class SeikoMcpServer
             throw new SeikoException("frozen and locked are mutually exclusive");
         }
 
-        var mode = frozen ? SyncMode.Frozen : locked ? SyncMode.Locked : SyncMode.Normal;
+        var mode =
+            frozen ? SyncMode.Frozen
+            : locked ? SyncMode.Locked
+            : SyncMode.Normal;
         var dryRun = Bool(arguments, "dryRun");
         var result = _client.Sync(
             root,
@@ -963,7 +1062,8 @@ public sealed class SeikoMcpServer
             adopt: Bool(arguments, "adopt"),
             force: Bool(arguments, "force"),
             offline: Bool(arguments, "offline"),
-            resetPreserved: Bool(arguments, "resetPreserved"));
+            resetPreserved: Bool(arguments, "resetPreserved")
+        );
         if (dryRun)
         {
             return MutationResult(result, dryRun: true);
@@ -988,18 +1088,21 @@ public sealed class SeikoMcpServer
         var result = IndexVerifier.VerifyPath(
             path ?? Directory.GetCurrentDirectory(),
             Bool(arguments, "checkArtifacts"),
-            OptionalString(arguments, "proxy"));
+            OptionalString(arguments, "proxy")
+        );
         var findings = new JsonArray();
         foreach (var finding in result.Findings)
         {
-            findings.Add((JsonNode)new JsonObject
-            {
-                ["severity"] = finding.Severity,
-                ["code"] = finding.Code,
-                ["message"] = finding.Message,
-                ["path"] = finding.Path,
-
-            });
+            findings.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["severity"] = finding.Severity,
+                        ["code"] = finding.Code,
+                        ["message"] = finding.Message,
+                        ["path"] = finding.Path,
+                    }
+            );
         }
 
         return new JsonObject
@@ -1027,8 +1130,8 @@ public sealed class SeikoMcpServer
 
     // clean=true deletes .part files, so it needs the mutation gate; plain
     // diagnostics stay available without it.
-    private string Doctor(JsonObject arguments)
-        => Bool(arguments, "clean")
+    private string Doctor(JsonObject arguments) =>
+        Bool(arguments, "clean")
             ? RequireMutations(() => RunDoctor(arguments, clean: true))
             : RunDoctor(arguments, clean: false);
 
@@ -1039,14 +1142,17 @@ public sealed class SeikoMcpServer
         var findings = new JsonArray();
         foreach (var finding in result.Findings)
         {
-            findings.Add((JsonNode)new JsonObject
-            {
-                ["severity"] = finding.Severity,
-                ["code"] = finding.Code,
-                ["message"] = finding.Message,
-                ["path"] = finding.Path,
-                ["hint"] = finding.Hint,
-            });
+            findings.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["severity"] = finding.Severity,
+                        ["code"] = finding.Code,
+                        ["message"] = finding.Message,
+                        ["path"] = finding.Path,
+                        ["hint"] = finding.Hint,
+                    }
+            );
         }
 
         return new JsonObject
@@ -1081,7 +1187,8 @@ public sealed class SeikoMcpServer
             StorePath(arguments),
             Int(arguments, "to"),
             OptionalString(arguments, "proxy"),
-            Bool(arguments, "offline"));
+            Bool(arguments, "offline")
+        );
         return new JsonObject
         {
             ["generation"] = result.Generation,
@@ -1107,22 +1214,25 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var generation in _client.Generations(root, StorePath(arguments)))
         {
-            array.Add((JsonNode)new JsonObject
-            {
-                ["generation"] = generation.Generation,
-                ["createdAt"] = generation.CreatedAt?.ToString("O"),
-                ["current"] = generation.Current,
-                ["sei"] = generation.SeiCount,
-                ["files"] = generation.FileCount,
-                ["rollbackable"] = generation.Valid,
-            });
+            array.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["generation"] = generation.Generation,
+                        ["createdAt"] = generation.CreatedAt?.ToString("O"),
+                        ["current"] = generation.Current,
+                        ["sei"] = generation.SeiCount,
+                        ["files"] = generation.FileCount,
+                        ["rollbackable"] = generation.Valid,
+                    }
+            );
         }
 
         return array.ToJsonString();
     }
 
-    private static JsonObject GenerationListSchema()
-        => new()
+    private static JsonObject GenerationListSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1141,19 +1251,23 @@ public sealed class SeikoMcpServer
             OptionalString(arguments, "proxy"),
             Bool(arguments, "offline"),
             StorePath(arguments),
-            Bool(arguments, "securityOnly"));
+            Bool(arguments, "securityOnly")
+        );
         var findings = new JsonArray();
         foreach (var finding in result.Findings)
         {
-            findings.Add((JsonNode)new JsonObject
-            {
-                ["name"] = finding.Name,
-                ["version"] = finding.Version,
-                ["kind"] = finding.Kind,
-                ["severity"] = finding.Severity,
-                ["url"] = finding.Url,
-                ["fix"] = finding.Fix,
-            });
+            findings.Add(
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["name"] = finding.Name,
+                        ["version"] = finding.Version,
+                        ["kind"] = finding.Kind,
+                        ["severity"] = finding.Severity,
+                        ["url"] = finding.Url,
+                        ["fix"] = finding.Fix,
+                    }
+            );
         }
 
         return new JsonObject
@@ -1163,8 +1277,8 @@ public sealed class SeikoMcpServer
         }.ToJsonString();
     }
 
-    private static JsonObject AuditSchema()
-        => new()
+    private static JsonObject AuditSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1182,7 +1296,9 @@ public sealed class SeikoMcpServer
     {
         if (!_allowMutations)
         {
-            throw new SeikoException("mutations are disabled; start seiko-mcp with --allow-mutations");
+            throw new SeikoException(
+                "mutations are disabled; start seiko-mcp with --allow-mutations"
+            );
         }
     }
 
@@ -1241,8 +1357,8 @@ public sealed class SeikoMcpServer
         return full;
     }
 
-    private static string RequiredString(JsonObject arguments, string name)
-        => OptionalString(arguments, name) ?? throw new SeikoException($"{name} is required");
+    private static string RequiredString(JsonObject arguments, string name) =>
+        OptionalString(arguments, name) ?? throw new SeikoException($"{name} is required");
 
     private static string? OptionalString(JsonObject arguments, string name)
     {
@@ -1340,10 +1456,7 @@ public sealed class SeikoMcpServer
             return null;
         }
 
-        var node = new JsonObject
-        {
-            ["rid"] = rid,
-        };
+        var node = new JsonObject { ["rid"] = rid };
 
         return node;
     }
@@ -1353,11 +1466,10 @@ public sealed class SeikoMcpServer
         var array = new JsonArray();
         foreach (var dependency in dependencies)
         {
-            array.Add((JsonNode)new JsonObject
-            {
-                ["name"] = dependency.Name,
-                ["version"] = dependency.Version,
-            });
+            array.Add(
+                (JsonNode)
+                    new JsonObject { ["name"] = dependency.Name, ["version"] = dependency.Version }
+            );
         }
 
         return array;
@@ -1385,13 +1497,16 @@ public sealed class SeikoMcpServer
                 var groupsNode = new JsonArray();
                 foreach (var group in groups)
                 {
-                    groupsNode.Add((JsonNode)new JsonObject
-                    {
-                        ["dependencies"] = DependenciesNode(group.Dependencies),
-                        ["prerequisites"] = DependenciesNode(group.Prerequisites),
-                        ["optionalPeers"] = DependenciesNode(group.OptionalPeers),
-                        ["conflicts"] = DependenciesNode(group.Conflicts),
-                    });
+                    groupsNode.Add(
+                        (JsonNode)
+                            new JsonObject
+                            {
+                                ["dependencies"] = DependenciesNode(group.Dependencies),
+                                ["prerequisites"] = DependenciesNode(group.Prerequisites),
+                                ["optionalPeers"] = DependenciesNode(group.OptionalPeers),
+                                ["conflicts"] = DependenciesNode(group.Conflicts),
+                            }
+                    );
                 }
 
                 node["dependencyGroups"] = groupsNode;
@@ -1403,27 +1518,24 @@ public sealed class SeikoMcpServer
         return array;
     }
 
-    private static JsonObject Tool(string name, string description, JsonObject schema)
-        => new()
+    private static JsonObject Tool(string name, string description, JsonObject schema) =>
+        new()
         {
             ["name"] = name,
             ["description"] = description,
             ["inputSchema"] = schema,
         };
 
-    private static JsonObject RootSchema(bool required)
-        => new()
+    private static JsonObject RootSchema(bool required) =>
+        new()
         {
             ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["root"] = new JsonObject { ["type"] = "string" },
-            },
+            ["properties"] = new JsonObject { ["root"] = new JsonObject { ["type"] = "string" } },
             ["required"] = required ? new JsonArray(JsonValue.Create("root")) : new JsonArray(),
         };
 
-    private static JsonObject SearchSchema()
-        => new()
+    private static JsonObject SearchSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1440,8 +1552,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("term")),
         };
 
-    private static JsonObject InfoSchema()
-        => new()
+    private static JsonObject InfoSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1455,8 +1567,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("name")),
         };
 
-    private static JsonObject SyncSchema()
-        => new()
+    private static JsonObject SyncSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1480,8 +1592,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
 
-    private static JsonObject ConfigGetSchema()
-        => new()
+    private static JsonObject ConfigGetSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1492,19 +1604,16 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("key")),
         };
 
-    private static JsonObject StoreSchema()
-        => new()
+    private static JsonObject StoreSchema() =>
+        new()
         {
             ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["store"] = new JsonObject { ["type"] = "string" },
-            },
+            ["properties"] = new JsonObject { ["store"] = new JsonObject { ["type"] = "string" } },
             ["required"] = new JsonArray(),
         };
 
-    private static JsonObject SourceAddSchema()
-        => new()
+    private static JsonObject SourceAddSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1521,11 +1630,12 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(
                 JsonValue.Create("root"),
                 JsonValue.Create("id"),
-                JsonValue.Create("index")),
+                JsonValue.Create("index")
+            ),
         };
 
-    private static JsonObject SourceRemoveSchema()
-        => new()
+    private static JsonObject SourceRemoveSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1533,13 +1643,11 @@ public sealed class SeikoMcpServer
                 ["root"] = new JsonObject { ["type"] = "string" },
                 ["id"] = new JsonObject { ["type"] = "string" },
             },
-            ["required"] = new JsonArray(
-                JsonValue.Create("root"),
-                JsonValue.Create("id")),
+            ["required"] = new JsonArray(JsonValue.Create("root"), JsonValue.Create("id")),
         };
 
-    private static JsonObject ConfigSetSchema()
-        => new()
+    private static JsonObject ConfigSetSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1548,13 +1656,11 @@ public sealed class SeikoMcpServer
                 ["key"] = new JsonObject { ["type"] = "string" },
                 ["value"] = new JsonObject { ["type"] = "string" },
             },
-            ["required"] = new JsonArray(
-                JsonValue.Create("root"),
-                JsonValue.Create("key")),
+            ["required"] = new JsonArray(JsonValue.Create("root"), JsonValue.Create("key")),
         };
 
-    private static JsonObject CacheCleanSchema()
-        => new()
+    private static JsonObject CacheCleanSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1565,8 +1671,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
 
-    private static JsonObject WhySchema()
-        => new()
+    private static JsonObject WhySchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1577,8 +1683,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("name")),
         };
 
-    private static JsonObject OutdatedSchema()
-        => new()
+    private static JsonObject OutdatedSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1592,8 +1698,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(),
         };
 
-    private static JsonObject AddSchema()
-        => new()
+    private static JsonObject AddSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1626,11 +1732,10 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
 
-    private static JsonObject RemoveSchema()
-        => SyncMutationSchema(requireSpec: false);
+    private static JsonObject RemoveSchema() => SyncMutationSchema(requireSpec: false);
 
-    private static JsonObject UpdateSchema()
-        => new()
+    private static JsonObject UpdateSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1686,12 +1791,13 @@ public sealed class SeikoMcpServer
             ["properties"] = properties,
             ["required"] = new JsonArray(
                 JsonValue.Create("root"),
-                JsonValue.Create(requireSpec ? "spec" : "name")),
+                JsonValue.Create(requireSpec ? "spec" : "name")
+            ),
         };
     }
 
-    private static JsonObject DoctorSchema()
-        => new()
+    private static JsonObject DoctorSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1703,8 +1809,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
 
-    private static JsonObject IndexVerifySchema()
-        => new()
+    private static JsonObject IndexVerifySchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1746,7 +1852,8 @@ public sealed class SeikoMcpServer
         var path = Path.Combine(directory, CatalogFile.FileName);
         var expected = CatalogFile.Build(CatalogFile.Load(directory));
         var existing = CatalogFile.TryRead(path);
-        var stale = existing is null
+        var stale =
+            existing is null
             || JsonSerializer.Serialize(existing, SeikoJsonContext.Default.SeiCatalog)
                 != JsonSerializer.Serialize(expected, SeikoJsonContext.Default.SeiCatalog);
         var wrote = false;
@@ -1765,8 +1872,8 @@ public sealed class SeikoMcpServer
         }.ToJsonString();
     }
 
-    private static JsonObject IndexCatalogSchema()
-        => new()
+    private static JsonObject IndexCatalogSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1777,8 +1884,8 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(),
         };
 
-    private static JsonObject RollbackSchema()
-        => new()
+    private static JsonObject RollbackSchema() =>
+        new()
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
@@ -1793,45 +1900,33 @@ public sealed class SeikoMcpServer
             ["required"] = new JsonArray(JsonValue.Create("root")),
         };
 
-    private static JsonObject ToolResult(string text)
-        => new()
+    private static JsonObject ToolResult(string text) =>
+        new()
         {
-            ["content"] = new JsonArray(new JsonObject
-            {
-                ["type"] = "text",
-                ["text"] = text,
-            }),
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),
             ["isError"] = false,
         };
 
-    private static JsonObject ToolError(string message)
-        => new()
+    private static JsonObject ToolError(string message) =>
+        new()
         {
-            ["content"] = new JsonArray(new JsonObject
-            {
-                ["type"] = "text",
-                ["text"] = message,
-            }),
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = message }),
             ["isError"] = true,
         };
 
-    private static string Result(JsonNode? id, JsonNode result)
-        => new JsonObject
+    private static string Result(JsonNode? id, JsonNode result) =>
+        new JsonObject
         {
             ["jsonrpc"] = "2.0",
             ["id"] = id?.DeepClone(),
             ["result"] = result,
         }.ToJsonString();
 
-    private static string Error(JsonNode? id, int code, string message)
-        => new JsonObject
+    private static string Error(JsonNode? id, int code, string message) =>
+        new JsonObject
         {
             ["jsonrpc"] = "2.0",
             ["id"] = id?.DeepClone(),
-            ["error"] = new JsonObject
-            {
-                ["code"] = code,
-                ["message"] = message,
-            },
+            ["error"] = new JsonObject { ["code"] = code, ["message"] = message },
         }.ToJsonString();
 }

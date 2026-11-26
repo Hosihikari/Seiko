@@ -8,17 +8,19 @@ public sealed class SearchInfoTests
     public void Search_FindsSei()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"), new SpecFixture("other", "[1.0.0]"));
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "other",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0]"),
+            new SpecFixture("other", "[1.0.0]")
+        );
 
         var results = new SeikoClient().Search(fixture.Root, "hel");
 
@@ -35,7 +37,12 @@ public sealed class SearchInfoTests
         fixture.AddSei(
             "hello",
             new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] },
-            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture(), new ArtifactFixture()] });
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture(), new ArtifactFixture()],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var info = new SeikoClient().Info(fixture.Root, "hello");
@@ -51,21 +58,27 @@ public sealed class SearchInfoTests
     public void Info_ShowsEveryRelationAndArtifactCondition()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("helper", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Prerequisites = [new DepFixture("helper", "*")],
-            Conflicts = [new DepFixture("other", "[2.0.0]")],
-            Artifacts =
-            [
-                new ArtifactFixture { Rid = "win-x64", OptionalPeers = [new DepFixture("peer", "*")] },
-            ],
-        });
+        fixture.AddSei(
+            "helper",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Prerequisites = [new DepFixture("helper", "*")],
+                Conflicts = [new DepFixture("other", "[2.0.0]")],
+                Artifacts =
+                [
+                    new ArtifactFixture
+                    {
+                        Rid = "win-x64",
+                        OptionalPeers = [new DepFixture("peer", "*")],
+                    },
+                ],
+            }
+        );
         fixture.WriteConfig("win-x64");
 
         var info = new SeikoClient().Info(fixture.Root, "hello");
@@ -82,14 +95,15 @@ public sealed class SearchInfoTests
     public void Info_ThrowsWhenMissing()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
 
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Info(fixture.Root, "missing"));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Info(fixture.Root, "missing")
+        );
         Assert.Contains("not found", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

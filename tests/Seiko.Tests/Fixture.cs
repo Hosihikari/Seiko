@@ -12,13 +12,19 @@ internal sealed record ExternalFileFixture(string Path, string Url, string Conte
 
 internal sealed record ExternalMemberFixture(string Member, string Path);
 
-internal sealed record ExternalArchiveFixture(string Url, string Format, byte[] Content, params ExternalMemberFixture[] Members);
+internal sealed record ExternalArchiveFixture(
+    string Url,
+    string Format,
+    byte[] Content,
+    params ExternalMemberFixture[] Members
+);
 
 internal sealed record GroupFixture(
     DepFixture[]? Dependencies = null,
     DepFixture[]? Prerequisites = null,
     DepFixture[]? OptionalPeers = null,
-    DepFixture[]? Conflicts = null);
+    DepFixture[]? Conflicts = null
+);
 
 internal sealed class ArtifactFixture
 {
@@ -63,7 +69,9 @@ internal sealed class Fixture : IDisposable
     {
         var prior = Environment.GetEnvironmentVariable(SeikoHttp.UserAgentVariable);
         Environment.SetEnvironmentVariable(SeikoHttp.UserAgentVariable, agent);
-        return new Restore(() => Environment.SetEnvironmentVariable(SeikoHttp.UserAgentVariable, prior));
+        return new Restore(() =>
+            Environment.SetEnvironmentVariable(SeikoHttp.UserAgentVariable, prior)
+        );
     }
 
     public static IDisposable UseDefaultStore(string directory)
@@ -84,11 +92,14 @@ internal sealed class Fixture : IDisposable
         // resolves relative input against the working directory, so a root on
         // another volume (C: temp vs. a D: checkout) has no relative form at
         // all and every path-shaped test would build an absolute one.
-        Directory.CreateDirectory(Path.Combine(Directory.GetCurrentDirectory(), ".seiko-test-runs"));
+        Directory.CreateDirectory(
+            Path.Combine(Directory.GetCurrentDirectory(), ".seiko-test-runs")
+        );
         Root = Path.Combine(
             Directory.GetCurrentDirectory(),
             ".seiko-test-runs",
-            Guid.NewGuid().ToString("N"));
+            Guid.NewGuid().ToString("N")
+        );
         SourceDirectory = Path.Combine(Root, "source");
         StoreDirectory = Path.Combine(Root, "store");
         Directory.CreateDirectory(Path.Combine(SourceDirectory, "sei"));
@@ -135,7 +146,8 @@ internal sealed class Fixture : IDisposable
             {
                 var entry = new System.Formats.Tar.PaxTarEntry(
                     System.Formats.Tar.TarEntryType.RegularFile,
-                    name)
+                    name
+                )
                 {
                     DataStream = new MemoryStream(content),
                 };
@@ -149,10 +161,13 @@ internal sealed class Fixture : IDisposable
     public static byte[] Gzip(byte[] content)
     {
         using var buffer = new MemoryStream();
-        using (var gzip = new System.IO.Compression.GZipStream(
-            buffer,
-            System.IO.Compression.CompressionLevel.Optimal,
-            leaveOpen: true))
+        using (
+            var gzip = new System.IO.Compression.GZipStream(
+                buffer,
+                System.IO.Compression.CompressionLevel.Optimal,
+                leaveOpen: true
+            )
+        )
         {
             gzip.Write(content);
         }
@@ -174,7 +189,8 @@ internal sealed class Fixture : IDisposable
         string? fileName = null,
         string? dependencyLevel = null,
         (string Name, string? Version)[]? artifactPrerequisites = null,
-        List<GroupFixture>? groups = null)
+        List<GroupFixture>? groups = null
+    )
     {
         var directory = Path.Combine(Root, "dist");
         Directory.CreateDirectory(directory);
@@ -191,25 +207,39 @@ internal sealed class Fixture : IDisposable
             Dependencies = ToDependencies(
                 string.Equals(dependencyLevel, "artifact", StringComparison.Ordinal)
                     ? []
-                    : (dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version))),
+                    : (dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version))
+            ),
             Prerequisites = ToDependencies(
-                (manifestPrerequisites ?? []).Select(item => new DepFixture(item.Name, item.Version))),
+                (manifestPrerequisites ?? []).Select(item => new DepFixture(
+                    item.Name,
+                    item.Version
+                ))
+            ),
             Artifact = new ArtifactManifest
             {
                 Layout = "root",
                 Rid = rid,
                 Prerequisites = ToDependencies(
-                    (artifactPrerequisites ?? prerequisites ?? [])
-                        .Select(item => new DepFixture(item.Name, item.Version))),
+                    (artifactPrerequisites ?? prerequisites ?? []).Select(item => new DepFixture(
+                        item.Name,
+                        item.Version
+                    ))
+                ),
                 Dependencies = string.Equals(dependencyLevel, "artifact", StringComparison.Ordinal)
-                    ? ToDependencies((dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version)))
+                    ? ToDependencies(
+                        (dependencies ?? []).Select(item => new DepFixture(item.Name, item.Version))
+                    )
                     : [],
                 DependencyGroups = ToGroups(groups ?? []),
             },
         };
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
         {
-            AddEntry(zip, "sei.json", JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
+            AddEntry(
+                zip,
+                "sei.json",
+                JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest)
+            );
             AddEntry(zip, file, Encoding.UTF8.GetBytes(content));
         }
 
@@ -228,7 +258,8 @@ internal sealed class Fixture : IDisposable
             Description = $"{name} test package",
             Authors = ["fixture"],
             License = "MIT",
-        };        foreach (var version in versions)
+        };
+        foreach (var version in versions)
         {
             var artifacts = new List<ArtifactEntry>();
             for (var i = 0; i < version.Artifacts.Count; i++)
@@ -256,8 +287,8 @@ internal sealed class Fixture : IDisposable
                         Modes = artifact.Modes,
                         Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
                         DependencyGroups = ToGroups(artifact.DependencyGroups),
-                        ExternalFiles = artifact.ExternalFiles
-                            .Select(file => new ExternalFile
+                        ExternalFiles = artifact
+                            .ExternalFiles.Select(file => new ExternalFile
                             {
                                 Path = file.Path,
                                 Url = file.Url,
@@ -265,15 +296,15 @@ internal sealed class Fixture : IDisposable
                                 Size = Encoding.UTF8.GetByteCount(file.Content),
                             })
                             .ToList(),
-                        ExternalArchives = artifact.ExternalArchives
-                            .Select(archive => new ExternalArchive
+                        ExternalArchives = artifact
+                            .ExternalArchives.Select(archive => new ExternalArchive
                             {
                                 Url = archive.Url,
                                 Format = archive.Format,
                                 Sha256 = Hashing.Sha256Bytes(archive.Content),
                                 Size = archive.Content.Length,
-                                Members = archive.Members
-                                    .Select(member => new ExternalArchiveMember
+                                Members = archive
+                                    .Members.Select(member => new ExternalArchiveMember
                                     {
                                         Member = member.Member,
                                         Path = member.Path,
@@ -286,7 +317,14 @@ internal sealed class Fixture : IDisposable
 
                 using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
                 {
-                    AddEntry(zip, "sei.json", JsonSerializer.SerializeToUtf8Bytes(manifest, SeikoJsonContext.Default.SeiManifest));
+                    AddEntry(
+                        zip,
+                        "sei.json",
+                        JsonSerializer.SerializeToUtf8Bytes(
+                            manifest,
+                            SeikoJsonContext.Default.SeiManifest
+                        )
+                    );
                     foreach (var (file, content) in artifact.Files)
                     {
                         AddEntry(zip, file, Encoding.UTF8.GetBytes(content));
@@ -294,77 +332,92 @@ internal sealed class Fixture : IDisposable
                 }
 
                 var info = new FileInfo(zipPath);
-                artifacts.Add(new ArtifactEntry
-                {
-                    Rid = artifact.Rid,
-                    Dependencies = ToDependencies(artifact.Dependencies),
-                    Prerequisites = ToDependencies(artifact.Prerequisites),
-                    OptionalPeers = ToDependencies(artifact.OptionalPeers),
-                    Conflicts = ToDependencies(artifact.Conflicts),
-                    Layout = "root",
-                    Modes = artifact.Modes,
-                    Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
-                    DependencyGroups = ToGroups(artifact.DependencyGroups),
-                    ExternalFiles = artifact.ExternalFiles
-                        .Select(file => new ExternalFile
-                        {
-                            Path = file.Path,
-                            Url = file.Url,
-                            Sha256 = Hashing.Sha256Bytes(Encoding.UTF8.GetBytes(file.Content)),
-                            Size = Encoding.UTF8.GetByteCount(file.Content),
-                        })
-                        .ToList(),
-                    ExternalArchives = artifact.ExternalArchives
-                        .Select(archive => new ExternalArchive
-                        {
-                            Url = archive.Url,
-                            Format = archive.Format,
-                            Sha256 = Hashing.Sha256Bytes(archive.Content),
-                            Size = archive.Content.Length,
-                            Members = archive.Members
-                                .Select(member => new ExternalArchiveMember
-                                {
-                                    Member = member.Member,
-                                    Path = member.Path,
-                                })
-                                .ToList(),
-                        })
-                        .ToList(),
-                    External = artifact.ExternalFiles.Count + artifact.ExternalArchives.Count == 0
-                        ? null
-                        : new ExternalSummary
-                        {
-                            Files = artifact.ExternalFiles.Count,
-                            Archives = artifact.ExternalArchives.Count,
-                            Size = artifact.ExternalFiles.Sum(file => Encoding.UTF8.GetByteCount(file.Content))
-                                + artifact.ExternalArchives.Sum(archive => (long)archive.Content.Length),
-                            Hosts = artifact.ExternalFiles.Select(file => new Uri(file.Url).Host)
-                                .Concat(artifact.ExternalArchives.Select(archive => new Uri(archive.Url).Host))
-                                .Distinct(StringComparer.OrdinalIgnoreCase)
-                                .OrderBy(host => host, StringComparer.OrdinalIgnoreCase)
-                                .ToList(),
-                        },
-                    Source = new ArtifactLocation
+                artifacts.Add(
+                    new ArtifactEntry
                     {
-                        Url = "artifacts/" + zipName,
-                        Sha256 = artifact.OverriddenDigest ?? Hashing.Sha256File(zipPath),
-                        Size = info.Length,
-                    },
-                });
+                        Rid = artifact.Rid,
+                        Dependencies = ToDependencies(artifact.Dependencies),
+                        Prerequisites = ToDependencies(artifact.Prerequisites),
+                        OptionalPeers = ToDependencies(artifact.OptionalPeers),
+                        Conflicts = ToDependencies(artifact.Conflicts),
+                        Layout = "root",
+                        Modes = artifact.Modes,
+                        Preserve = artifact.Preserve.Count == 0 ? null : artifact.Preserve,
+                        DependencyGroups = ToGroups(artifact.DependencyGroups),
+                        ExternalFiles = artifact
+                            .ExternalFiles.Select(file => new ExternalFile
+                            {
+                                Path = file.Path,
+                                Url = file.Url,
+                                Sha256 = Hashing.Sha256Bytes(Encoding.UTF8.GetBytes(file.Content)),
+                                Size = Encoding.UTF8.GetByteCount(file.Content),
+                            })
+                            .ToList(),
+                        ExternalArchives = artifact
+                            .ExternalArchives.Select(archive => new ExternalArchive
+                            {
+                                Url = archive.Url,
+                                Format = archive.Format,
+                                Sha256 = Hashing.Sha256Bytes(archive.Content),
+                                Size = archive.Content.Length,
+                                Members = archive
+                                    .Members.Select(member => new ExternalArchiveMember
+                                    {
+                                        Member = member.Member,
+                                        Path = member.Path,
+                                    })
+                                    .ToList(),
+                            })
+                            .ToList(),
+                        External =
+                            artifact.ExternalFiles.Count + artifact.ExternalArchives.Count == 0
+                                ? null
+                                : new ExternalSummary
+                                {
+                                    Files = artifact.ExternalFiles.Count,
+                                    Archives = artifact.ExternalArchives.Count,
+                                    Size =
+                                        artifact.ExternalFiles.Sum(file =>
+                                            Encoding.UTF8.GetByteCount(file.Content)
+                                        )
+                                        + artifact.ExternalArchives.Sum(archive =>
+                                            (long)archive.Content.Length
+                                        ),
+                                    Hosts = artifact
+                                        .ExternalFiles.Select(file => new Uri(file.Url).Host)
+                                        .Concat(
+                                            artifact.ExternalArchives.Select(archive =>
+                                                new Uri(archive.Url).Host
+                                            )
+                                        )
+                                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                                        .OrderBy(host => host, StringComparer.OrdinalIgnoreCase)
+                                        .ToList(),
+                                },
+                        Source = new ArtifactLocation
+                        {
+                            Url = "artifacts/" + zipName,
+                            Sha256 = artifact.OverriddenDigest ?? Hashing.Sha256File(zipPath),
+                            Size = info.Length,
+                        },
+                    }
+                );
             }
 
-            index.Versions.Add(new SeiVersionEntry
-            {
-                Version = version.Version,
-                Dependencies = ToDependencies(version.Dependencies),
-                Prerequisites = ToDependencies(version.Prerequisites),
-                OptionalPeers = ToDependencies(version.OptionalPeers),
-                Conflicts = ToDependencies(version.Conflicts),
-                Artifacts = artifacts,
-                Yanked = version.Yanked,
-                Deprecated = version.Deprecated,
-                Advisory = version.Advisory,
-            });
+            index.Versions.Add(
+                new SeiVersionEntry
+                {
+                    Version = version.Version,
+                    Dependencies = ToDependencies(version.Dependencies),
+                    Prerequisites = ToDependencies(version.Prerequisites),
+                    OptionalPeers = ToDependencies(version.OptionalPeers),
+                    Conflicts = ToDependencies(version.Conflicts),
+                    Artifacts = artifacts,
+                    Yanked = version.Yanked,
+                    Deprecated = version.Deprecated,
+                    Advisory = version.Advisory,
+                }
+            );
         }
 
         _indexes[name] = index;
@@ -415,7 +468,8 @@ internal sealed class Fixture : IDisposable
         };
         File.WriteAllBytes(
             Path.Combine(SourceDirectory, "index.json"),
-            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.IndexRoot));
+            JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.IndexRoot)
+        );
 
         var lines = new List<string>
         {
@@ -472,21 +526,29 @@ internal sealed class Fixture : IDisposable
         var indexes = Directory
             .EnumerateFiles(Path.Combine(SourceDirectory, "sei"), "*.json")
             .OrderBy(path => path, StringComparer.Ordinal)
-            .Select(path => JsonSerializer.Deserialize<SeiIndex>(
-                File.ReadAllBytes(path),
-                SeikoJsonContext.Default.SeiIndex)!)
+            .Select(path =>
+                JsonSerializer.Deserialize<SeiIndex>(
+                    File.ReadAllBytes(path),
+                    SeikoJsonContext.Default.SeiIndex
+                )!
+            )
             .Where(index => index is not null);
         File.WriteAllBytes(
             Path.Combine(SourceDirectory, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 CatalogFile.Build(indexes),
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
     }
 
     private void WriteSei(string name)
     {
         var path = Path.Combine(SourceDirectory, "sei", name + ".json");
-        File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(_indexes[name], SeikoJsonContext.Default.SeiIndex));
+        File.WriteAllBytes(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(_indexes[name], SeikoJsonContext.Default.SeiIndex)
+        );
 
         // The real index bot regenerates the catalog on every change; mirror
         // that so verifier tests do not see a stale catalog by default.
@@ -494,22 +556,26 @@ internal sealed class Fixture : IDisposable
             Path.Combine(SourceDirectory, "catalog.json"),
             JsonSerializer.SerializeToUtf8Bytes(
                 CatalogFile.Build(_indexes.Values),
-                SeikoJsonContext.Default.SeiCatalog));
+                SeikoJsonContext.Default.SeiCatalog
+            )
+        );
     }
 
-    private static List<DependencyGroup>? ToGroups(List<GroupFixture> groups)
-        => groups.Count == 0
+    private static List<DependencyGroup>? ToGroups(List<GroupFixture> groups) =>
+        groups.Count == 0
             ? null
-            : groups.Select(group => new DependencyGroup
-            {
-                Dependencies = ToDependencies(group.Dependencies ?? []),
-                Prerequisites = ToDependencies(group.Prerequisites ?? []),
-                OptionalPeers = ToDependencies(group.OptionalPeers ?? []),
-                Conflicts = ToDependencies(group.Conflicts ?? []),
-            }).ToList();
+            : groups
+                .Select(group => new DependencyGroup
+                {
+                    Dependencies = ToDependencies(group.Dependencies ?? []),
+                    Prerequisites = ToDependencies(group.Prerequisites ?? []),
+                    OptionalPeers = ToDependencies(group.OptionalPeers ?? []),
+                    Conflicts = ToDependencies(group.Conflicts ?? []),
+                })
+                .ToList();
 
-    private static List<SeiDependency> ToDependencies(IEnumerable<DepFixture> dependencies)
-        => dependencies
+    private static List<SeiDependency> ToDependencies(IEnumerable<DepFixture> dependencies) =>
+        dependencies
             .Select(dependency => new SeiDependency
             {
                 Name = dependency.Name,

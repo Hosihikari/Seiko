@@ -8,9 +8,11 @@ internal static class PathSafety
     public static void EnsureNoLinks(string root, string relative, string code = "deploy")
     {
         var normalized = relative.Replace('\\', '/');
-        if (string.IsNullOrWhiteSpace(normalized)
+        if (
+            string.IsNullOrWhiteSpace(normalized)
             || Path.IsPathRooted(normalized)
-            || normalized.Split('/').Any(segment => segment is "" or "." or ".."))
+            || normalized.Split('/').Any(segment => segment is "" or "." or "..")
+        )
         {
             throw new SeikoException($"invalid deployment path: {relative}", code);
         }
@@ -23,7 +25,8 @@ internal static class PathSafety
             {
                 throw new SeikoException(
                     $"deployment path escapes the install root through a link: {relative}",
-                    code);
+                    code
+                );
             }
         }
     }
@@ -42,18 +45,21 @@ internal static class PathSafety
 
         try
         {
-            if ((File.Exists(path) || Directory.Exists(path))
-                && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            if (
+                (File.Exists(path) || Directory.Exists(path))
+                && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0
+            )
             {
                 return true;
             }
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or ArgumentException
-            or NotSupportedException)
-        {
-        }
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or ArgumentException
+                        or NotSupportedException
+            ) { }
 
         return false;
     }
@@ -64,10 +70,13 @@ internal static class PathSafety
         {
             return target() is not null;
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or ArgumentException
-            or NotSupportedException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or ArgumentException
+                        or NotSupportedException
+            )
         {
             return false;
         }

@@ -16,7 +16,8 @@ public sealed class LocPluralTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "zh_CN.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);
@@ -39,7 +40,8 @@ public sealed class LocPluralTests
 
         var (stdout, stderr, exitCode) = Cli.Run(
             ["doctor", "--root", fixture.Root, "--store", fixture.StoreDirectory],
-            new Dictionary<string, string> { ["LANG"] = "ru_RU.UTF-8" });
+            new Dictionary<string, string> { ["LANG"] = "ru_RU.UTF-8" }
+        );
         var text = stdout + stderr;
         Assert.False(string.IsNullOrEmpty(text), "doctor produced no output");
         Assert.Equal(0, exitCode);

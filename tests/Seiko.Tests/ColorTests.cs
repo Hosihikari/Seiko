@@ -8,7 +8,8 @@ public sealed class ColorTests
     private static string Run(string? color)
     {
         var (stdout, stderr, _) = Cli.Run(
-            color is null ? ["info", "nope"] : ["info", "nope", "--color=" + color]);
+            color is null ? ["info", "nope"] : ["info", "nope", "--color=" + color]
+        );
         return stdout + stderr;
     }
 

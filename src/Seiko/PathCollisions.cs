@@ -100,11 +100,16 @@ internal sealed class PathCollisions
             at = ~at;
         }
 
-        if (at < sorted.Length
+        if (
+            at < sorted.Length
             && sorted[at].Length > prefix.Length
-            && sorted[at].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            && sorted[at].StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+        )
         {
-            collision = new PathCollision(_items[_firstByKey[sorted[at]]].Path, PathCollisionKind.Prefix);
+            collision = new PathCollision(
+                _items[_firstByKey[sorted[at]]].Path,
+                PathCollisionKind.Prefix
+            );
             return true;
         }
 
@@ -117,13 +122,12 @@ internal sealed class PathCollisions
     private static int? FindBlockingAncestor(
         string key,
         int self,
-        Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> lookup)
+        Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> lookup
+    )
     {
         for (var i = 0; i < key.Length; i++)
         {
-            if (key[i] == '/'
-                && lookup.TryGetValue(key.AsSpan(0, i), out var file)
-                && file != self)
+            if (key[i] == '/' && lookup.TryGetValue(key.AsSpan(0, i), out var file) && file != self)
             {
                 return file;
             }
@@ -139,6 +143,7 @@ internal enum PathCollisionKind
 {
     // Same path modulo case or Unicode normalization.
     SamePath,
+
     // One path is a file where the other needs a directory.
     Prefix,
 }

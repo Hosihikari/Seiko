@@ -10,11 +10,10 @@ public sealed class IndexCatalogCommandTests
     private static Fixture FixtureWithSei()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64");
         return fixture;
     }
@@ -25,12 +24,19 @@ public sealed class IndexCatalogCommandTests
         using var fixture = FixtureWithSei();
         File.Delete(Path.Combine(fixture.SourceDirectory, "catalog.json"));
 
-        CatalogFile.Write(Path.Combine(fixture.Root, "a.json"), CatalogFile.Build(CatalogFile.Load(fixture.SourceDirectory)));
-        CatalogFile.Write(Path.Combine(fixture.Root, "b.json"), CatalogFile.Build(CatalogFile.Load(fixture.SourceDirectory)));
+        CatalogFile.Write(
+            Path.Combine(fixture.Root, "a.json"),
+            CatalogFile.Build(CatalogFile.Load(fixture.SourceDirectory))
+        );
+        CatalogFile.Write(
+            Path.Combine(fixture.Root, "b.json"),
+            CatalogFile.Build(CatalogFile.Load(fixture.SourceDirectory))
+        );
 
         Assert.Equal(
             File.ReadAllText(Path.Combine(fixture.Root, "a.json")),
-            File.ReadAllText(Path.Combine(fixture.Root, "b.json")));
+            File.ReadAllText(Path.Combine(fixture.Root, "b.json"))
+        );
     }
 
     [Fact]

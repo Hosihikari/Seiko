@@ -19,15 +19,24 @@ public sealed class LocalSource : ISeiSource
 
         if (!File.Exists(IndexPath))
         {
-            throw new SeikoException($"source '{config.Id}': index not found: {IndexPath}", "source");
+            throw new SeikoException(
+                $"source '{config.Id}': index not found: {IndexPath}",
+                "source"
+            );
         }
 
-        Index = JsonSerializer.Deserialize(File.ReadAllBytes(IndexPath), SeikoJsonContext.Default.IndexRoot)
-            ?? throw new SeikoException($"source '{config.Id}': invalid index", "source");
+        Index =
+            JsonSerializer.Deserialize(
+                File.ReadAllBytes(IndexPath),
+                SeikoJsonContext.Default.IndexRoot
+            ) ?? throw new SeikoException($"source '{config.Id}': invalid index", "source");
 
         if (Index.SchemaVersion != IndexRoot.CurrentSchemaVersion)
         {
-            throw new SeikoException($"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}", "source");
+            throw new SeikoException(
+                $"source '{config.Id}': unsupported index schemaVersion {Index.SchemaVersion}",
+                "source"
+            );
         }
     }
 
@@ -47,7 +56,10 @@ public sealed class LocalSource : ISeiSource
         SeiIndex? sei;
         try
         {
-            sei = JsonSerializer.Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.SeiIndex);
+            sei = JsonSerializer.Deserialize(
+                File.ReadAllBytes(path),
+                SeikoJsonContext.Default.SeiIndex
+            );
         }
         catch (JsonException ex)
         {
@@ -56,29 +68,40 @@ public sealed class LocalSource : ISeiSource
             throw new SeikoException(
                 $"source '{Config.Id}': invalid sei index for {name} ({ex.Message})",
                 "source",
-                ex);
+                ex
+            );
         }
 
         if (sei is null)
         {
-            throw new SeikoException($"source '{Config.Id}': invalid sei index for {name}", "source");
+            throw new SeikoException(
+                $"source '{Config.Id}': invalid sei index for {name}",
+                "source"
+            );
         }
 
         if (sei.SchemaVersion != SeiIndex.CurrentSchemaVersion)
         {
-            throw new SeikoException($"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}", "source");
+            throw new SeikoException(
+                $"source '{Config.Id}': unsupported sei schemaVersion {sei.SchemaVersion} for {name}",
+                "source"
+            );
         }
 
         if (!string.Equals(sei.Name, name, StringComparison.Ordinal))
         {
-            throw new SeikoException($"source '{Config.Id}': sei file for {name} declares name '{sei.Name}'", "source");
+            throw new SeikoException(
+                $"source '{Config.Id}': sei file for {name} declares name '{sei.Name}'",
+                "source"
+            );
         }
 
         return IndexOverlay.Apply(sei);
     }
 
     // A local index may or may not ship a catalog; read it once, lazily.
-    public SeiCatalog? Catalog => _catalog ??= CatalogFile.TryRead(Path.Combine(BaseDirectory, CatalogFile.FileName));
+    public SeiCatalog? Catalog =>
+        _catalog ??= CatalogFile.TryRead(Path.Combine(BaseDirectory, CatalogFile.FileName));
 
     public string ResolveArtifact(ArtifactLocation source) => ResolveArtifactPath(source);
 
@@ -87,7 +110,8 @@ public sealed class LocalSource : ISeiSource
         ArtifactLocation source,
         string directory,
         DownloadSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var sourcePath = ResolveArtifactPath(source);
         var destination = Path.Combine(directory, "artifact");
@@ -98,21 +122,23 @@ public sealed class LocalSource : ISeiSource
         {
             throw new SeikoException(
                 $"artifact is larger than the {ArchiveLimits.MaxTotalBytes}-byte limit",
-                "checksum");
+                "checksum"
+            );
         }
 
         if (source.Size > 0 && size != source.Size)
         {
             throw new SeikoException(
                 $"size mismatch for {name}: expected {source.Size}, got {size}",
-                "checksum");
+                "checksum"
+            );
         }
 
         var lastModified = sourceInfo.LastWriteTimeUtc.ToString("R");
         var state = PartialArtifactStateFile.Read(statePath);
-        var urlHash = Hashing.Sha256Bytes(
-            System.Text.Encoding.UTF8.GetBytes(sourcePath));
-        var reusable = state is not null
+        var urlHash = Hashing.Sha256Bytes(System.Text.Encoding.UTF8.GetBytes(sourcePath));
+        var reusable =
+            state is not null
             && state.SchemaVersion == 2
             && string.Equals(state.UrlHash, urlHash, StringComparison.Ordinal)
             && state.Size == size
@@ -146,7 +172,8 @@ public sealed class LocalSource : ISeiSource
             FileAccess.Read,
             FileShare.Read,
             bufferSize: 81920,
-            useAsync: true);
+            useAsync: true
+        );
         input.Position = have;
         await using var output = new FileStream(
             destination,
@@ -154,7 +181,8 @@ public sealed class LocalSource : ISeiSource
             FileAccess.Write,
             FileShare.None,
             bufferSize: 81920,
-            useAsync: true);
+            useAsync: true
+        );
         output.SetLength(have);
         output.Position = have;
         var buffer = new byte[81920];
@@ -166,13 +194,16 @@ public sealed class LocalSource : ISeiSource
                 break;
             }
 
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            await output
+                .WriteAsync(buffer.AsMemory(0, read), cancellationToken)
+                .ConfigureAwait(false);
             have += read;
             if (have > ArchiveLimits.MaxTotalBytes)
             {
                 throw new SeikoException(
                     $"artifact is larger than the {ArchiveLimits.MaxTotalBytes}-byte limit",
-                    "checksum");
+                    "checksum"
+                );
             }
 
             session.ReportDownloading(name, have, size);
@@ -181,10 +212,15 @@ public sealed class LocalSource : ISeiSource
 
     public string ResolveArtifactPath(ArtifactLocation source)
     {
-        if (Uri.TryCreate(source.Url, UriKind.Absolute, out var remote)
-            && (remote.Scheme == Uri.UriSchemeHttp || remote.Scheme == Uri.UriSchemeHttps))
+        if (
+            Uri.TryCreate(source.Url, UriKind.Absolute, out var remote)
+            && (remote.Scheme == Uri.UriSchemeHttp || remote.Scheme == Uri.UriSchemeHttps)
+        )
         {
-            throw new SeikoException($"source '{Config.Id}': http artifacts are not supported in this slice: {source.Url}", "source");
+            throw new SeikoException(
+                $"source '{Config.Id}': http artifacts are not supported in this slice: {source.Url}",
+                "source"
+            );
         }
 
         if (source.Url.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
@@ -197,15 +233,18 @@ public sealed class LocalSource : ISeiSource
 
     internal static string ResolvePath(string value, string root)
     {
-        var path = value.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
-            ? new Uri(value).LocalPath
-            : Path.IsPathRooted(value) ? value : Path.GetFullPath(Path.Combine(root, value));
+        var path =
+            value.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? new Uri(value).LocalPath
+            : Path.IsPathRooted(value) ? value
+            : Path.GetFullPath(Path.Combine(root, value));
 
         // A source may name its directory (design §7); the index file inside
         // it is then implied. A configured file path keeps working unchanged.
-        if (Directory.Exists(path)
+        if (
+            Directory.Exists(path)
             || path.EndsWith(Path.DirectorySeparatorChar)
-            || path.EndsWith(Path.AltDirectorySeparatorChar))
+            || path.EndsWith(Path.AltDirectorySeparatorChar)
+        )
         {
             return Path.GetFullPath(Path.Combine(path, IndexRoot.FileName));
         }

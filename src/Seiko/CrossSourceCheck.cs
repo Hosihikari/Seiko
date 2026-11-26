@@ -13,7 +13,8 @@ internal static class CrossSourceCheck
         IReadOnlyList<ISeiSource> sources,
         IEnumerable<ResolvedSei> resolved,
         string code,
-        Action<ISeiSource, string>? onRead = null)
+        Action<ISeiSource, string>? onRead = null
+    )
     {
         // Each name is a separate SeiIndex within the same source, so the
         // cache key covers source id and name.
@@ -31,8 +32,10 @@ internal static class CrossSourceCheck
 
             foreach (var source in sources)
             {
-                if (ReferenceEquals(source, sei.Source)
-                    || string.Equals(source.Id, sei.Source.Id, StringComparison.Ordinal))
+                if (
+                    ReferenceEquals(source, sei.Source)
+                    || string.Equals(source.Id, sei.Source.Id, StringComparison.Ordinal)
+                )
                 {
                     continue;
                 }
@@ -49,9 +52,11 @@ internal static class CrossSourceCheck
                     SourceValidation.EnsureIndex(index, source.Id, code);
                 }
 
-                var matches = index.Versions
-                    .Where(entry => NuGetVersion.TryParse(entry.Version, out var version)
-                        && version.Equals(sei.ParsedVersion))
+                var matches = index
+                    .Versions.Where(entry =>
+                        NuGetVersion.TryParse(entry.Version, out var version)
+                        && version.Equals(sei.ParsedVersion)
+                    )
                     .ToList();
                 if (matches.Count == 0)
                 {
@@ -62,7 +67,8 @@ internal static class CrossSourceCheck
                 {
                     throw new SeikoException(
                         $"source '{source.Id}': duplicate version '{sei.Version}' for {sei.Name}",
-                        code);
+                        code
+                    );
                 }
 
                 foreach (var artifact in matches[0].Artifacts ?? [])
@@ -71,7 +77,8 @@ internal static class CrossSourceCheck
                     {
                         throw new SeikoException(
                             $"source '{source.Id}': invalid artifact for {sei.Name} {sei.Version}",
-                            code);
+                            code
+                        );
                     }
 
                     if (!ArtifactConditions.Equivalent(sei.Artifact, artifact))
@@ -79,20 +86,23 @@ internal static class CrossSourceCheck
                         continue;
                     }
 
-                    if (!string.Equals(
-                        artifact.Source.Sha256,
-                        sei.Artifact.Source.Sha256,
-                        StringComparison.OrdinalIgnoreCase))
+                    if (
+                        !string.Equals(
+                            artifact.Source.Sha256,
+                            sei.Artifact.Source.Sha256,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                     {
                         throw new SeikoException(
                             $"artifact digest for {sei.Name} {sei.Version} differs between "
-                            + $"source '{sei.Source.Id}' ({sei.Artifact.Source.Sha256}) and "
-                            + $"source '{source.Id}' ({artifact.Source.Sha256})",
-                            "checksum");
+                                + $"source '{sei.Source.Id}' ({sei.Artifact.Source.Sha256}) and "
+                                + $"source '{source.Id}' ({artifact.Source.Sha256})",
+                            "checksum"
+                        );
                     }
                 }
             }
         }
     }
-
 }

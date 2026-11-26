@@ -9,30 +9,33 @@ public sealed class AuditTests
     private static Fixture Installed(SeiIndex? mutator = null, string version = "1.0.0")
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", $"[{version}]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         return fixture;
     }
 
-    private static SeiIndex Read(Fixture fixture)
-        => System.Text.Json.JsonSerializer.Deserialize<SeiIndex>(
+    private static SeiIndex Read(Fixture fixture) =>
+        System.Text.Json.JsonSerializer.Deserialize<SeiIndex>(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "hello.json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
 
-    private static void Write(Fixture fixture, SeiIndex index)
-        => File.WriteAllBytes(
+    private static void Write(Fixture fixture, SeiIndex index) =>
+        File.WriteAllBytes(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(index, SeikoJsonContext.Default.SeiIndex));
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                index,
+                SeikoJsonContext.Default.SeiIndex
+            )
+        );
 
     [Fact]
     public void Audit_ReportsNothingForACleanInstall()
@@ -58,7 +61,8 @@ public sealed class AuditTests
         Write(fixture, index);
 
         var finding = Assert.Single(
-            new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory).Findings);
+            new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory).Findings
+        );
 
         Assert.Equal("1.0.0", finding.Version);
         Assert.Equal("advisory", finding.Kind);
@@ -71,12 +75,19 @@ public sealed class AuditTests
     {
         using var fixture = Installed();
         var index = Read(fixture);
-        index.Versions.Single(entry => entry.Version == "1.0.0").Advisory = new AdvisoryInfo { Severity = "low" };
-        index.Versions.Single(entry => entry.Version == "2.0.0").Advisory = new AdvisoryInfo { Severity = "low" };
+        index.Versions.Single(entry => entry.Version == "1.0.0").Advisory = new AdvisoryInfo
+        {
+            Severity = "low",
+        };
+        index.Versions.Single(entry => entry.Version == "2.0.0").Advisory = new AdvisoryInfo
+        {
+            Severity = "low",
+        };
         Write(fixture, index);
 
         var finding = Assert.Single(
-            new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory).Findings);
+            new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory).Findings
+        );
 
         Assert.Null(finding.Fix);
     }
@@ -97,7 +108,8 @@ public sealed class AuditTests
         var security = new SeikoClient().Audit(
             fixture.Root,
             storeRoot: fixture.StoreDirectory,
-            securityOnly: true);
+            securityOnly: true
+        );
         Assert.Empty(security.Findings);
     }
 
@@ -146,26 +158,34 @@ public sealed class AuditTests
         Directory.CreateDirectory(Path.Combine(other, "sei"));
         var copy = System.Text.Json.JsonSerializer.Deserialize<SeiIndex>(
             File.ReadAllBytes(Path.Combine(fixture.SourceDirectory, "sei", "hello.json")),
-            SeikoJsonContext.Default.SeiIndex)!;
+            SeikoJsonContext.Default.SeiIndex
+        )!;
         copy.Versions.Single(entry => entry.Version == "1.0.0").Advisory = null;
         File.WriteAllBytes(
             Path.Combine(other, "index.json"),
             System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { Sei = ["hello"] },
-                SeikoJsonContext.Default.IndexRoot));
+                SeikoJsonContext.Default.IndexRoot
+            )
+        );
         File.WriteAllBytes(
             Path.Combine(other, "sei", "hello.json"),
-            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(copy, SeikoJsonContext.Default.SeiIndex));
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                copy,
+                SeikoJsonContext.Default.SeiIndex
+            )
+        );
 
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             "schemaVersion = 2\n"
-            + "sources = [\n"
-            + $"  {{ id = \"other\", index = \"{Path.Combine(other, "index.json").Replace('\\', '/')}\" }},\n"
-            + $"  {{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }}\n"
-            + "]\n"
-            + "rid = \"win-x64\"\n"
-            + "sei = [\n  { name = \"hello\", version = \"[1.0.0]\" }\n]\n");
+                + "sources = [\n"
+                + $"  {{ id = \"other\", index = \"{Path.Combine(other, "index.json").Replace('\\', '/')}\" }},\n"
+                + $"  {{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }}\n"
+                + "]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = [\n  { name = \"hello\", version = \"[1.0.0]\" }\n]\n"
+        );
 
         var result = new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory);
 
@@ -180,11 +200,10 @@ public sealed class AuditTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         File.Delete(Path.Combine(fixture.SourceDirectory, "index.json"));
@@ -200,11 +219,10 @@ public sealed class AuditTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         File.WriteAllText(Path.Combine(fixture.SourceDirectory, "index.json"), "{invalid");
@@ -220,11 +238,10 @@ public sealed class AuditTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
         File.WriteAllText(Path.Combine(fixture.SourceDirectory, "sei", "hello.json"), "{invalid");
@@ -240,20 +257,21 @@ public sealed class AuditTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         var path = Path.Combine(fixture.SourceDirectory, "sei", "hello.json");
-        foreach (var body in new[]
-        {
-            "{\"schemaVersion\":2,\"name\":\"hello\",\"versions\":[null]}",
-            "{\"schemaVersion\":2,\"name\":\"hello\",\"versions\":null}",
-        })
+        foreach (
+            var body in new[]
+            {
+                "{\"schemaVersion\":2,\"name\":\"hello\",\"versions\":[null]}",
+                "{\"schemaVersion\":2,\"name\":\"hello\",\"versions\":null}",
+            }
+        )
         {
             File.WriteAllText(path, body);
 
@@ -269,23 +287,23 @@ public sealed class AuditTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture()],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture()] }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("hello", "[1.0.0]"));
         new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory);
 
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             "schemaVersion = 2\n"
-            + "sources = [\n"
-            + $"  {{ id = \"broken\", index = \"{server.BaseUrl}missing/index.json\" }},\n"
-            + $"  {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}\n"
-            + "]\n"
-            + "rid = \"win-x64\"\n"
-            + "sei = [\n  { name = \"hello\", version = \"[1.0.0]\" }\n]\n");
+                + "sources = [\n"
+                + $"  {{ id = \"broken\", index = \"{server.BaseUrl}missing/index.json\" }},\n"
+                + $"  {{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}\n"
+                + "]\n"
+                + "rid = \"win-x64\"\n"
+                + "sei = [\n  { name = \"hello\", version = \"[1.0.0]\" }\n]\n"
+        );
 
         var result = new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory);
 
@@ -299,8 +317,9 @@ public sealed class AuditTests
         using var fixture = new Fixture();
         fixture.WriteConfig("win-x64");
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Audit(fixture.Root, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("lock", error.Code);
     }

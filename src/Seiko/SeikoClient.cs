@@ -30,13 +30,10 @@ public sealed record OutdatedSei(
     string? LatestInRange,
     string Latest,
     string? LatestInstallable,
-    IReadOnlyList<OutdatedBlocker> Blockers);
+    IReadOnlyList<OutdatedBlocker> Blockers
+);
 
-public sealed record OutdatedBlocker(
-    string Relation,
-    string Target,
-    string? Range,
-    string Source);
+public sealed record OutdatedBlocker(string Relation, string Target, string? Range, string Source);
 
 public sealed record CacheStatusInfo(
     int Artifacts,
@@ -45,7 +42,8 @@ public sealed record CacheStatusInfo(
     int StagingItems,
     long StagingBytes,
     int Origins = 0,
-    long OriginBytes = 0);
+    long OriginBytes = 0
+);
 
 public sealed record CacheFinding(string Severity, string Code, string Message, string? Path);
 
@@ -73,22 +71,24 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
-        bool resetPreserved = false)
+        bool resetPreserved = false
+    )
     {
         root = Path.GetFullPath(root);
         cancellationToken.ThrowIfCancellationRequested();
         if (mode == SyncMode.Frozen && latestInstallable)
         {
-            throw new SeikoException("--frozen and --latest-installable are mutually exclusive", "usage");
+            throw new SeikoException(
+                "--frozen and --latest-installable are mutually exclusive",
+                "usage"
+            );
         }
 
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         // A preview reads; it does not take the root lock or register the root
         // for cache cleanup, because both leave files behind and the preview
         // promises none (ADR-0029). `rollback --dry-run` already does the same.
-        using var rootLock = dryRun
-            ? null
-            : EnterRoot(storePath, root);
+        using var rootLock = dryRun ? null : EnterRoot(storePath, root);
         return SyncLocked(
             root,
             storePath,
@@ -106,7 +106,8 @@ public sealed class SeikoClient
             adopt: adopt,
             force: force,
             offline: offline,
-            resetPreserved: resetPreserved);
+            resetPreserved: resetPreserved
+        );
     }
 
     private SyncResult SyncLocked(
@@ -131,7 +132,8 @@ public sealed class SeikoClient
         bool force = false,
         bool offline = false,
         bool resetPreserved = false,
-        SourceScope? preloaded = null)
+        SourceScope? preloaded = null
+    )
     {
         // `add <path>` resolves from a local file, so a normal resolution is
         // allowed offline when the caller says so; `OfflineMetadata.Verify`
@@ -140,7 +142,8 @@ public sealed class SeikoClient
         {
             throw new SeikoException(
                 "offline: sync needs --locked or --frozen; add/remove/update require a network update of cached metadata",
-                "source");
+                "source"
+            );
         }
 
         var config = ConfigLoader.Load(root);
@@ -183,7 +186,8 @@ public sealed class SeikoClient
                 force,
                 offline,
                 resetPreserved,
-                preloaded);
+                preloaded
+            );
         }
         finally
         {
@@ -217,7 +221,8 @@ public sealed class SeikoClient
         bool force,
         bool offline,
         bool resetPreserved,
-        SourceScope? preloaded)
+        SourceScope? preloaded
+    )
     {
         var pendingTransaction = false;
         if (transaction is null)
@@ -227,7 +232,9 @@ public sealed class SeikoClient
             {
                 // Recovery writes config/lock/deployment; a preview must not
                 // (ADR-0029). Detect it and let the real sync recover.
-                pendingTransaction = File.Exists(Path.Combine(recoveryDirectory, "transaction.json"));
+                pendingTransaction = File.Exists(
+                    Path.Combine(recoveryDirectory, "transaction.json")
+                );
             }
             else
             {
@@ -251,28 +258,31 @@ public sealed class SeikoClient
             // replays; every other mode resolves with the options below.
             // The proposed set, not the on-disk one: an `add` has not written
             // its declarations yet, so the file would still name the old set.
-            OfflineMetadata.Verify(
-                config,
-                storePath,
-                root,
-                specs,
-                // Only `--frozen` reads no resolver; `--locked` resolves like a
-                // normal run and then compares against the lock.
-                frozenGraph: mode == SyncMode.Frozen ? existingLock : null,
-                allowPrerelease: allowPrerelease,
-                allowCritical: allowCritical,
-                // The probe must resolve what this run will: same lock (for
-                // yanked versions it may keep), same platform and options.
-                existing: existingLock,
-                rid: rid,
-                updateNames: updateNames,
-                latestInstallable: latestInstallable).ThrowIfAny();
+            OfflineMetadata
+                .Verify(
+                    config,
+                    storePath,
+                    root,
+                    specs,
+                    // Only `--frozen` reads no resolver; `--locked` resolves like a
+                    // normal run and then compares against the lock.
+                    frozenGraph: mode == SyncMode.Frozen ? existingLock : null,
+                    allowPrerelease: allowPrerelease,
+                    allowCritical: allowCritical,
+                    // The probe must resolve what this run will: same lock (for
+                    // yanked versions it may keep), same platform and options.
+                    existing: existingLock,
+                    rid: rid,
+                    updateNames: updateNames,
+                    latestInstallable: latestInstallable
+                )
+                .ThrowIfAny();
         }
 
         // Only sources this call built are the scope's to release; a
         // preloaded scope keeps its own and is disposed by whoever made it.
-        var sources = preloaded?.Sources
-            ?? LoadSources(config, root, proxy, session, storePath, offline);
+        var sources =
+            preloaded?.Sources ?? LoadSources(config, root, proxy, session, storePath, offline);
         if (preloaded is null)
         {
             scope.Sources = sources;
@@ -293,7 +303,8 @@ public sealed class SeikoClient
             {
                 throw new SeikoException(
                     $"--frozen: lock targets rid '{existingLock.Target.Rid}', but the config selects '{rid}'; generate a lock for this platform first",
-                    "lock");
+                    "lock"
+                );
             }
 
             BindLockedOrigins(sources, existingLock);
@@ -310,7 +321,8 @@ public sealed class SeikoClient
                 allowPrerelease,
                 updateNames,
                 latestInstallable,
-                allowCritical);
+                allowCritical
+            );
             resolved = resolver.Resolve(specs);
             warnings = resolver.Warnings();
             EnsureOriginDigestsUnchanged(existingLock, resolved);
@@ -326,7 +338,10 @@ public sealed class SeikoClient
                 var difference = LockReplay.Compare(existingLock, lockFile);
                 if (difference is not null)
                 {
-                    throw new SeikoException($"--locked: lock is out of date ({difference})", "lock");
+                    throw new SeikoException(
+                        $"--locked: lock is out of date ({difference})",
+                        "lock"
+                    );
                 }
             }
         }
@@ -337,12 +352,17 @@ public sealed class SeikoClient
             // Per-artifact sizes are checked against MaxEntryBytes by the
             // verifier, but the sum of many valid artifacts can still leave the
             // range; the figure only drives progress (ADR-0017).
-            totalBytes = ExternalFiles.SaturatingAdd(totalBytes, Math.Max(0L, sei.Artifact.Source.Size));
+            totalBytes = ExternalFiles.SaturatingAdd(
+                totalBytes,
+                Math.Max(0L, sei.Artifact.Source.Size)
+            );
         }
 
         session.SeiTotal = resolved.Count;
         session.TotalBytes = totalBytes;
-        progress?.Report(new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count));
+        progress?.Report(
+            new SyncProgress(SyncPhase.Resolved, null, 0, totalBytes, 0, resolved.Count)
+        );
 
         // A plain preview never touches the store, and constructing one would
         // create its directory before the run has decided anything.
@@ -370,7 +390,8 @@ public sealed class SeikoClient
                     mode,
                     previewWarnings,
                     resetPreserved,
-                    ReadStateRecords(root)),
+                    ReadStateRecords(root)
+                ),
             };
         }
 
@@ -388,20 +409,24 @@ public sealed class SeikoClient
             CaptureOrigins(storePath, resolved);
         }
 
-        progress?.Report(new SyncProgress(
-            SyncPhase.Deploying,
-            null,
-            totalBytes,
-            totalBytes,
-            resolved.Count,
-            resolved.Count));
+        progress?.Report(
+            new SyncProgress(
+                SyncPhase.Deploying,
+                null,
+                totalBytes,
+                totalBytes,
+                resolved.Count,
+                resolved.Count
+            )
+        );
         var deployedSei = stored
             .Select(item => new DeployedSei(
                 item.Sei.Name,
                 item.Sei.Version,
                 item.Stored.Directory,
                 item.Stored.Manifest,
-                item.Stored.Digests))
+                item.Stored.Digests
+            ))
             .ToList();
         var stateDirectory = Path.Combine(root, ".seiko");
         var deployment = transaction is null
@@ -413,7 +438,8 @@ public sealed class SeikoClient
                 writeLock: mode == SyncMode.Normal,
                 adopt: adopt,
                 force: force,
-                resetPreserved: resetPreserved)
+                resetPreserved: resetPreserved
+            )
             : Deployer.DeployInTransaction(
                 root,
                 deployedSei,
@@ -423,7 +449,8 @@ public sealed class SeikoClient
                 writeLock: mode == SyncMode.Normal,
                 adopt: adopt,
                 force: force,
-                resetPreserved: resetPreserved);
+                resetPreserved: resetPreserved
+            );
 
         var described = new List<PreviewDiagnostic>();
         foreach (var sei in resolved.OrderBy(sei => sei.Name, StringComparer.Ordinal))
@@ -439,11 +466,14 @@ public sealed class SeikoClient
         foreach (var (sei, storedSei) in stored)
         {
             var entry = IndexArtifactFor(sei);
-            if (entry.External is { } declared
-                && !ExternalSummaryMatches(declared, storedSei.Manifest.Artifact))
+            if (
+                entry.External is { } declared
+                && !ExternalSummaryMatches(declared, storedSei.Manifest.Artifact)
+            )
             {
                 externalWarnings.Add(
-                    $"{sei.Name}: index external summary does not match sei.json; using the manifest");
+                    $"{sei.Name}: index external summary does not match sei.json; using the manifest"
+                );
             }
         }
 
@@ -465,7 +495,8 @@ public sealed class SeikoClient
     }
 
     private static (int Items, IReadOnlyList<string> Hosts) SummarizeExternal(
-        IEnumerable<SeiManifest> manifests)
+        IEnumerable<SeiManifest> manifests
+    )
     {
         var hosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var items = 0;
@@ -488,118 +519,161 @@ public sealed class SeikoClient
         // preview says so rather than implying the usual verification.
         // Only a real origin artifact is unverified; an indexed artifact may
         // carry the same field purely as display data.
-        var origin = sei.Source is OriginSource && sei.Artifact.OriginPath is { } path
-            ? $"; from origin {path}, not index-verified"
-            : "";
-        diagnostics.Add(new PreviewDiagnostic(
-            sei.Name,
-            "artifact",
-            $"selected {sei.Artifact.Source.Sha256} from source '{sei.Source.Id}' (rid {rid}){origin}"));
+        var origin =
+            sei.Source is OriginSource && sei.Artifact.OriginPath is { } path
+                ? $"; from origin {path}, not index-verified"
+                : "";
+        diagnostics.Add(
+            new PreviewDiagnostic(
+                sei.Name,
+                "artifact",
+                $"selected {sei.Artifact.Source.Sha256} from source '{sei.Source.Id}' (rid {rid}){origin}"
+            )
+        );
 
         if (sei.GroupIndex is { } groupIndex)
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "artifact-group",
-                $"selected dependency group #{groupIndex}"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "artifact-group",
+                    $"selected dependency group #{groupIndex}"
+                )
+            );
         }
 
         foreach (var dependency in sei.Entry.Dependencies)
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "dependency",
-                $"requires {dependency.Name} {dependency.Version ?? "*"} (version scope)"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "dependency",
+                    $"requires {dependency.Name} {dependency.Version ?? "*"} (version scope)"
+                )
+            );
         }
 
         foreach (var prerequisite in sei.Entry.Prerequisites)
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "prerequisite",
-                $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} (version scope)"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "prerequisite",
+                    $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} (version scope)"
+                )
+            );
         }
 
         foreach (var peer in sei.Entry.OptionalPeers)
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "optional-peer",
-                $"constrains {peer.Name} {peer.Version ?? "*"} when present (version scope)"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "optional-peer",
+                    $"constrains {peer.Name} {peer.Version ?? "*"} when present (version scope)"
+                )
+            );
         }
 
         foreach (var dependency in sei.Artifact.Dependencies ?? [])
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "artifact-dependency",
-                $"requires {dependency.Name} {dependency.Version ?? "*"} (artifact scope)"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "artifact-dependency",
+                    $"requires {dependency.Name} {dependency.Version ?? "*"} (artifact scope)"
+                )
+            );
         }
 
         foreach (var prerequisite in sei.Artifact.Prerequisites ?? [])
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "artifact-prerequisite",
-                $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this artifact"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "artifact-prerequisite",
+                    $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this artifact"
+                )
+            );
         }
 
         foreach (var peer in sei.Artifact.OptionalPeers ?? [])
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "artifact-optional-peer",
-                $"constrains {peer.Name} {peer.Version ?? "*"} when present (artifact scope)"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "artifact-optional-peer",
+                    $"constrains {peer.Name} {peer.Version ?? "*"} when present (artifact scope)"
+                )
+            );
         }
 
         foreach (var conflict in sei.Entry.Conflicts)
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "conflict",
-                $"excludes {conflict.Name} {conflict.Version ?? "*"}"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "conflict",
+                    $"excludes {conflict.Name} {conflict.Version ?? "*"}"
+                )
+            );
         }
 
         foreach (var conflict in sei.Artifact.Conflicts ?? [])
         {
-            diagnostics.Add(new PreviewDiagnostic(
-                sei.Name,
-                "artifact-conflict",
-                $"excludes {conflict.Name} {conflict.Version ?? "*"} for this artifact"));
+            diagnostics.Add(
+                new PreviewDiagnostic(
+                    sei.Name,
+                    "artifact-conflict",
+                    $"excludes {conflict.Name} {conflict.Version ?? "*"} for this artifact"
+                )
+            );
         }
 
         if (DependencyGroups.At(sei.Artifact, sei.GroupIndex) is { } group)
         {
             foreach (var dependency in group.Dependencies ?? [])
             {
-                diagnostics.Add(new PreviewDiagnostic(
-                    sei.Name,
-                    "group-dependency",
-                    $"requires {dependency.Name} {dependency.Version ?? "*"} (group scope)"));
+                diagnostics.Add(
+                    new PreviewDiagnostic(
+                        sei.Name,
+                        "group-dependency",
+                        $"requires {dependency.Name} {dependency.Version ?? "*"} (group scope)"
+                    )
+                );
             }
 
             foreach (var prerequisite in group.Prerequisites ?? [])
             {
-                diagnostics.Add(new PreviewDiagnostic(
-                    sei.Name,
-                    "group-prerequisite",
-                    $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this group"));
+                diagnostics.Add(
+                    new PreviewDiagnostic(
+                        sei.Name,
+                        "group-prerequisite",
+                        $"needs {prerequisite.Name} {prerequisite.Version ?? "*"} to match this group"
+                    )
+                );
             }
 
             foreach (var peer in group.OptionalPeers ?? [])
             {
-                diagnostics.Add(new PreviewDiagnostic(
-                    sei.Name,
-                    "group-optional-peer",
-                    $"constrains {peer.Name} {peer.Version ?? "*"} when present (group scope)"));
+                diagnostics.Add(
+                    new PreviewDiagnostic(
+                        sei.Name,
+                        "group-optional-peer",
+                        $"constrains {peer.Name} {peer.Version ?? "*"} when present (group scope)"
+                    )
+                );
             }
 
             foreach (var conflict in group.Conflicts ?? [])
             {
-                diagnostics.Add(new PreviewDiagnostic(
-                    sei.Name,
-                    "group-conflict",
-                    $"excludes {conflict.Name} {conflict.Version ?? "*"} for this group"));
+                diagnostics.Add(
+                    new PreviewDiagnostic(
+                        sei.Name,
+                        "group-conflict",
+                        $"excludes {conflict.Name} {conflict.Version ?? "*"} for this group"
+                    )
+                );
             }
         }
     }
@@ -611,9 +685,11 @@ public sealed class SeikoClient
         SyncMode mode,
         IReadOnlyList<string> warnings,
         bool resetPreserved,
-        IReadOnlyDictionary<string, DeployedFile> state)
+        IReadOnlyDictionary<string, DeployedFile> state
+    )
     {
-        var previous = existing?.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal)
+        var previous =
+            existing?.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal)
             ?? new Dictionary<string, LockedSei>(StringComparer.Ordinal);
         var current = proposed.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
         var changes = new List<PlannedChange>();
@@ -625,35 +701,45 @@ public sealed class SeikoClient
             // decides which relations the install carries, and `remove`
             // already refuses to switch it silently. The preview has to show
             // the same switch, or the plan hides work the run will do.
-            var groupChanged = old is not null
-                && old.Artifact.Group != sei.GroupIndex;
-            var action = old is null
-                ? "add"
+            var groupChanged = old is not null && old.Artifact.Group != sei.GroupIndex;
+            var action =
+                old is null ? "add"
                 : old.Version == sei.Version
-                    && string.Equals(old.Artifact.Sha256, sei.Artifact.Source.Sha256, StringComparison.OrdinalIgnoreCase)
-                    && !groupChanged
-                        ? "keep"
-                        : "update";
+                && string.Equals(
+                    old.Artifact.Sha256,
+                    sei.Artifact.Source.Sha256,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && !groupChanged
+                    ? "keep"
+                : "update";
             if (action == "keep" && mode != SyncMode.Normal)
             {
                 action = "replay";
             }
 
-            changes.Add(new PlannedChange(
-                action,
-                sei.Name,
-                old?.Version,
-                sei.Version,
-                sei.Source.Id,
-                sei.Artifact.Source.Sha256,
-                sei.Source is not OriginSource));
+            changes.Add(
+                new PlannedChange(
+                    action,
+                    sei.Name,
+                    old?.Version,
+                    sei.Version,
+                    sei.Source.Id,
+                    sei.Artifact.Source.Sha256,
+                    sei.Source is not OriginSource
+                )
+            );
         }
 
-        foreach (var removed in previous.Keys
-            .Where(name => !current.ContainsKey(name))
-            .OrderBy(name => name, StringComparer.Ordinal))
+        foreach (
+            var removed in previous
+                .Keys.Where(name => !current.ContainsKey(name))
+                .OrderBy(name => name, StringComparer.Ordinal)
+        )
         {
-            changes.Add(new PlannedChange("remove", removed, previous[removed].Version, null, null, null));
+            changes.Add(
+                new PlannedChange("remove", removed, previous[removed].Version, null, null, null)
+            );
         }
 
         var blocked = new List<PreviewBlock>();
@@ -665,8 +751,15 @@ public sealed class SeikoClient
                 continue;
             }
 
-            var highest = index.Versions
-                .Select(entry => (Entry: entry, Version: NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : null))
+            var highest = index
+                .Versions.Select(entry =>
+                    (
+                        Entry: entry,
+                        Version: NuGetVersion.TryParse(entry.Version, out var parsed)
+                            ? parsed
+                            : null
+                    )
+                )
                 .Where(item => item.Version is not null && !item.Entry.Yanked)
                 .OrderByDescending(item => item.Version)
                 .FirstOrDefault();
@@ -675,9 +768,12 @@ public sealed class SeikoClient
                 continue;
             }
 
-            blocked.Add(new PreviewBlock(
-                "newer-version",
-                $"{sei.Name} {highest.Version.ToNormalizedString()} is available; the graph keeps {sei.Version}"));
+            blocked.Add(
+                new PreviewBlock(
+                    "newer-version",
+                    $"{sei.Name} {highest.Version.ToNormalizedString()} is available; the graph keeps {sei.Version}"
+                )
+            );
         }
 
         var diagnostics = new List<PreviewDiagnostic>();
@@ -698,10 +794,16 @@ public sealed class SeikoClient
         // missing record), so the mark is read defensively.
         var preserved = resolved
             .OrderBy(sei => sei.Name, StringComparer.Ordinal)
-            .SelectMany(sei => (IndexArtifactFor(sei).Preserve ?? [])
-                .Where(path => !resetPreserved
-                    && !(state.TryGetValue(path, out var record) && record is { Preserved: true }))
-                .Select(path => new PreviewPreserve(sei.Name, path)))
+            .SelectMany(sei =>
+                (IndexArtifactFor(sei).Preserve ?? [])
+                    .Where(path =>
+                        !resetPreserved
+                        && !(
+                            state.TryGetValue(path, out var record) && record is { Preserved: true }
+                        )
+                    )
+                    .Select(path => new PreviewPreserve(sei.Name, path))
+            )
             .ToList();
 
         // External payload comes from index summaries when present, or from
@@ -724,7 +826,10 @@ public sealed class SeikoClient
                     ExternalArchives = artifact.ExternalArchives,
                 };
                 var external = ExternalFiles.Summarize(manifest);
-                externalItems = ExternalFiles.SaturatingAdd(externalItems, ExternalFiles.Count(manifest));
+                externalItems = ExternalFiles.SaturatingAdd(
+                    externalItems,
+                    ExternalFiles.Count(manifest)
+                );
                 externalBytes = ExternalFiles.SaturatingAdd(externalBytes, external.Size);
                 foreach (var host in external.Hosts)
                 {
@@ -738,7 +843,8 @@ public sealed class SeikoClient
             {
                 externalItems = ExternalFiles.SaturatingAdd(
                     externalItems,
-                    ExternalFiles.SaturatingAdd(summary.Files, summary.Archives));
+                    ExternalFiles.SaturatingAdd(summary.Files, summary.Archives)
+                );
                 externalBytes = ExternalFiles.SaturatingAdd(externalBytes, summary.Size);
                 foreach (var host in summary.Hosts)
                 {
@@ -765,14 +871,16 @@ public sealed class SeikoClient
         };
     }
 
-    private static ArtifactEntry IndexArtifactFor(ResolvedSei sei)
-        => sei.Entry.Artifacts?
-            .FirstOrDefault(artifact => artifact is not null
-                && string.Equals(
-                    artifact.Source?.Sha256,
-                    sei.Artifact.Source.Sha256,
-                    StringComparison.OrdinalIgnoreCase))
-            ?? sei.Artifact;
+    private static ArtifactEntry IndexArtifactFor(ResolvedSei sei) =>
+        sei.Entry.Artifacts?.FirstOrDefault(artifact =>
+            artifact is not null
+            && string.Equals(
+                artifact.Source?.Sha256,
+                sei.Artifact.Source.Sha256,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        ?? sei.Artifact;
 
     // The generation number out of a state the strict reader rejects, so list
     // can still say which generation is current. Null when even that fails.
@@ -782,7 +890,8 @@ public sealed class SeikoClient
         {
             return JsonSerializer.Deserialize(
                 File.ReadAllBytes(statePath),
-                SeikoJsonContext.Default.LocalState);
+                SeikoJsonContext.Default.LocalState
+            );
         }
         catch (JsonException)
         {
@@ -819,7 +928,8 @@ public sealed class SeikoClient
         {
             state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
-                SeikoJsonContext.Default.LocalState);
+                SeikoJsonContext.Default.LocalState
+            );
         }
         catch (JsonException ex)
         {
@@ -835,7 +945,8 @@ public sealed class SeikoClient
         {
             throw new SeikoException(
                 $"unsupported deployment state schemaVersion {state.SchemaVersion}",
-                "io");
+                "io"
+            );
         }
 
         if (state.Files is null)
@@ -849,23 +960,24 @@ public sealed class SeikoClient
         {
             if (record is null)
             {
-                throw new SeikoException(
-                    $"deployment state has no record for {relative}",
-                    "io");
+                throw new SeikoException($"deployment state has no record for {relative}", "io");
             }
         }
 
         return state;
     }
 
-    private static bool ExternalSummaryMatches(ExternalSummary declared, ArtifactManifest? manifest)
-        => ExternalFiles.SummaryMatches(declared, manifest);
+    private static bool ExternalSummaryMatches(
+        ExternalSummary declared,
+        ArtifactManifest? manifest
+    ) => ExternalFiles.SummaryMatches(declared, manifest);
 
     private static List<(ResolvedSei Sei, StoredSei Stored)> DownloadAll(
         Store store,
         IReadOnlyList<ResolvedSei> resolved,
         DownloadSession session,
-        CancellationTokenSource downloadCts)
+        CancellationTokenSource downloadCts
+    )
     {
         Exception? firstError = null;
         // Starting every EnsureAsync at once opens one artifact lock per
@@ -881,8 +993,12 @@ public sealed class SeikoClient
                 await slots.WaitAsync(downloadCts.Token).ConfigureAwait(false);
                 try
                 {
-                    return (Sei: sei, Stored: await store.EnsureCountedAsync(sei, session, downloadCts.Token)
-                        .ConfigureAwait(false));
+                    return (
+                        Sei: sei,
+                        Stored: await store
+                            .EnsureCountedAsync(sei, session, downloadCts.Token)
+                            .ConfigureAwait(false)
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -940,8 +1056,9 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
-        bool resetPreserved = false)
-        => AddMany(
+        bool resetPreserved = false
+    ) =>
+        AddMany(
             root,
             [specification],
             remove: null,
@@ -958,7 +1075,8 @@ public sealed class SeikoClient
             adopt,
             force,
             offline,
-            resetPreserved);
+            resetPreserved
+        );
 
     public SyncResult AddMany(
         string root,
@@ -977,13 +1095,16 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
-        bool resetPreserved = false)
+        bool resetPreserved = false
+    )
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         var workingDirectory = Directory.GetCurrentDirectory();
         var additions = specifications
-            .Select(specification => ParseAddSpecification(specification, root, workingDirectory, storePath))
+            .Select(specification =>
+                ParseAddSpecification(specification, root, workingDirectory, storePath)
+            )
             .ToList();
         var removals = (remove ?? [])
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -1000,9 +1121,7 @@ public sealed class SeikoClient
         RequireOnline(offline, dryRun, "add", additions);
 
         cancellationToken.ThrowIfCancellationRequested();
-        using var rootLock = dryRun
-            ? null
-            : EnterRoot(storePath, root);
+        using var rootLock = dryRun ? null : EnterRoot(storePath, root);
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
@@ -1014,9 +1133,13 @@ public sealed class SeikoClient
         // source: the entry's own origin declaration is not a second meaning.
         // Identity comes first, so a known package is never re-guessed from
         // the file name (ADR-0044).
-        var bare = additions.Where(addition => addition.Path is not null
-            && !addition.Raw.Contains('/', StringComparison.Ordinal)
-            && !addition.Raw.Contains('\\', StringComparison.Ordinal)).ToList();
+        var bare = additions
+            .Where(addition =>
+                addition.Path is not null
+                && !addition.Raw.Contains('/', StringComparison.Ordinal)
+                && !addition.Raw.Contains('\\', StringComparison.Ordinal)
+            )
+            .ToList();
 
         // Paths are read before anything is written: the manifest supplies the
         // name the declaration is filed under, and it must be the only one
@@ -1026,15 +1149,18 @@ public sealed class SeikoClient
             var full = OriginPaths.Resolve(addition.Path!, root);
             var declaredName = DeclaredOriginName(config, root, full);
             var manifest = OriginSource.ReadName(full, root, storePath, declaredName);
-            var existingOrigin = config.Origin.FirstOrDefault(
-                origin => string.Equals(origin.Name, manifest, StringComparison.Ordinal));
-            var declared = config.Sei.FirstOrDefault(
-                spec => string.Equals(spec.Name, manifest, StringComparison.Ordinal));
+            var existingOrigin = config.Origin.FirstOrDefault(origin =>
+                string.Equals(origin.Name, manifest, StringComparison.Ordinal)
+            );
+            var declared = config.Sei.FirstOrDefault(spec =>
+                string.Equals(spec.Name, manifest, StringComparison.Ordinal)
+            );
             if (existingOrigin is not null && originTargets.Contains(existingOrigin))
             {
                 throw new SeikoException(
                     $"{manifest} is already given by origin entries twice in one add",
-                    "usage");
+                    "usage"
+                );
             }
 
             if (declared is null)
@@ -1049,7 +1175,9 @@ public sealed class SeikoClient
             }
 
             originTargets.Add(existingOrigin ?? AddOrigin(config, manifest));
-            if (!originTargets[^1].Paths.Any(existing => OriginPaths.SameFile(existing, full, root)))
+            if (
+                !originTargets[^1].Paths.Any(existing => OriginPaths.SameFile(existing, full, root))
+            )
             {
                 // Re-adding a path refreshes its condition slot but must not
                 // duplicate the declaration.
@@ -1059,13 +1187,15 @@ public sealed class SeikoClient
 
         var addNames = new HashSet<string>(
             additions.Select(addition => addition.Name).OfType<string>(),
-            StringComparer.Ordinal);
+            StringComparer.Ordinal
+        );
         addNames.UnionWith(originTargets.Select(origin => origin.Name));
 
         foreach (var addition in additions.Where(addition => addition.Name is not null))
         {
-            var existing = config.Sei.FirstOrDefault(
-                spec => string.Equals(spec.Name, addition.Name, StringComparison.Ordinal));
+            var existing = config.Sei.FirstOrDefault(spec =>
+                string.Equals(spec.Name, addition.Name, StringComparison.Ordinal)
+            );
             if (existing is null)
             {
                 var spec = new SeiSpec { Name = addition.Name!, Version = addition.Version };
@@ -1083,8 +1213,9 @@ public sealed class SeikoClient
             // `add <name>` without a range means "get it from a source again".
             if (addition.Version is null)
             {
-                config.Origin.RemoveAll(
-                    origin => string.Equals(origin.Name, addition.Name, StringComparison.Ordinal));
+                config.Origin.RemoveAll(origin =>
+                    string.Equals(origin.Name, addition.Name, StringComparison.Ordinal)
+                );
             }
         }
 
@@ -1092,18 +1223,29 @@ public sealed class SeikoClient
         {
             if (addNames.Contains(name))
             {
-                throw new SeikoException($"cannot add and remove {name} in the same operation", "usage");
+                throw new SeikoException(
+                    $"cannot add and remove {name} in the same operation",
+                    "usage"
+                );
             }
 
-            if (config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) == 0)
+            if (
+                config.Sei.RemoveAll(spec =>
+                    string.Equals(spec.Name, name, StringComparison.Ordinal)
+                ) == 0
+            )
             {
                 throw new SeikoException($"{name} is not a direct dependency", "resolve");
             }
 
-            config.Origin.RemoveAll(origin => string.Equals(origin.Name, name, StringComparison.Ordinal));
+            config.Origin.RemoveAll(origin =>
+                string.Equals(origin.Name, name, StringComparison.Ordinal)
+            );
         }
 
-        foreach (var origin in config.Origin.Where(origin => origin.Selectors.Count < origin.Paths.Count))
+        foreach (
+            var origin in config.Origin.Where(origin => origin.Selectors.Count < origin.Paths.Count)
+        )
         {
             while (origin.Selectors.Count < origin.Paths.Count)
             {
@@ -1124,7 +1266,12 @@ public sealed class SeikoClient
                     var full = OriginPaths.Resolve(stored, root);
                     if (File.Exists(full))
                     {
-                        OriginSnapshot.Capture(storePath, origin.Name, full, Hashing.Sha256File(full));
+                        OriginSnapshot.Capture(
+                            storePath,
+                            origin.Name,
+                            full,
+                            Hashing.Sha256File(full)
+                        );
                     }
                 }
             }
@@ -1147,7 +1294,8 @@ public sealed class SeikoClient
                 allowCritical: allowCritical,
                 existing: existingLock,
                 rid: string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid,
-                latestInstallable: latestInstallable);
+                latestInstallable: latestInstallable
+            );
 
             // The ambiguity check below asks the sources for each bare name
             // before the run does. Both halves collect into one list and
@@ -1165,7 +1313,14 @@ public sealed class SeikoClient
                             addition.Path!,
                             root,
                             storePath,
-                            DeclaredOriginName(config, root, OriginPaths.Resolve(addition.Path!, root)))));
+                            DeclaredOriginName(
+                                config,
+                                root,
+                                OriginPaths.Resolve(addition.Path!, root)
+                            )
+                        )
+                    )
+                );
             }
 
             precheck.ThrowIfAny();
@@ -1178,15 +1333,18 @@ public sealed class SeikoClient
         var preSession = new DownloadSession(jobs, cancellationToken);
         try
         {
-            if (defaultRangeTargets.Count > 0
+            if (
+                defaultRangeTargets.Count > 0
                 || (existingLock is not null && removedNames.Count > 0)
-                || (bare.Count > 0 && config.Sources.Count > 0))
+                || (bare.Count > 0 && config.Sources.Count > 0)
+            )
             {
                 // The scope owns the session from here, so a failing source
                 // constructor still disposes everything already built.
                 preloaded = new SourceScope(
                     LoadSources(config, root, proxy, preSession, storePath, offline),
-                    preSession);
+                    preSession
+                );
             }
 
             if (bare.Count > 0 && config.Sources.Count > 0)
@@ -1198,11 +1356,17 @@ public sealed class SeikoClient
                     config,
                     preloaded!.Sources.Where(source => source is not OriginSource).ToList(),
                     root,
-                    storePath);
+                    storePath
+                );
             }
 
-            if (preloaded is not null && (defaultRangeTargets.Count > 0
-                || (existingLock is not null && removedNames.Count > 0)))
+            if (
+                preloaded is not null
+                && (
+                    defaultRangeTargets.Count > 0
+                    || (existingLock is not null && removedNames.Count > 0)
+                )
+            )
             {
                 var rid = string.IsNullOrWhiteSpace(config.Rid) ? DefaultRid() : config.Rid;
                 var resolved = new Resolver(
@@ -1212,12 +1376,19 @@ public sealed class SeikoClient
                     allowPrerelease,
                     updateNames: null,
                     latestInstallable,
-                    allowCritical).Resolve(config.Sei);
+                    allowCritical
+                ).Resolve(config.Sei);
 
                 foreach (var target in defaultRangeTargets)
                 {
-                    var selected = resolved.FirstOrDefault(sei => string.Equals(sei.Name, target.Name, StringComparison.Ordinal))
-                        ?? throw new SeikoException($"no resolved version for {target.Name}", "resolve");
+                    var selected =
+                        resolved.FirstOrDefault(sei =>
+                            string.Equals(sei.Name, target.Name, StringComparison.Ordinal)
+                        )
+                        ?? throw new SeikoException(
+                            $"no resolved version for {target.Name}",
+                            "resolve"
+                        );
                     target.Version = DefaultAddRange(selected.ParsedVersion);
                 }
 
@@ -1248,33 +1419,37 @@ public sealed class SeikoClient
                     offline,
                     resetPreserved,
                     preloaded,
-                    config.Origin);
+                    config.Origin
+                );
             }
 
             return WriteSpecsAndSync(
                 root,
                 config.Sei,
                 config.Origin,
-                transaction => SyncLocked(
-                    root,
-                    storePath,
-                    allowPrerelease,
-                    SyncMode.Normal,
-                    jobs,
-                    proxy,
-                    progress,
-                    log,
-                    cancellationToken,
-                    updateNames: null,
-                    latestInstallable,
-                    allowCritical,
-                    transaction,
-                    adopt: adopt,
-                    force: force,
-                    offline: offline,
-                    resetPreserved: resetPreserved,
-                    preloaded: preloaded,
-                    originsOverrideAllowed: true));
+                transaction =>
+                    SyncLocked(
+                        root,
+                        storePath,
+                        allowPrerelease,
+                        SyncMode.Normal,
+                        jobs,
+                        proxy,
+                        progress,
+                        log,
+                        cancellationToken,
+                        updateNames: null,
+                        latestInstallable,
+                        allowCritical,
+                        transaction,
+                        adopt: adopt,
+                        force: force,
+                        offline: offline,
+                        resetPreserved: resetPreserved,
+                        preloaded: preloaded,
+                        originsOverrideAllowed: true
+                    )
+            );
         }
         finally
         {
@@ -1302,7 +1477,8 @@ public sealed class SeikoClient
         RootRegistry.Register(storePath, root);
         return ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+            $"install root {root}"
+        );
     }
 
     private static void RecoverUnlessPreview(string root, bool dryRun)
@@ -1332,8 +1508,9 @@ public sealed class SeikoClient
         bool offline = false,
         bool resetPreserved = false,
         SourceScope? preloaded = null,
-        IReadOnlyList<OriginSpec>? origins = null)
-        => SyncLocked(
+        IReadOnlyList<OriginSpec>? origins = null
+    ) =>
+        SyncLocked(
             root,
             storePath,
             allowPrerelease,
@@ -1355,14 +1532,16 @@ public sealed class SeikoClient
             force,
             offline,
             resetPreserved,
-            preloaded);
+            preloaded
+        );
 
     private static SyncResult WriteSpecsAndSync(
         string root,
         IReadOnlyList<SeiSpec> specs,
         IReadOnlyList<OriginSpec> origins,
         Func<DeploymentTransaction, SyncResult> sync,
-        Action<DeploymentTransaction>? afterConfigWrite = null)
+        Action<DeploymentTransaction>? afterConfigWrite = null
+    )
     {
         var stateDirectory = Path.Combine(root, ".seiko");
         DeploymentTransaction? transaction = null;
@@ -1386,7 +1565,8 @@ public sealed class SeikoClient
                 throw new SeikoException(
                     $"failed to restore the environment after a failed change: {restore.Message}",
                     "config",
-                    ex);
+                    ex
+                );
             }
 
             ExceptionDispatchInfo.Capture(ex).Throw();
@@ -1406,8 +1586,8 @@ public sealed class SeikoClient
     // the path and digest come from the lock and a missing file falls back to
     // the snapshot with that digest. Frozen and rollback both go through here
     // (ADR-0044).
-    internal static void BindLockedOrigins(IReadOnlyList<ISeiSource> sources, SeikoLock lockFile)
-        => LockReplay.Bind(sources, lockFile);
+    internal static void BindLockedOrigins(IReadOnlyList<ISeiSource> sources, SeikoLock lockFile) =>
+        LockReplay.Bind(sources, lockFile);
 
     // Records the bytes a run actually resolved, so a later replay or rollback
     // still has them after the original is deleted or rebuilt. Only origin
@@ -1427,11 +1607,14 @@ public sealed class SeikoClient
             // When the bytes came from a snapshot there is nothing to capture;
             // the path is the original only when the file still exists.
             var full = OriginPaths.Resolve(stored, origin.Root);
-            if (File.Exists(full)
+            if (
+                File.Exists(full)
                 && string.Equals(
                     Path.GetFullPath(sei.Artifact.Source.Url),
                     Path.GetFullPath(full),
-                    StringComparison.Ordinal))
+                    StringComparison.Ordinal
+                )
+            )
             {
                 OriginSnapshot.Capture(storePath, sei.Name, full, sei.Artifact.Source.Sha256);
             }
@@ -1444,7 +1627,8 @@ public sealed class SeikoClient
     // (ADR-0044).
     private static void EnsureOriginDigestsUnchanged(
         SeikoLock? existingLock,
-        IReadOnlyList<ResolvedSei> resolved)
+        IReadOnlyList<ResolvedSei> resolved
+    )
     {
         if (existingLock is null)
         {
@@ -1457,22 +1641,26 @@ public sealed class SeikoClient
             // Switching a name from an indexed package to a local file of the
             // same version is the point of the feature, so only a previous
             // origin lock can conflict.
-            if (sei.Source is not OriginSource
+            if (
+                sei.Source is not OriginSource
                 || !locked.TryGetValue(sei.Name, out var previous)
                 || previous.Source != OriginPaths.SourceId
                 || !string.Equals(previous.Version, sei.Version, StringComparison.Ordinal)
                 || string.Equals(
                     previous.Artifact.Sha256,
                     sei.Artifact.Source.Sha256,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 continue;
             }
 
             throw new SeikoException(
                 $"{sei.Name} {sei.Version}: the origin file still declares the locked version but its bytes changed "
-                + $"({previous.Artifact.Sha256} locked, {sei.Artifact.Source.Sha256} read)",
-                "checksum")
+                    + $"({previous.Artifact.Sha256} locked, {sei.Artifact.Source.Sha256} read)",
+                "checksum"
+            )
             {
                 Hint = "rebuild under a new version, or run `sk remove` and add the file again",
                 HintKey = "hint.origin-changed",
@@ -1480,14 +1668,15 @@ public sealed class SeikoClient
         }
     }
 
-    private static void RequireOnline(bool offline, bool dryRun, string command)
-        => RequireOnline(offline, dryRun, command, null);
+    private static void RequireOnline(bool offline, bool dryRun, string command) =>
+        RequireOnline(offline, dryRun, command, null);
 
     private static void RequireOnline(
         bool offline,
         bool dryRun,
         string command,
-        IReadOnlyList<AddSpecification>? additions)
+        IReadOnlyList<AddSpecification>? additions
+    )
     {
         if (!offline || dryRun)
         {
@@ -1496,12 +1685,14 @@ public sealed class SeikoClient
 
         // `add <path>` is a local input; `add <name>` re-resolves from
         // metadata, which offline cannot fetch (ADR-0044).
-        var needsNetwork = additions is null || additions.Any(addition => addition.Name is not null);
+        var needsNetwork =
+            additions is null || additions.Any(addition => addition.Name is not null);
         if (needsNetwork)
         {
             throw new SeikoException(
                 $"offline: {command} needs network metadata; use --dry-run --offline to preview from the cache",
-                "source");
+                "source"
+            );
         }
     }
 
@@ -1509,7 +1700,8 @@ public sealed class SeikoClient
         string specification,
         string root,
         string workingDirectory,
-        string storePath)
+        string storePath
+    )
     {
         // A path wins on shape alone, so `hello.sei` can never be a nice
         // accident. Once it looks like a path, `@range` is not accepted: one
@@ -1520,7 +1712,8 @@ public sealed class SeikoClient
             {
                 throw new SeikoException(
                     $"'{specification}' is a local file; drop the @range",
-                    "usage");
+                    "usage"
+                );
             }
 
             var full = OriginPaths.Normalize(specification, root, workingDirectory);
@@ -1551,7 +1744,8 @@ public sealed class SeikoClient
         SeikoConfig config,
         IReadOnlyList<ISeiSource> sources,
         string root,
-        string storePath)
+        string storePath
+    )
     {
         foreach (var addition in additions)
         {
@@ -1565,8 +1759,9 @@ public sealed class SeikoClient
             {
                 throw new SeikoException(
                     $"'{addition.Raw}' is both a local file and a sei in a source; "
-                    + $"write './{addition.Raw}' for the file or '{name}' for the source",
-                    "usage");
+                        + $"write './{addition.Raw}' for the file or '{name}' for the source",
+                    "usage"
+                );
             }
         }
     }
@@ -1583,8 +1778,11 @@ public sealed class SeikoClient
     // deleted original stays recognisable through its declaration.
     private static string? DeclaredOriginName(SeikoConfig config, string root, string storedPath)
     {
-        return config.Origin.FirstOrDefault(
-            origin => origin.Paths.Any(candidate => OriginPaths.SameFile(candidate, storedPath, root)))?.Name;
+        return config
+            .Origin.FirstOrDefault(origin =>
+                origin.Paths.Any(candidate => OriginPaths.SameFile(candidate, storedPath, root))
+            )
+            ?.Name;
     }
 
     // The file itself is gone; a snapshot can only be a best guess from the
@@ -1593,8 +1791,11 @@ public sealed class SeikoClient
     {
         var folder = OriginSnapshot.Folder(storePath);
         return Directory.Exists(folder)
-            && Directory.EnumerateFiles(folder, "*.sei").Any(
-                snapshot => OriginPaths.StemMatches(storedPath, OriginSnapshot.NameOf(snapshot)));
+            && Directory
+                .EnumerateFiles(folder, "*.sei")
+                .Any(snapshot =>
+                    OriginPaths.StemMatches(storedPath, OriginSnapshot.NameOf(snapshot))
+                );
     }
 
     private sealed record AddSpecification(string? Name, string? Version, string? Path, string Raw);
@@ -1616,7 +1817,8 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
-        bool resetPreserved = false)
+        bool resetPreserved = false
+    )
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(name))
@@ -1628,13 +1830,13 @@ public sealed class SeikoClient
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        using var rootLock = dryRun
-            ? null
-            : EnterRoot(storePath, root);
+        using var rootLock = dryRun ? null : EnterRoot(storePath, root);
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
-        var removedSei = config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)) > 0;
+        var removedSei =
+            config.Sei.RemoveAll(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))
+            > 0;
         if (!removedSei)
         {
             throw new SeikoException($"{name} is not a direct dependency", "resolve");
@@ -1642,7 +1844,9 @@ public sealed class SeikoClient
 
         // The origin entry is only the address of the bytes; it goes with the
         // declaration, or the next load sees an origin without a sei (ADR-0044).
-        config.Origin.RemoveAll(origin => string.Equals(origin.Name, name, StringComparison.Ordinal));
+        config.Origin.RemoveAll(origin =>
+            string.Equals(origin.Name, name, StringComparison.Ordinal)
+        );
 
         var existingLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
         SourceScope? preloaded = null;
@@ -1653,7 +1857,8 @@ public sealed class SeikoClient
             {
                 preloaded = new SourceScope(
                     LoadSources(config, root, proxy, preSession, storePath, offline),
-                    preSession);
+                    preSession
+                );
             }
 
             if (preloaded is not null)
@@ -1666,12 +1871,14 @@ public sealed class SeikoClient
                     allowPrerelease,
                     updateNames: null,
                     latestInstallable,
-                    allowCritical).Resolve(config.Sei);
+                    allowCritical
+                ).Resolve(config.Sei);
                 EnsureRemoveKeepsSelections(
                     existingLock!,
                     resolved,
                     new HashSet<string>(StringComparer.Ordinal) { name },
-                    new HashSet<string>(StringComparer.Ordinal));
+                    new HashSet<string>(StringComparer.Ordinal)
+                );
             }
 
             if (dryRun)
@@ -1695,39 +1902,43 @@ public sealed class SeikoClient
                     offline,
                     resetPreserved,
                     preloaded,
-                    config.Origin);
+                    config.Origin
+                );
             }
 
             return WriteSpecsAndSync(
                 root,
                 config.Sei,
                 config.Origin,
-                transaction => SyncLocked(
-                    root,
-                    storePath,
-                    allowPrerelease,
-                    SyncMode.Normal,
-                    jobs,
-                    proxy,
-                    progress,
-                    log,
-                    cancellationToken,
-                    updateNames: null,
-                    latestInstallable,
-                    allowCritical,
-                    transaction,
-                    adopt: adopt,
-                    force: force,
-                    offline: offline,
-                    resetPreserved: resetPreserved,
-                    preloaded: preloaded),
+                transaction =>
+                    SyncLocked(
+                        root,
+                        storePath,
+                        allowPrerelease,
+                        SyncMode.Normal,
+                        jobs,
+                        proxy,
+                        progress,
+                        log,
+                        cancellationToken,
+                        updateNames: null,
+                        latestInstallable,
+                        allowCritical,
+                        transaction,
+                        adopt: adopt,
+                        force: force,
+                        offline: offline,
+                        resetPreserved: resetPreserved,
+                        preloaded: preloaded
+                    ),
                 purge
                     ? transaction =>
                     {
                         transaction.MoveToTrash(PurgeConfigPath(name));
                         transaction.MoveToTrash(PurgeDataPath(name));
                     }
-                    : null);
+                    : null
+            );
         }
         finally
         {
@@ -1744,11 +1955,9 @@ public sealed class SeikoClient
         }
     }
 
-    internal static string PurgeConfigPath(string name)
-        => $"config/seiko/{name}.conf";
+    internal static string PurgeConfigPath(string name) => $"config/seiko/{name}.conf";
 
-    internal static string PurgeDataPath(string name)
-        => $"data/seiko/{name}";
+    internal static string PurgeDataPath(string name) => $"data/seiko/{name}";
 
     public SyncResult Update(
         string root,
@@ -1767,21 +1976,23 @@ public sealed class SeikoClient
         bool adopt = false,
         bool force = false,
         bool offline = false,
-        bool resetPreserved = false)
+        bool resetPreserved = false
+    )
     {
         root = Path.GetFullPath(root);
         if (latest && latestInstallable)
         {
-            throw new SeikoException("--latest and --latest-installable are mutually exclusive", "usage");
+            throw new SeikoException(
+                "--latest and --latest-installable are mutually exclusive",
+                "usage"
+            );
         }
 
         RequireOnline(offline, dryRun, "update");
 
         cancellationToken.ThrowIfCancellationRequested();
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        using var rootLock = dryRun
-            ? null
-            : EnterRoot(storePath, root);
+        using var rootLock = dryRun ? null : EnterRoot(storePath, root);
         RecoverUnlessPreview(root, dryRun);
 
         var config = ConfigLoader.Load(root);
@@ -1792,7 +2003,9 @@ public sealed class SeikoClient
         }
         else
         {
-            var sei = config.Sei.FirstOrDefault(spec => string.Equals(spec.Name, name, StringComparison.Ordinal));
+            var sei = config.Sei.FirstOrDefault(spec =>
+                string.Equals(spec.Name, name, StringComparison.Ordinal)
+            );
             if (sei is null)
             {
                 throw new SeikoException($"{name} is not a direct dependency", "resolve");
@@ -1813,45 +2026,56 @@ public sealed class SeikoClient
                 // is fetched twice.
                 preloaded = new SourceScope(
                     LoadSources(config, root, proxy, preSession, storePath, offline),
-                    preSession);
+                    preSession
+                );
             }
 
             if (writeConfig)
             {
                 foreach (var target in targets)
                 {
-                    var version = FindLatestVersion(preloaded!.Sources, target.Name, allowPrerelease, allowCritical)
-                        ?? throw new SeikoException($"no version of {target.Name} found in any source", "source")
+                    var version =
+                        FindLatestVersion(
+                            preloaded!.Sources,
+                            target.Name,
+                            allowPrerelease,
+                            allowCritical
+                        )
+                        ?? throw new SeikoException(
+                            $"no version of {target.Name} found in any source",
+                            "source"
+                        )
                         {
-                            Hint = "check the name, run `sk source status`, or allow pre-releases with --pre",
+                            Hint =
+                                "check the name, run `sk source status`, or allow pre-releases with --pre",
                             HintKey = "hint.source",
                         };
                     target.Version = $"[{version}]";
                 }
             }
 
-            var updateNames = targets
-                .Select(spec => spec.Name)
-                .ToHashSet(StringComparer.Ordinal);
-            SyncResult Sync(DeploymentTransaction? transaction) => SyncLocked(
-                root,
-                storePath,
-                allowPrerelease,
-                SyncMode.Normal,
-                jobs,
-                proxy,
-                progress,
-                log,
-                cancellationToken,
-                updateNames,
-                latestInstallable,
-                allowCritical,
-                transaction,
-                adopt: adopt,
-                force: force,
-                offline: offline,
-                resetPreserved: resetPreserved,
-                preloaded: preloaded);
+            var updateNames = targets.Select(spec => spec.Name).ToHashSet(StringComparer.Ordinal);
+            SyncResult Sync(DeploymentTransaction? transaction) =>
+                SyncLocked(
+                    root,
+                    storePath,
+                    allowPrerelease,
+                    SyncMode.Normal,
+                    jobs,
+                    proxy,
+                    progress,
+                    log,
+                    cancellationToken,
+                    updateNames,
+                    latestInstallable,
+                    allowCritical,
+                    transaction,
+                    adopt: adopt,
+                    force: force,
+                    offline: offline,
+                    resetPreserved: resetPreserved,
+                    preloaded: preloaded
+                );
 
             if (dryRun)
             {
@@ -1873,11 +2097,17 @@ public sealed class SeikoClient
                     force,
                     offline,
                     resetPreserved,
-                    preloaded);
+                    preloaded
+                );
             }
 
             return writeConfig
-                ? WriteSpecsAndSync(root, config.Sei, config.Origin, transaction => Sync(transaction))
+                ? WriteSpecsAndSync(
+                    root,
+                    config.Sei,
+                    config.Origin,
+                    transaction => Sync(transaction)
+                )
                 : Sync(null);
         }
         finally
@@ -1899,7 +2129,8 @@ public sealed class SeikoClient
         IReadOnlyList<ISeiSource> sources,
         string name,
         bool allowPrerelease,
-        bool allowCritical)
+        bool allowCritical
+    )
     {
         foreach (var source in sources)
         {
@@ -1912,9 +2143,11 @@ public sealed class SeikoClient
             NuGetVersion? best = null;
             foreach (var entry in index.Versions)
             {
-                if (entry.Yanked
+                if (
+                    entry.Yanked
                     || (Retirement.IsCritical(entry) && !allowCritical)
-                    || !NuGetVersion.TryParse(entry.Version, out var version))
+                    || !NuGetVersion.TryParse(entry.Version, out var version)
+                )
                 {
                     continue;
                 }
@@ -1945,13 +2178,17 @@ public sealed class SeikoClient
         string? id = null,
         string? proxy = null,
         bool offline = false,
-        string? storeRoot = null)
+        string? storeRoot = null
+    )
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root, requireSources: false);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         var result = new List<SourceStatus>();
-        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        using var session = new DownloadSession(
+            DownloadSession.DefaultJobs,
+            CancellationToken.None
+        );
         foreach (var source in config.Sources)
         {
             if (id is not null && !string.Equals(source.Id, id, StringComparison.Ordinal))
@@ -1972,12 +2209,15 @@ public sealed class SeikoClient
 
             var catalog = built?.Catalog;
 
-            result.Add(new SourceStatus(
-                source.Id,
-                built is not null,
-                built?.Index.Sei?.Count,
-                catalog is not null,
-                problems));
+            result.Add(
+                new SourceStatus(
+                    source.Id,
+                    built is not null,
+                    built?.Index.Sei?.Count,
+                    catalog is not null,
+                    problems
+                )
+            );
             (built as IDisposable)?.Dispose();
         }
 
@@ -1999,7 +2239,8 @@ public sealed class SeikoClient
         string root,
         string id,
         string index,
-        IReadOnlyList<string>? tokenHosts = null)
+        IReadOnlyList<string>? tokenHosts = null
+    )
     {
         root = Path.GetFullPath(root);
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(index))
@@ -2009,7 +2250,8 @@ public sealed class SeikoClient
 
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+            $"install root {root}"
+        );
         // A pending transaction holds an older config backup; editing first
         // would let the next recovery silently undo this command (ADR-0019).
         Deployer.Recover(root, Path.Combine(root, ".seiko"));
@@ -2028,8 +2270,10 @@ public sealed class SeikoClient
         // A local index that does not exist would only fail at the next load,
         // after the config was rewritten. Check it now; an http(s) index is
         // not probed, so `source add` stays offline.
-        if (!index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            && !index.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (
+            !index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !index.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+        )
         {
             var indexPath = LocalSource.ResolvePath(index, root);
             if (!File.Exists(indexPath))
@@ -2042,12 +2286,14 @@ public sealed class SeikoClient
             }
         }
 
-        config.Sources.Add(new SourceConfig
-        {
-            Id = id,
-            Index = index,
-            TokenHosts = hosts.Count > 0 ? hosts : null,
-        });
+        config.Sources.Add(
+            new SourceConfig
+            {
+                Id = id,
+                Index = index,
+                TokenHosts = hosts.Count > 0 ? hosts : null,
+            }
+        );
         ConfigWriter.WriteSources(root, config.Sources);
         return config.Sources;
     }
@@ -2057,10 +2303,13 @@ public sealed class SeikoClient
         root = Path.GetFullPath(root);
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+            $"install root {root}"
+        );
         Deployer.Recover(root, Path.Combine(root, ".seiko"));
         var config = ConfigLoader.Load(root, requireSources: false);
-        var removed = config.Sources.RemoveAll(source => string.Equals(source.Id, id, StringComparison.Ordinal));
+        var removed = config.Sources.RemoveAll(source =>
+            string.Equals(source.Id, id, StringComparison.Ordinal)
+        );
         if (removed == 0)
         {
             throw new SeikoException($"source '{id}' not found", "source");
@@ -2096,7 +2345,8 @@ public sealed class SeikoClient
 
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+            $"install root {root}"
+        );
         Deployer.Recover(root, Path.Combine(root, ".seiko"));
         ConfigWriter.WriteRid(root, value);
         return string.IsNullOrWhiteSpace(value) ? null : value;
@@ -2136,7 +2386,8 @@ public sealed class SeikoClient
             staging.Count,
             stagingBytes,
             originFiles.Count,
-            originFiles.Sum(file => new FileInfo(file).Length));
+            originFiles.Sum(file => new FileInfo(file).Length)
+        );
     }
 
     public IReadOnlyList<CacheFinding> CacheVerify(string? storeRoot = null)
@@ -2161,11 +2412,14 @@ public sealed class SeikoClient
                 var actual = Hashing.Sha256File(snapshot);
                 if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
                 {
-                    findings.Add(new CacheFinding(
-                        "error",
-                        "cache-origin-corrupt",
-                        "origin snapshot content does not match its digest",
-                        snapshot));
+                    findings.Add(
+                        new CacheFinding(
+                            "error",
+                            "cache-origin-corrupt",
+                            "origin snapshot content does not match its digest",
+                            snapshot
+                        )
+                    );
                 }
             }
         }
@@ -2174,21 +2428,32 @@ public sealed class SeikoClient
         {
             var artifact = Path.GetFileName(directory);
             using var artifactLock = ProcessLock.TryAcquire(
-                Path.Combine(storePath, ".locks", artifact + ".lock"));
+                Path.Combine(storePath, ".locks", artifact + ".lock")
+            );
             if (artifactLock is null)
             {
-                findings.Add(new CacheFinding(
-                    "warning",
-                    "cache-busy",
-                    "artifact is busy; skipped",
-                    directory));
+                findings.Add(
+                    new CacheFinding(
+                        "warning",
+                        "cache-busy",
+                        "artifact is busy; skipped",
+                        directory
+                    )
+                );
                 continue;
             }
 
             var manifestPath = Path.Combine(directory, "sei.json");
             if (!File.Exists(manifestPath))
             {
-                findings.Add(new CacheFinding("error", "cache-missing", "artifact has no sei.json", directory));
+                findings.Add(
+                    new CacheFinding(
+                        "error",
+                        "cache-missing",
+                        "artifact has no sei.json",
+                        directory
+                    )
+                );
                 continue;
             }
 
@@ -2196,23 +2461,31 @@ public sealed class SeikoClient
             {
                 if (new FileInfo(manifestPath).Length > ArchiveLimits.MaxManifestBytes)
                 {
-                    findings.Add(new CacheFinding(
-                        "error",
-                        "cache-manifest",
-                        $"sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
-                        manifestPath));
+                    findings.Add(
+                        new CacheFinding(
+                            "error",
+                            "cache-manifest",
+                            $"sei.json exceeds the {ArchiveLimits.MaxManifestBytes}-byte limit",
+                            manifestPath
+                        )
+                    );
                     VerifyArtifactFiles(storePath, artifact, directory, findings);
                     continue;
                 }
 
                 var manifest = JsonSerializer.Deserialize(
                     File.ReadAllBytes(manifestPath),
-                    SeikoJsonContext.Default.SeiManifest);
-                if (manifest is null
+                    SeikoJsonContext.Default.SeiManifest
+                );
+                if (
+                    manifest is null
                     || manifest.SchemaVersion is < 2 or > SeiManifest.CurrentSchemaVersion
-                    || string.IsNullOrWhiteSpace(manifest.Name))
+                    || string.IsNullOrWhiteSpace(manifest.Name)
+                )
                 {
-                    findings.Add(new CacheFinding("error", "cache-manifest", "invalid sei.json", directory));
+                    findings.Add(
+                        new CacheFinding("error", "cache-manifest", "invalid sei.json", directory)
+                    );
                 }
             }
             catch (Exception ex)
@@ -2233,19 +2506,20 @@ public sealed class SeikoClient
             using var artifactLock = StoreStaging.TryLock(storePath, artifact);
             if (artifactLock is null)
             {
-                findings.Add(new CacheFinding(
-                    "warning",
-                    "cache-busy",
-                    "artifact is busy; skipped",
-                    staging));
+                findings.Add(
+                    new CacheFinding("warning", "cache-busy", "artifact is busy; skipped", staging)
+                );
                 continue;
             }
 
-            findings.Add(new CacheFinding(
-                "warning",
-                "cache-staging",
-                "incomplete extraction; run `sk cache clean`",
-                staging));
+            findings.Add(
+                new CacheFinding(
+                    "warning",
+                    "cache-staging",
+                    "incomplete extraction; run `sk cache clean`",
+                    staging
+                )
+            );
         }
 
         return findings;
@@ -2255,15 +2529,19 @@ public sealed class SeikoClient
         string storePath,
         string artifact,
         string directory,
-        List<CacheFinding> findings)
+        List<CacheFinding> findings
+    )
     {
         if (PathSafety.IsLink(directory))
         {
-            findings.Add(new CacheFinding(
-                "error",
-                "cache-corrupt",
-                "artifact directory is a link",
-                directory));
+            findings.Add(
+                new CacheFinding(
+                    "error",
+                    "cache-corrupt",
+                    "artifact directory is a link",
+                    directory
+                )
+            );
             return;
         }
 
@@ -2291,11 +2569,14 @@ public sealed class SeikoClient
                 if (PathSafety.IsLink(entry))
                 {
                     links.Add(relative);
-                    findings.Add(new CacheFinding(
-                        "error",
-                        "cache-corrupt",
-                        $"artifact path {relative} is a link",
-                        entry));
+                    findings.Add(
+                        new CacheFinding(
+                            "error",
+                            "cache-corrupt",
+                            $"artifact path {relative} is a link",
+                            entry
+                        )
+                    );
                     continue;
                 }
 
@@ -2320,11 +2601,14 @@ public sealed class SeikoClient
         var state = StoreDigests.TryRead(storePath, artifact);
         if (state is null)
         {
-            findings.Add(new CacheFinding(
-                "warning",
-                "cache-meta",
-                "artifact has no valid digest record; run `sk sync` to repair it",
-                directory));
+            findings.Add(
+                new CacheFinding(
+                    "warning",
+                    "cache-meta",
+                    "artifact has no valid digest record; run `sk sync` to repair it",
+                    directory
+                )
+            );
             return;
         }
 
@@ -2340,11 +2624,14 @@ public sealed class SeikoClient
             var path = Path.Combine(directory, file.Path.Replace('/', Path.DirectorySeparatorChar));
             if (!files.Contains(file.Path))
             {
-                findings.Add(new CacheFinding(
-                    "error",
-                    "cache-missing-file",
-                    $"artifact file {file.Path} is missing",
-                    directory));
+                findings.Add(
+                    new CacheFinding(
+                        "error",
+                        "cache-missing-file",
+                        $"artifact file {file.Path} is missing",
+                        directory
+                    )
+                );
                 continue;
             }
 
@@ -2353,11 +2640,14 @@ public sealed class SeikoClient
                 var actual = Hashing.Sha256File(path);
                 if (!actual.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
-                    findings.Add(new CacheFinding(
-                        "error",
-                        "cache-corrupt",
-                        $"artifact file {file.Path} has changed",
-                        path));
+                    findings.Add(
+                        new CacheFinding(
+                            "error",
+                            "cache-corrupt",
+                            $"artifact file {file.Path} has changed",
+                            path
+                        )
+                    );
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -2370,11 +2660,14 @@ public sealed class SeikoClient
         {
             if (!listed.Contains(file))
             {
-                findings.Add(new CacheFinding(
-                    "warning",
-                    "cache-unlisted",
-                    $"artifact file {file} is not in the digest record",
-                    Path.Combine(directory, file.Replace('/', Path.DirectorySeparatorChar))));
+                findings.Add(
+                    new CacheFinding(
+                        "warning",
+                        "cache-unlisted",
+                        $"artifact file {file} is not in the digest record",
+                        Path.Combine(directory, file.Replace('/', Path.DirectorySeparatorChar))
+                    )
+                );
             }
         }
     }
@@ -2392,8 +2685,10 @@ public sealed class SeikoClient
         // publish a new lock between reading references and deleting.
         using var registryLock = ProcessLock.Acquire(
             Path.Combine(storePath, "roots.lock"),
-            "store root registry");
-        var roots = RootRegistry.Read(storePath)
+            "store root registry"
+        );
+        var roots = RootRegistry
+            .Read(storePath)
             .Append(root)
             .Distinct(comparer)
             .Where(Directory.Exists)
@@ -2409,9 +2704,12 @@ public sealed class SeikoClient
                     continue;
                 }
 
-                rootLocks.Add(ProcessLock.Acquire(
-                    Path.Combine(registered, ".seiko", "install.lock"),
-                    $"install root {registered}"));
+                rootLocks.Add(
+                    ProcessLock.Acquire(
+                        Path.Combine(registered, ".seiko", "install.lock"),
+                        $"install root {registered}"
+                    )
+                );
             }
 
             var referenced = new HashSet<string>(StringComparer.Ordinal);
@@ -2436,8 +2734,10 @@ public sealed class SeikoClient
                 }
             }
 
-            if (referenced.Count == 0
-                && LockFile.Read(Path.Combine(root, "seiko.lock.json")) is null)
+            if (
+                referenced.Count == 0
+                && LockFile.Read(Path.Combine(root, "seiko.lock.json")) is null
+            )
             {
                 throw new SeikoException("no lock; run `sk sync`", "lock");
             }
@@ -2461,7 +2761,8 @@ public sealed class SeikoClient
                 // pull a directory out from under TryGet/EnsureAsync. Busy
                 // artifacts are skipped and picked up by the next clean (ADR-0024).
                 using var artifactLock = ProcessLock.TryAcquire(
-                    Path.Combine(storePath, ".locks", name + ".lock"));
+                    Path.Combine(storePath, ".locks", name + ".lock")
+                );
                 if (artifactLock is null)
                 {
                     continue;
@@ -2476,11 +2777,19 @@ public sealed class SeikoClient
                 }
                 catch (IOException ex)
                 {
-                    throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+                    throw new SeikoException(
+                        $"could not remove {directory}: {ex.Message}",
+                        "io",
+                        ex
+                    );
                 }
                 catch (UnauthorizedAccessException ex)
                 {
-                    throw new SeikoException($"could not remove {directory}: {ex.Message}", "io", ex);
+                    throw new SeikoException(
+                        $"could not remove {directory}: {ex.Message}",
+                        "io",
+                        ex
+                    );
                 }
             }
 
@@ -2491,8 +2800,12 @@ public sealed class SeikoClient
             {
                 // A killed capture leaves a temp file behind; it is never
                 // referenced, so it always goes (ADR-0044).
-                foreach (var leftover in Directory.EnumerateFiles(
-                    snapshotDirectory, "*" + OriginSnapshot.TempSuffix + "*"))
+                foreach (
+                    var leftover in Directory.EnumerateFiles(
+                        snapshotDirectory,
+                        "*" + OriginSnapshot.TempSuffix + "*"
+                    )
+                )
                 {
                     try
                     {
@@ -2502,7 +2815,11 @@ public sealed class SeikoClient
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
-                        throw new SeikoException($"could not remove {leftover}: {ex.Message}", "io", ex);
+                        throw new SeikoException(
+                            $"could not remove {leftover}: {ex.Message}",
+                            "io",
+                            ex
+                        );
                     }
                 }
 
@@ -2510,9 +2827,8 @@ public sealed class SeikoClient
                 {
                     var file = Path.GetFileName(snapshot);
                     var dash = file.LastIndexOf('-');
-                    var digest = dash < 0
-                        ? ""
-                        : Path.GetFileNameWithoutExtension(file[(dash + 1)..]);
+                    var digest =
+                        dash < 0 ? "" : Path.GetFileNameWithoutExtension(file[(dash + 1)..]);
                     if (referenced.Contains(digest))
                     {
                         continue;
@@ -2526,7 +2842,11 @@ public sealed class SeikoClient
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
-                        throw new SeikoException($"could not remove {snapshot}: {ex.Message}", "io", ex);
+                        throw new SeikoException(
+                            $"could not remove {snapshot}: {ex.Message}",
+                            "io",
+                            ex
+                        );
                     }
                 }
             }
@@ -2582,13 +2902,12 @@ public sealed class SeikoClient
     private static List<string> OriginFiles(string storePath)
     {
         var folder = OriginSnapshot.Folder(storePath);
-        return Directory.Exists(folder)
-            ? Directory.EnumerateFiles(folder, "*.sei").ToList()
-            : [];
+        return Directory.Exists(folder) ? Directory.EnumerateFiles(folder, "*.sei").ToList() : [];
     }
 
-    private static IEnumerable<string> ArtifactDirectories(string storePath)
-        => Directory.EnumerateDirectories(storePath)
+    private static IEnumerable<string> ArtifactDirectories(string storePath) =>
+        Directory
+            .EnumerateDirectories(storePath)
             .Where(path =>
             {
                 var name = Path.GetFileName(path);
@@ -2605,9 +2924,7 @@ public sealed class SeikoClient
             {
                 size += new FileInfo(file).Length;
             }
-            catch (IOException)
-            {
-            }
+            catch (IOException) { }
         }
 
         return size;
@@ -2618,14 +2935,16 @@ public sealed class SeikoClient
         string? storeRoot = null,
         int? toGeneration = null,
         string? proxy = null,
-        bool offline = false)
+        bool offline = false
+    )
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
         RootRegistry.Register(storePath, root);
         using var rootLock = ProcessLock.Acquire(
             Path.Combine(root, ".seiko", "install.lock"),
-            $"install root {root}");
+            $"install root {root}"
+        );
         var stateDirectory = Path.Combine(root, ".seiko");
         Deployer.Recover(root, stateDirectory);
         var statePath = Path.Combine(stateDirectory, "state.json");
@@ -2634,13 +2953,17 @@ public sealed class SeikoClient
             throw new SeikoException("no local state; run `sk sync` first", "lock");
         }
 
-        var state = JsonSerializer.Deserialize(File.ReadAllBytes(statePath), SeikoJsonContext.Default.LocalState)
-            ?? throw new SeikoException("invalid local state", "lock");
+        var state =
+            JsonSerializer.Deserialize(
+                File.ReadAllBytes(statePath),
+                SeikoJsonContext.Default.LocalState
+            ) ?? throw new SeikoException("invalid local state", "lock");
         if (state.SchemaVersion != LocalState.CurrentSchemaVersion)
         {
             throw new SeikoException(
                 $"unsupported deployment state schemaVersion {state.SchemaVersion}",
-                "io");
+                "io"
+            );
         }
 
         var target = toGeneration ?? state.Generation - 1;
@@ -2678,29 +3001,40 @@ public sealed class SeikoClient
                 break;
             }
 
-            if (!string.Equals(stored.Manifest.Name, locked.Name, StringComparison.Ordinal)
+            if (
+                !string.Equals(stored.Manifest.Name, locked.Name, StringComparison.Ordinal)
                 || !NuGetVersion.TryParse(stored.Manifest.Version, out var storedVersion)
                 || !NuGetVersion.TryParse(locked.Version, out var lockedVersion)
-                || !storedVersion.Equals(lockedVersion))
+                || !storedVersion.Equals(lockedVersion)
+            )
             {
-                throw new SeikoException($"rollback: stored manifest mismatch for {locked.Name} {locked.Version}", "io");
+                throw new SeikoException(
+                    $"rollback: stored manifest mismatch for {locked.Name} {locked.Version}",
+                    "io"
+                );
             }
 
-            sei.Add(new DeployedSei(
-                locked.Name,
-                locked.Version,
-                stored.Directory,
-                stored.Manifest,
-                stored.Digests));
+            sei.Add(
+                new DeployedSei(
+                    locked.Name,
+                    locked.Version,
+                    stored.Directory,
+                    stored.Manifest,
+                    stored.Digests
+                )
+            );
         }
 
         if (needsFetch)
         {
-            using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+            using var session = new DownloadSession(
+                DownloadSession.DefaultJobs,
+                CancellationToken.None
+            );
             var sources = LoadSources(snapshotConfigInfo, root, proxy, session, storePath, offline);
             using var sourceScope = new SourceScope(sources);
-            var specs = snapshotLock.Sei
-                .Where(item => item.Direct)
+            var specs = snapshotLock
+                .Sei.Where(item => item.Direct)
                 .Select(item => new SeiSpec { Name = item.Name, Version = $"[{item.Version}]" })
                 .ToList();
             BindLockedOrigins(sources, snapshotLock);
@@ -2714,7 +3048,8 @@ public sealed class SeikoClient
                         item.Version,
                         stored.Directory,
                         stored.Manifest,
-                        stored.Digests);
+                        stored.Digests
+                    );
                 })
                 .ToList();
         }
@@ -2730,7 +3065,8 @@ public sealed class SeikoClient
             adoptedSnapshots: adoptedSnapshots,
             // The target generation's own file records decide what it
             // managed; the current state says nothing about it.
-            targetFiles: snapshotState.Files);
+            targetFiles: snapshotState.Files
+        );
 
         return new RollbackResult
         {
@@ -2740,7 +3076,11 @@ public sealed class SeikoClient
         };
     }
 
-    public RollbackPreview PreviewRollback(string root, int? toGeneration = null, string? storeRoot = null)
+    public RollbackPreview PreviewRollback(
+        string root,
+        int? toGeneration = null,
+        string? storeRoot = null
+    )
     {
         root = Path.GetFullPath(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
@@ -2748,7 +3088,8 @@ public sealed class SeikoClient
 
         // The same reader the sync preview uses: the plan may not pass a state
         // the run would reject (ADR-0040).
-        var state = ReadCurrentState(root)
+        var state =
+            ReadCurrentState(root)
             ?? throw new SeikoException("no local state; run `sk sync` first", "lock");
 
         var target = toGeneration ?? state.Generation - 1;
@@ -2768,7 +3109,8 @@ public sealed class SeikoClient
             : "";
         var configChanges = DiffLines(currentConfig, targetSnapshot.ConfigText, "config");
 
-        var currentLock = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+        var currentLock =
+            LockFile.Read(Path.Combine(root, "seiko.lock.json"))
             ?? throw new SeikoException("no lock; run `sk sync`", "lock");
         var lockChanges = DiffSei(currentLock, snapshotLock);
 
@@ -2785,11 +3127,13 @@ public sealed class SeikoClient
         // deployed file hashes: those are content digests inside the artifact,
         // never store directory names. Map missing artifacts back to the files
         // they own so the preview names the same downloads (ADR-0040).
-        var missingArtifacts = snapshotLock.Sei
-            .Where(sei => !StoreHas(store, sei.Artifact.Sha256))
+        var missingArtifacts = snapshotLock
+            .Sei.Where(sei => !StoreHas(store, sei.Artifact.Sha256))
             .Select(sei => sei.Name)
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var (path, record) in targetFiles.OrderBy(item => item.Key, StringComparer.Ordinal))
+        foreach (
+            var (path, record) in targetFiles.OrderBy(item => item.Key, StringComparer.Ordinal)
+        )
         {
             if (record.Adopted)
             {
@@ -2848,7 +3192,8 @@ public sealed class SeikoClient
             removed,
             replaced,
             adopted,
-            missing.Distinct(StringComparer.Ordinal).ToList());
+            missing.Distinct(StringComparer.Ordinal).ToList()
+        );
     }
 
     // Whether any sei in the target lock declares `path` as a preserve target.
@@ -2859,7 +3204,8 @@ public sealed class SeikoClient
     private static PreserveQuestion PreservedInTargetLock(
         Store store,
         SeikoLock snapshotLock,
-        string path)
+        string path
+    )
     {
         var unknown = false;
         foreach (var locked in snapshotLock.Sei)
@@ -2943,8 +3289,14 @@ public sealed class SeikoClient
             {
                 changes.Add($"+ sei: {name} {locked.Version}");
             }
-            else if (!string.Equals(old.Version, locked.Version, StringComparison.Ordinal)
-                || !string.Equals(old.Artifact.Sha256, locked.Artifact.Sha256, StringComparison.Ordinal))
+            else if (
+                !string.Equals(old.Version, locked.Version, StringComparison.Ordinal)
+                || !string.Equals(
+                    old.Artifact.Sha256,
+                    locked.Artifact.Sha256,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 changes.Add($"~ sei: {name} {old.Version} -> {locked.Version}");
             }
@@ -3010,13 +3362,16 @@ public sealed class SeikoClient
             // The file count of the current generation comes from live state;
             // older ones from their own snapshot.
             var fileCount = number == current ? files.Count : snapshot?.State.Files?.Count ?? 0;
-            generations.Add(new GenerationInfo(
-                number,
-                createdAt,
-                number == current,
-                snapshot?.Lock.Sei.Count ?? 0,
-                fileCount,
-                valid && (number != current || stateReadable)));
+            generations.Add(
+                new GenerationInfo(
+                    number,
+                    createdAt,
+                    number == current,
+                    snapshot?.Lock.Sei.Count ?? 0,
+                    fileCount,
+                    valid && (number != current || stateReadable)
+                )
+            );
         }
 
         return generations.OrderByDescending(item => item.Generation).ToList();
@@ -3032,9 +3387,14 @@ public sealed class SeikoClient
         byte[] ConfigBytes,
         string ConfigText,
         SeikoConfig Config,
-        IReadOnlyDictionary<string, string> AdoptedSnapshots);
+        IReadOnlyDictionary<string, string> AdoptedSnapshots
+    );
 
-    private static GenerationTarget ReadGenerationTarget(string root, string stateDirectory, int target)
+    private static GenerationTarget ReadGenerationTarget(
+        string root,
+        string stateDirectory,
+        int target
+    )
     {
         var directory = Path.Combine(stateDirectory, "generations", target.ToString());
         var lockPath = Path.Combine(directory, "lock.json");
@@ -3043,13 +3403,12 @@ public sealed class SeikoClient
             throw new SeikoException($"generation {target} not found", "lock");
         }
 
-        var lockFile = LockFile.Read(lockPath)
+        var lockFile =
+            LockFile.Read(lockPath)
             ?? throw new SeikoException($"generation {target} has no lock", "lock");
 
         var configPath = Path.Combine(directory, "seiko.conf");
-        PathSafety.EnsureNoLinks(
-            root,
-            Path.GetRelativePath(root, configPath).Replace('\\', '/'));
+        PathSafety.EnsureNoLinks(root, Path.GetRelativePath(root, configPath).Replace('\\', '/'));
         if (!File.Exists(configPath))
         {
             throw new SeikoException($"generation {target} has no config", "io");
@@ -3063,7 +3422,8 @@ public sealed class SeikoClient
         {
             throw new SeikoException(
                 $"generation {target} config selects rid '{rid}', but its lock targets '{lockFile.Target.Rid}'",
-                "io");
+                "io"
+            );
         }
 
         // The target generation's own state is what defines its deployment,
@@ -3079,7 +3439,8 @@ public sealed class SeikoClient
         {
             state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(statePath),
-                SeikoJsonContext.Default.LocalState);
+                SeikoJsonContext.Default.LocalState
+            );
         }
         catch (JsonException ex)
         {
@@ -3088,7 +3449,8 @@ public sealed class SeikoClient
             throw new SeikoException(
                 $"generation {target} has an invalid state ({ex.Message})",
                 "io",
-                ex);
+                ex
+            );
         }
 
         if (state is null)
@@ -3099,7 +3461,8 @@ public sealed class SeikoClient
         {
             throw new SeikoException(
                 $"generation {target} has unsupported state schemaVersion {state.SchemaVersion}",
-                "io");
+                "io"
+            );
         }
 
         if (state.Files is null)
@@ -3112,9 +3475,7 @@ public sealed class SeikoClient
         {
             if (record is null)
             {
-                throw new SeikoException(
-                    $"generation {target} has no record for {relative}",
-                    "io");
+                throw new SeikoException($"generation {target} has no record for {relative}", "io");
             }
 
             if (!record.Adopted)
@@ -3127,47 +3488,55 @@ public sealed class SeikoClient
             {
                 throw new SeikoException(
                     $"generation {target} is missing the adopted snapshot of {relative}",
-                    "io");
+                    "io"
+                );
             }
 
             // A damaged snapshot must not silently redefine the generation:
             // the recorded digest is the authority, not today's bytes.
-            if (!string.Equals(Hashing.Sha256File(snapshot), record.Sha256, StringComparison.Ordinal))
+            if (
+                !string.Equals(
+                    Hashing.Sha256File(snapshot),
+                    record.Sha256,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 throw new SeikoException(
                     $"generation {target} snapshot of adopted file {relative} is corrupted",
-                    "checksum");
+                    "checksum"
+                );
             }
 
             adoptedSnapshots[relative] = snapshot;
         }
 
-        return new GenerationTarget(lockFile, state, configBytes, configText, config, adoptedSnapshots);
+        return new GenerationTarget(
+            lockFile,
+            state,
+            configBytes,
+            configText,
+            config,
+            adoptedSnapshots
+        );
     }
 
     private static bool TryReadGenerationTarget(
         string root,
         string stateDirectory,
         int target,
-        out GenerationTarget? value)
+        out GenerationTarget? value
+    )
     {
         try
         {
             value = ReadGenerationTarget(root, stateDirectory, target);
             return true;
         }
-        catch (SeikoException)
-        {
-        }
-        catch (JsonException)
-        {
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (SeikoException) { }
+        catch (JsonException) { }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
 
         value = null;
         return false;
@@ -3183,9 +3552,9 @@ public sealed class SeikoClient
 
         try
         {
-            return JsonSerializer.Deserialize(
-                File.ReadAllBytes(path),
-                SeikoJsonContext.Default.GenerationMeta)?.CreatedAt;
+            return JsonSerializer
+                .Deserialize(File.ReadAllBytes(path), SeikoJsonContext.Default.GenerationMeta)
+                ?.CreatedAt;
         }
         catch (JsonException)
         {
@@ -3201,7 +3570,8 @@ public sealed class SeikoClient
         string? storeRoot = null,
         string? tag = null,
         string? license = null,
-        int? limit = null)
+        int? limit = null
+    )
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
@@ -3213,7 +3583,10 @@ public sealed class SeikoClient
             OfflineMetadata.VerifySearch(config, storePath, root);
         }
 
-        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        using var session = new DownloadSession(
+            DownloadSession.DefaultJobs,
+            CancellationToken.None
+        );
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -3224,8 +3597,7 @@ public sealed class SeikoClient
             // One catalog read replaces one request per name. When the source
             // has none, the per-name path below still runs unchanged.
             var catalog = source.Catalog;
-            var catalogued = catalog?.Sei
-                .ToDictionary(entry => entry.Name, StringComparer.Ordinal);
+            var catalogued = catalog?.Sei.ToDictionary(entry => entry.Name, StringComparer.Ordinal);
             foreach (var name in source.Index.Sei ?? new List<string>())
             {
                 if (seen.Contains(name))
@@ -3246,27 +3618,41 @@ public sealed class SeikoClient
                         continue;
                     }
 
-                    if (tag is not null
-                        && !(cached.Tags ?? []).Contains(tag, StringComparer.OrdinalIgnoreCase))
+                    if (
+                        tag is not null
+                        && !(cached.Tags ?? []).Contains(tag, StringComparer.OrdinalIgnoreCase)
+                    )
                     {
                         continue;
                     }
 
-                    if (license is not null
-                        && !string.Equals(cached.License, license, StringComparison.OrdinalIgnoreCase))
+                    if (
+                        license is not null
+                        && !string.Equals(
+                            cached.License,
+                            license,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                     {
                         continue;
                     }
 
-                    results.Add((cachedRank, new SeiSummary(
-                        name,
-                        cached.Version,
-                        source.Id,
-                        cached.Description,
-                        cached.Tags,
-                        cached.License,
-                        cached.Deprecated,
-                        cached.Advisory)));
+                    results.Add(
+                        (
+                            cachedRank,
+                            new SeiSummary(
+                                name,
+                                cached.Version,
+                                source.Id,
+                                cached.Description,
+                                cached.Tags,
+                                cached.License,
+                                cached.Deprecated,
+                                cached.Advisory
+                            )
+                        )
+                    );
                     continue;
                 }
 
@@ -3295,29 +3681,43 @@ public sealed class SeikoClient
                     continue;
                 }
 
-                if (tag is not null
-                    && !(sei.Project?.Tags ?? []).Contains(tag, StringComparer.OrdinalIgnoreCase))
+                if (
+                    tag is not null
+                    && !(sei.Project?.Tags ?? []).Contains(tag, StringComparer.OrdinalIgnoreCase)
+                )
                 {
                     continue;
                 }
 
-                if (license is not null
-                    && !string.Equals(sei.Project?.License, license, StringComparison.OrdinalIgnoreCase))
+                if (
+                    license is not null
+                    && !string.Equals(
+                        sei.Project?.License,
+                        license,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 {
                     continue;
                 }
 
-                results.Add((rank, new SeiSummary(
-                    name,
-                    latest.Version,
-                    source.Id,
-                    sei.Project?.Description,
-                    sei.Project?.Tags,
-                    sei.Project?.License,
-                    sei.Deprecated,
-                    // Package-wide, matching the catalog, not just the latest
-                    // version; otherwise a derived file changes the answer.
-                    CatalogFile.MostSevere(sei.Versions))));
+                results.Add(
+                    (
+                        rank,
+                        new SeiSummary(
+                            name,
+                            latest.Version,
+                            source.Id,
+                            sei.Project?.Description,
+                            sei.Project?.Tags,
+                            sei.Project?.License,
+                            sei.Deprecated,
+                            // Package-wide, matching the catalog, not just the latest
+                            // version; otherwise a derived file changes the answer.
+                            CatalogFile.MostSevere(sei.Versions)
+                        )
+                    )
+                );
             }
         }
 
@@ -3330,15 +3730,16 @@ public sealed class SeikoClient
         return (limit is > 0 ? ordered.Take(limit.Value) : ordered).ToList();
     }
 
-    private static bool Matches(string term, string name, ProjectMetadata? project, out int rank)
-        => Matches(term, name, project?.Description, project?.Tags, out rank);
+    private static bool Matches(string term, string name, ProjectMetadata? project, out int rank) =>
+        Matches(term, name, project?.Description, project?.Tags, out rank);
 
     private static bool Matches(
         string term,
         string name,
         string? description,
         IReadOnlyList<string>? tags,
-        out int rank)
+        out int rank
+    )
     {
         if (string.Equals(name, term, StringComparison.OrdinalIgnoreCase))
         {
@@ -3374,7 +3775,13 @@ public sealed class SeikoClient
         return false;
     }
 
-    public SeiInfo Info(string root, string name, string? proxy = null, bool offline = false, string? storeRoot = null)
+    public SeiInfo Info(
+        string root,
+        string name,
+        string? proxy = null,
+        bool offline = false,
+        string? storeRoot = null
+    )
     {
         root = Path.GetFullPath(root);
         var config = ConfigLoader.Load(root);
@@ -3387,7 +3794,10 @@ public sealed class SeikoClient
             OfflineMetadata.VerifyInfo(config, storePath, root, name);
         }
 
-        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        using var session = new DownloadSession(
+            DownloadSession.DefaultJobs,
+            CancellationToken.None
+        );
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
 
@@ -3399,8 +3809,12 @@ public sealed class SeikoClient
                 continue;
             }
 
-            var versions = sei.Versions
-                .OrderByDescending(entry => NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : new NuGetVersion(0, 0, 0))
+            var versions = sei
+                .Versions.OrderByDescending(entry =>
+                    NuGetVersion.TryParse(entry.Version, out var parsed)
+                        ? parsed
+                        : new NuGetVersion(0, 0, 0)
+                )
                 .Select(entry => new SeiVersionInfo(
                     entry.Version,
                     entry.Yanked,
@@ -3418,26 +3832,36 @@ public sealed class SeikoClient
                             artifact.Prerequisites ?? [],
                             artifact.OptionalPeers ?? [],
                             artifact.Conflicts ?? [],
-                            artifact.ExternalFiles is not null || artifact.ExternalArchives is not null
-                                ? ExternalFiles.Count(new ArtifactManifest
-                                {
-                                    ExternalFiles = artifact.ExternalFiles,
-                                    ExternalArchives = artifact.ExternalArchives,
-                                })
+                            artifact.ExternalFiles is not null
+                            || artifact.ExternalArchives is not null
+                                ? ExternalFiles.Count(
+                                    new ArtifactManifest
+                                    {
+                                        ExternalFiles = artifact.ExternalFiles,
+                                        ExternalArchives = artifact.ExternalArchives,
+                                    }
+                                )
                                 : artifact.External?.Files + artifact.External?.Archives ?? 0,
-                            artifact.ExternalFiles is not null || artifact.ExternalArchives is not null
-                                ? ExternalFiles.Hosts(new ArtifactManifest
-                                {
-                                    ExternalFiles = artifact.ExternalFiles,
-                                    ExternalArchives = artifact.ExternalArchives,
-                                }).ToList()
+                            artifact.ExternalFiles is not null
+                            || artifact.ExternalArchives is not null
+                                ? ExternalFiles
+                                    .Hosts(
+                                        new ArtifactManifest
+                                        {
+                                            ExternalFiles = artifact.ExternalFiles,
+                                            ExternalArchives = artifact.ExternalArchives,
+                                        }
+                                    )
+                                    .ToList()
                                 : artifact.External?.Hosts ?? [],
                             artifact.External is not null
                                 || artifact.ExternalFiles is not null
                                 || artifact.ExternalArchives is not null,
-                            artifact.DependencyGroups))
+                            artifact.DependencyGroups
+                        ))
                         .ToList(),
-                    IndexOverlay.IsSourceOrigin(entry)))
+                    IndexOverlay.IsSourceOrigin(entry)
+                ))
                 .ToList();
             return new SeiInfo(
                 name,
@@ -3446,12 +3870,18 @@ public sealed class SeikoClient
                 sei.Deprecated,
                 versions,
                 sei.Project,
-                sei.Upstream is null || !Uri.TryCreate(sei.Upstream.Url, UriKind.Absolute, out var upstream)
+                sei.Upstream is null
+                || !Uri.TryCreate(sei.Upstream.Url, UriKind.Absolute, out var upstream)
                     ? null
                     : upstream.Host,
                 sei.Upstream is not null,
-                IndexVerified: !string.Equals(source.Id, OriginPaths.SourceId, StringComparison.Ordinal),
-                OriginPaths: sei.OriginPaths);
+                IndexVerified: !string.Equals(
+                    source.Id,
+                    OriginPaths.SourceId,
+                    StringComparison.Ordinal
+                ),
+                OriginPaths: sei.OriginPaths
+            );
         }
 
         throw new SeikoException($"sei '{name}' not found in any source", "source")
@@ -3461,8 +3891,8 @@ public sealed class SeikoClient
         };
     }
 
-    public IReadOnlyList<IReadOnlyList<string>> Why(string root, string name)
-        => WhyDetailed(root, name)
+    public IReadOnlyList<IReadOnlyList<string>> Why(string root, string name) =>
+        WhyDetailed(root, name)
             .Select(chain => (IReadOnlyList<string>)chain.Select(link => link.Name).ToList())
             .ToList();
 
@@ -3472,7 +3902,8 @@ public sealed class SeikoClient
     public IReadOnlyList<IReadOnlyList<WhyLink>> WhyDetailed(string root, string name)
     {
         root = Path.GetFullPath(root);
-        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+        var lockFile =
+            LockFile.Read(Path.Combine(root, "seiko.lock.json"))
             ?? throw new SeikoException("no lock; run `sk sync`", "lock");
         var byName = lockFile.Sei.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
         if (!byName.ContainsKey(name))
@@ -3482,7 +3913,11 @@ public sealed class SeikoClient
 
         var chains = new List<IReadOnlyList<WhyLink>>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var direct in lockFile.Sei.Where(sei => sei.Direct).OrderBy(sei => sei.Name, StringComparer.Ordinal))
+        foreach (
+            var direct in lockFile
+                .Sei.Where(sei => sei.Direct)
+                .OrderBy(sei => sei.Name, StringComparer.Ordinal)
+        )
         {
             var path = new List<WhyLink>();
             var pending = new Stack<WhyFrame>();
@@ -3493,7 +3928,11 @@ public sealed class SeikoClient
                 if (!frame.Entered)
                 {
                     frame.Entered = true;
-                    if (path.Any(link => string.Equals(link.Name, frame.Name, StringComparison.Ordinal)))
+                    if (
+                        path.Any(link =>
+                            string.Equals(link.Name, frame.Name, StringComparison.Ordinal)
+                        )
+                    )
                     {
                         pending.Pop();
                         continue;
@@ -3502,7 +3941,10 @@ public sealed class SeikoClient
                     path.Add(new WhyLink(frame.Name, frame.Kind));
                     if (string.Equals(frame.Name, name, StringComparison.Ordinal))
                     {
-                        var key = string.Join("\0", path.Select(link => $"{link.Kind}:{link.Name}"));
+                        var key = string.Join(
+                            "\0",
+                            path.Select(link => $"{link.Kind}:{link.Name}")
+                        );
                         if (seen.Add(key))
                         {
                             chains.Add(path.ToList());
@@ -3545,8 +3987,9 @@ public sealed class SeikoClient
 
     // Dependencies first (they are the only kind that adds a target), then the
     // kinds that merely constrain an already present one.
-    private static List<(SeiDependency Edge, string Kind)> Edges(LockedSei locked)
-        => locked.Dependencies.Select(edge => (edge, "dependency"))
+    private static List<(SeiDependency Edge, string Kind)> Edges(LockedSei locked) =>
+        locked
+            .Dependencies.Select(edge => (edge, "dependency"))
             .Concat(locked.Artifact.Dependencies.Select(edge => (edge, "artifact dependency")))
             .Concat(locked.Prerequisites.Select(edge => (edge, "prerequisite")))
             .Concat(locked.Artifact.Prerequisites.Select(edge => (edge, "artifact prerequisite")))
@@ -3577,14 +4020,19 @@ public sealed class SeikoClient
         string? proxy = null,
         bool offline = false,
         string? storeRoot = null,
-        bool securityOnly = false)
+        bool securityOnly = false
+    )
     {
         root = Path.GetFullPath(root);
-        var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"))
+        var lockFile =
+            LockFile.Read(Path.Combine(root, "seiko.lock.json"))
             ?? throw new SeikoException("no lock; run `sk sync`", "lock");
         var config = ConfigLoader.Load(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        using var session = new DownloadSession(
+            DownloadSession.DefaultJobs,
+            CancellationToken.None
+        );
         // One unavailable source must not abort the whole audit: a locked
         // package whose source cannot be opened is `unknown`, and sources that
         // no lock entry uses are irrelevant (ADR-0039).
@@ -3631,57 +4079,60 @@ public sealed class SeikoClient
             // A syntactically valid but structurally broken mirror (null
             // version list or null entries) cannot answer the audit; treat it
             // as unknown rather than letting it throw outside the boundary.
-            if (index is null
-                || index.Versions is null
-                || index.Versions.Any(item => item is null))
+            if (index is null || index.Versions is null || index.Versions.Any(item => item is null))
             {
                 unknown.Add(locked.Name);
                 continue;
             }
 
-            var entry = index.Versions
-                .FirstOrDefault(item => string.Equals(item.Version, locked.Version, StringComparison.Ordinal));
+            var entry = index.Versions.FirstOrDefault(item =>
+                string.Equals(item.Version, locked.Version, StringComparison.Ordinal)
+            );
             if (entry is null)
             {
                 unknown.Add(locked.Name);
                 continue;
             }
 
-            var fix = index.Versions
-                .Where(item => !item.Yanked && item.Advisory is null
+            var fix = index
+                .Versions.Where(item =>
+                    !item.Yanked
+                    && item.Advisory is null
                     && NuGetVersion.TryParse(item.Version, out var parsed)
-                    && parsed.CompareTo(locked.Version) > 0)
+                    && parsed.CompareTo(locked.Version) > 0
+                )
                 .OrderByDescending(item => NuGetVersion.Parse(item.Version))
                 .Select(item => item.Version)
                 .FirstOrDefault();
 
             if (entry.Advisory is { } advisory)
             {
-                findings.Add(new AuditFinding(
-                    locked.Name,
-                    locked.Version,
-                    "advisory",
-                    advisory.Severity,
-                    advisory.Url,
-                    fix));
+                findings.Add(
+                    new AuditFinding(
+                        locked.Name,
+                        locked.Version,
+                        "advisory",
+                        advisory.Severity,
+                        advisory.Url,
+                        fix
+                    )
+                );
             }
 
             if (!securityOnly)
             {
                 if (entry.Yanked)
                 {
-                    findings.Add(new AuditFinding(locked.Name, locked.Version, "yanked", null, null, fix));
+                    findings.Add(
+                        new AuditFinding(locked.Name, locked.Version, "yanked", null, null, fix)
+                    );
                 }
 
                 if (!string.IsNullOrWhiteSpace(entry.Deprecated))
                 {
-                    findings.Add(new AuditFinding(
-                        locked.Name,
-                        locked.Version,
-                        "deprecated",
-                        null,
-                        null,
-                        fix));
+                    findings.Add(
+                        new AuditFinding(locked.Name, locked.Version, "deprecated", null, null, fix)
+                    );
                 }
             }
         }
@@ -3694,7 +4145,8 @@ public sealed class SeikoClient
         string? proxy = null,
         bool allowPrerelease = false,
         bool offline = false,
-        string? storeRoot = null)
+        string? storeRoot = null
+    )
     {
         root = Path.GetFullPath(root);
         var lockFile = LockFile.Read(Path.Combine(root, "seiko.lock.json"));
@@ -3705,15 +4157,19 @@ public sealed class SeikoClient
 
         var config = ConfigLoader.Load(root);
         var storePath = Path.GetFullPath(storeRoot ?? DefaultStorePath());
-        using var session = new DownloadSession(DownloadSession.DefaultJobs, CancellationToken.None);
+        using var session = new DownloadSession(
+            DownloadSession.DefaultJobs,
+            CancellationToken.None
+        );
         var sources = LoadSources(config, root, proxy, session, storePath, offline);
         using var sourceScope = new SourceScope(sources);
-        var rangeTexts = config.Sei
-            .GroupBy(spec => spec.Name, StringComparer.Ordinal)
+        var rangeTexts = config
+            .Sei.GroupBy(spec => spec.Name, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
                 group => group.Select(spec => spec.Version).ToList(),
-                StringComparer.Ordinal);
+                StringComparer.Ordinal
+            );
         var dependencyRanges = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var locked in lockFile.Sei)
         {
@@ -3769,18 +4225,24 @@ public sealed class SeikoClient
 
             NuGetVersion? latest = null;
             NuGetVersion? latestInRange = null;
-            var rid = string.IsNullOrWhiteSpace(lockFile.Target.Rid) ? DefaultRid() : lockFile.Target.Rid;
+            var rid = string.IsNullOrWhiteSpace(lockFile.Target.Rid)
+                ? DefaultRid()
+                : lockFile.Target.Rid;
             // A range that names a prerelease admits them, exactly as the
             // resolver decides; requiring --pre too would hide updates on a
             // prerelease line the user already chose (ADR-0004). The decision
             // reads the original constraints: intersecting them drops the
             // explicit prerelease endpoint.
-            var allowPrereleaseHere = allowPrerelease || parsedRanges.Any(Resolver.RangeAllowsPrerelease);
+            var allowPrereleaseHere =
+                allowPrerelease || parsedRanges.Any(Resolver.RangeAllowsPrerelease);
             var candidates = new List<NuGetVersion>();
             foreach (var entry in index.Versions)
             {
-                if (entry.Yanked || Retirement.IsCritical(entry)
-                    || !NuGetVersion.TryParse(entry.Version, out var version))
+                if (
+                    entry.Yanked
+                    || Retirement.IsCritical(entry)
+                    || !NuGetVersion.TryParse(entry.Version, out var version)
+                )
                 {
                     continue;
                 }
@@ -3808,24 +4270,29 @@ public sealed class SeikoClient
             NuGetVersion? latestInstallable = null;
             foreach (var version in candidates.OrderByDescending(candidate => candidate))
             {
-                if (IsInstallable(
-                    config,
-                    sources,
-                    lockFile,
-                    locked.Name,
-                    version,
-                    rid,
-                    allowPrereleaseHere))
+                if (
+                    IsInstallable(
+                        config,
+                        sources,
+                        lockFile,
+                        locked.Name,
+                        version,
+                        rid,
+                        allowPrereleaseHere
+                    )
+                )
                 {
                     latestInstallable = version;
                     break;
                 }
             }
 
-            if (latest is null
+            if (
+                latest is null
                 || !NuGetVersion.TryParse(locked.Version, out var current)
                 || (latestInRange is not null && latestInRange > current)
-                || latest > current)
+                || latest > current
+            )
             {
                 if (latest is not null)
                 {
@@ -3836,50 +4303,77 @@ public sealed class SeikoClient
                     var blockers = new List<OutdatedBlocker>();
                     foreach (var text in rangeTexts.GetValueOrDefault(locked.Name) ?? [])
                     {
-                        blockers.Add(new OutdatedBlocker("declaration", locked.Name, text, locked.Source));
+                        blockers.Add(
+                            new OutdatedBlocker("declaration", locked.Name, text, locked.Source)
+                        );
                     }
 
                     foreach (var owner in lockFile.Sei)
                     {
-                        foreach (var dependency in owner.Dependencies
-                            .Concat(owner.Artifact.Dependencies)
-                            .Where(dependency => string.Equals(dependency.Name, locked.Name, StringComparison.Ordinal)))
+                        foreach (
+                            var dependency in owner
+                                .Dependencies.Concat(owner.Artifact.Dependencies)
+                                .Where(dependency =>
+                                    string.Equals(
+                                        dependency.Name,
+                                        locked.Name,
+                                        StringComparison.Ordinal
+                                    )
+                                )
+                        )
                         {
-                            blockers.Add(new OutdatedBlocker(
-                                "dependency",
-                                owner.Name,
-                                dependency.Version,
-                                owner.Source));
+                            blockers.Add(
+                                new OutdatedBlocker(
+                                    "dependency",
+                                    owner.Name,
+                                    dependency.Version,
+                                    owner.Source
+                                )
+                            );
                         }
 
-                        foreach (var conflict in owner.Conflicts
-                            .Where(conflict => string.Equals(conflict.Name, locked.Name, StringComparison.Ordinal)))
+                        foreach (
+                            var conflict in owner.Conflicts.Where(conflict =>
+                                string.Equals(conflict.Name, locked.Name, StringComparison.Ordinal)
+                            )
+                        )
                         {
-                            blockers.Add(new OutdatedBlocker(
-                                "conflict",
-                                owner.Name,
-                                conflict.Version,
-                                owner.Source));
+                            blockers.Add(
+                                new OutdatedBlocker(
+                                    "conflict",
+                                    owner.Name,
+                                    conflict.Version,
+                                    owner.Source
+                                )
+                            );
                         }
                     }
 
                     var latestEntry = index.Versions.FirstOrDefault(entry =>
-                        NuGetVersion.TryParse(entry.Version, out var parsed) && parsed.Equals(latest));
-                    if (latestEntry is not null
+                        NuGetVersion.TryParse(entry.Version, out var parsed)
+                        && parsed.Equals(latest)
+                    );
+                    if (
+                        latestEntry is not null
                         && latestEntry.Artifacts.All(artifact =>
                             !string.IsNullOrWhiteSpace(artifact.Rid)
-                            && !artifact.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase)))
+                            && !artifact.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase)
+                        )
+                    )
                     {
                         blockers.Add(new OutdatedBlocker("rid", rid, null, locked.Source));
                     }
 
-                    result.Add(new OutdatedSei(
-                        locked.Name,
-                        locked.Version,
-                        latestInRange?.ToNormalizedString(),
-                        latest.ToNormalizedString(),
-                        latestInstallable?.ToNormalizedString(),
-                        blockers));
+                    result.Add(
+                        new OutdatedSei(
+                            locked.Name,
+                            locked.Version,
+                            latestInRange?.ToNormalizedString(),
+                            latest.ToNormalizedString(),
+                            latestInstallable?.ToNormalizedString(),
+                            blockers
+                        )
+                    );
                 }
             }
         }
@@ -3891,38 +4385,49 @@ public sealed class SeikoClient
         SeikoLock existing,
         IReadOnlyList<ResolvedSei> resolved,
         IReadOnlySet<string> removed,
-        IReadOnlySet<string> authorized)
+        IReadOnlySet<string> authorized
+    )
     {
         var byName = resolved.ToDictionary(sei => sei.Name, StringComparer.Ordinal);
         foreach (var locked in existing.Sei)
         {
-            if (removed.Contains(locked.Name)
+            if (
+                removed.Contains(locked.Name)
                 || authorized.Contains(locked.Name)
-                || !byName.TryGetValue(locked.Name, out var current))
+                || !byName.TryGetValue(locked.Name, out var current)
+            )
             {
                 continue;
             }
 
             // The group is part of the candidate: two selections can share
             // version, digest and rid and still install different sei.
-            if (string.Equals(locked.Version, current.Version, StringComparison.Ordinal)
+            if (
+                string.Equals(locked.Version, current.Version, StringComparison.Ordinal)
                 && string.Equals(
                     locked.Artifact.Sha256,
                     current.Artifact.Source.Sha256,
-                    StringComparison.OrdinalIgnoreCase)
+                    StringComparison.OrdinalIgnoreCase
+                )
                 && string.Equals(
                     locked.Artifact.Rid,
                     current.Artifact.Rid,
-                    StringComparison.OrdinalIgnoreCase)
-                && locked.Artifact.Group == current.GroupIndex)
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && locked.Artifact.Group == current.GroupIndex
+            )
             {
                 continue;
             }
 
-            var removedText = string.Join(", ", removed.OrderBy(name => name, StringComparer.Ordinal));
+            var removedText = string.Join(
+                ", ",
+                removed.OrderBy(name => name, StringComparer.Ordinal)
+            );
             throw new SeikoException(
                 $"remove {removedText} would change {locked.Name} from {locked.Version}/{locked.Artifact.Sha256} to {current.Version}/{current.Artifact.Source.Sha256}; use `add {locked.Name} --remove {removedText}` to authorize re-resolution, or `add P --remove {removedText}` to keep the current artifact",
-                "resolve");
+                "resolve"
+            );
         }
     }
 
@@ -3933,12 +4438,15 @@ public sealed class SeikoClient
         string name,
         NuGetVersion version,
         string rid,
-        bool allowPrerelease)
+        bool allowPrerelease
+    )
     {
-        var specs = config.Sei
-            .Select(spec => new SeiSpec { Name = spec.Name, Version = spec.Version })
+        var specs = config
+            .Sei.Select(spec => new SeiSpec { Name = spec.Name, Version = spec.Version })
             .ToList();
-        var direct = specs.Where(spec => string.Equals(spec.Name, name, StringComparison.Ordinal)).ToList();
+        var direct = specs
+            .Where(spec => string.Equals(spec.Name, name, StringComparison.Ordinal))
+            .ToList();
         if (direct.Count == 0)
         {
             specs.Add(new SeiSpec { Name = name, Version = $"[{version}]" });
@@ -3959,7 +4467,8 @@ public sealed class SeikoClient
                 rid,
                 allowPrerelease,
                 updateNames: new HashSet<string>(StringComparer.Ordinal) { name },
-                latestInstallable: true);
+                latestInstallable: true
+            );
             resolver.Resolve(specs);
             return true;
         }
@@ -3972,7 +4481,8 @@ public sealed class SeikoClient
     private static void AddRanges(
         List<VersionRange> parsed,
         IEnumerable<string?> texts,
-        string name)
+        string name
+    )
     {
         foreach (var rangeText in texts)
         {
@@ -3985,7 +4495,8 @@ public sealed class SeikoClient
             {
                 throw new SeikoException(
                     $"invalid version range '{rangeText}' for {name}",
-                    "config");
+                    "config"
+                );
             }
 
             parsed.Add(one);
@@ -4004,9 +4515,9 @@ public sealed class SeikoClient
                 Entry = entry,
                 Version = NuGetVersion.TryParse(entry.Version, out var parsed) ? parsed : null,
             })
-            .Where(item => item.Version is not null
-                && !item.Entry.Yanked
-                && !Retirement.IsCritical(item.Entry))
+            .Where(item =>
+                item.Version is not null && !item.Entry.Yanked && !Retirement.IsCritical(item.Entry)
+            )
             .ToList();
 
         var stable = candidates
@@ -4014,7 +4525,9 @@ public sealed class SeikoClient
             .OrderByDescending(item => item.Version)
             .FirstOrDefault();
 
-        return (stable ?? candidates.OrderByDescending(item => item.Version).FirstOrDefault())?.Entry;
+        return (
+            stable ?? candidates.OrderByDescending(item => item.Version).FirstOrDefault()
+        )?.Entry;
     }
 
     private static List<ISeiSource> LoadSources(
@@ -4023,7 +4536,8 @@ public sealed class SeikoClient
         string? proxy,
         DownloadSession session,
         string? storePath = null,
-        bool offline = false)
+        bool offline = false
+    )
     {
         // Origin entries answer before any configured source (ADR-0044).
         var sources = new List<ISeiSource>(config.Origin.Count + config.Sources.Count);
@@ -4061,10 +4575,13 @@ public sealed class SeikoClient
         string? proxy,
         DownloadSession session,
         string? storePath = null,
-        bool offline = false)
+        bool offline = false
+    )
     {
-        if (source.Index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || source.Index.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (
+            source.Index.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || source.Index.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+        )
         {
             return new HttpSource(source, proxy, session, storePath, offline);
         }
@@ -4072,16 +4589,17 @@ public sealed class SeikoClient
         return new LocalSource(source, root);
     }
 
-    public SeikoLock? ReadLock(string root)
-        => LockFile.Read(Path.Combine(Path.GetFullPath(root), "seiko.lock.json"));
+    public SeikoLock? ReadLock(string root) =>
+        LockFile.Read(Path.Combine(Path.GetFullPath(root), "seiko.lock.json"));
 
-    public static string DefaultRid()
-        => DefaultRidFor(
+    public static string DefaultRid() =>
+        DefaultRidFor(
             OperatingSystem.IsWindows() ? "win"
                 : OperatingSystem.IsLinux() ? "linux"
                 : OperatingSystem.IsMacOS() ? "osx"
                 : "unknown",
-            RuntimeInformation.ProcessArchitecture);
+            RuntimeInformation.ProcessArchitecture
+        );
 
     internal static string DefaultRidFor(string os, Architecture architecture)
     {
@@ -4111,12 +4629,14 @@ public sealed class SeikoClient
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "seiko",
-                "store");
+                "store"
+            );
         }
 
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".cache",
-            "seiko");
+            "seiko"
+        );
     }
 }

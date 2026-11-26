@@ -8,15 +8,19 @@ public sealed class SyncModeTests
     public void Sync_FrozenRequiresLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
 
         var error = Assert.Throws<SeikoException>(() =>
-            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Contains("--frozen", error.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -25,20 +29,25 @@ public sealed class SyncModeTests
     public void Sync_FrozenRejectsNullVersionListFromSourceJson()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "sei", "hello.json"),
-            """{"schemaVersion":2,"name":"hello","versions":null}""");
+            """{"schemaVersion":2,"name":"hello","versions":null}"""
+        );
 
         var error = Assert.Throws<SeikoException>(() =>
-            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Contains("has no versions", error.Message);
@@ -48,24 +57,35 @@ public sealed class SyncModeTests
     public void Sync_FrozenRejectsNewDirectSei()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"), new SpecFixture("other", "[1.0.0]"));
+        fixture.AddSei(
+            "other",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
+            }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0]"),
+            new SpecFixture("other", "[1.0.0]")
+        );
 
         var error = Assert.Throws<SeikoException>(() =>
-            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
         Assert.Contains("other", error.Message, StringComparison.Ordinal);
     }
 
@@ -73,11 +93,14 @@ public sealed class SyncModeTests
     public void Sync_FrozenRejectsRemovedDirectSei()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -85,7 +108,8 @@ public sealed class SyncModeTests
         fixture.WriteConfig("win-x64");
 
         var error = Assert.Throws<SeikoException>(() =>
-            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
         Assert.Contains("not declared", error.Message, StringComparison.Ordinal);
     }
 
@@ -93,11 +117,14 @@ public sealed class SyncModeTests
     public void Sync_FrozenReplaysLockedSetWhenDeclarationsMatch()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -112,17 +139,23 @@ public sealed class SyncModeTests
     public void Sync_FrozenRejectsAnIncompleteLockGraph()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("dep", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
-        });
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("dep", "[1.0.0]")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
+        fixture.AddSei(
+            "dep",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["dep.txt"] = "dep" } }],
+            }
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("dep", "[1.0.0]")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -131,8 +164,9 @@ public sealed class SyncModeTests
         lockFile.Sei.RemoveAll(entry => entry.Name == "dep");
         LockFile.Write(lockPath, lockFile);
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Contains("missing from the lock", error.Message);
@@ -142,11 +176,14 @@ public sealed class SyncModeTests
     public void Sync_FrozenMatchesNonCanonicalIndexVersions()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -161,24 +198,35 @@ public sealed class SyncModeTests
     public void Sync_LockedRejectsStaleLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
 
-        fixture.AddSei("other", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
-        });
-        fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"), new SpecFixture("other", "[1.0.0]"));
+        fixture.AddSei(
+            "other",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["other.txt"] = "other" } }],
+            }
+        );
+        fixture.WriteConfig(
+            "win-x64",
+            new SpecFixture("hello", "[1.0.0]"),
+            new SpecFixture("other", "[1.0.0]")
+        );
 
         var error = Assert.Throws<SeikoException>(() =>
-            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked));
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked)
+        );
         Assert.Contains("--locked", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -186,11 +234,14 @@ public sealed class SyncModeTests
     public void Sync_LockedAcceptsMatchingLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -204,11 +255,14 @@ public sealed class SyncModeTests
     public void Sync_LockedDoesNotRewriteLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -226,11 +280,14 @@ public sealed class SyncModeTests
     public void Sync_FrozenRejectsCrossPlatformLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -238,7 +295,8 @@ public sealed class SyncModeTests
         fixture.WriteConfig("linux-x64", new SpecFixture("hello", "[1.0.0]"));
 
         var error = Assert.Throws<SeikoException>(() =>
-            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
 
         Assert.Equal("lock", error.Code);
         Assert.Contains("win-x64", error.Message);
@@ -249,11 +307,14 @@ public sealed class SyncModeTests
     public void Sync_FrozenRejectsUnsatisfiedRange()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -261,7 +322,8 @@ public sealed class SyncModeTests
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[2.0.0]"));
 
         var error = Assert.Throws<SeikoException>(() =>
-            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen));
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Frozen)
+        );
         Assert.Contains("does not satisfy", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -12,18 +12,22 @@ internal static class ManifestFields
     public static (bool Preserve, bool DependencyGroups) Gated(byte[] manifest)
     {
         using var document = JsonDocument.Parse(manifest);
-        if (!document.RootElement.TryGetProperty("artifact", out var artifact)
-            || artifact.ValueKind != JsonValueKind.Object)
+        if (
+            !document.RootElement.TryGetProperty("artifact", out var artifact)
+            || artifact.ValueKind != JsonValueKind.Object
+        )
         {
             return (false, false);
         }
 
-        return (artifact.TryGetProperty("preserve", out _),
-                artifact.TryGetProperty("dependencyGroups", out _));
+        return (
+            artifact.TryGetProperty("preserve", out _),
+            artifact.TryGetProperty("dependencyGroups", out _)
+        );
     }
 
-    public static string? GatedText(bool preserve, bool groups)
-        => (preserve, groups) switch
+    public static string? GatedText(bool preserve, bool groups) =>
+        (preserve, groups) switch
         {
             (true, true) => "preserve or dependencyGroups",
             (true, false) => "preserve",

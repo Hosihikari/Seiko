@@ -7,7 +7,6 @@ internal interface ISourceWrapper
     ISeiSource InnerSource { get; }
 }
 
-
 // Owns one command's sources and, optionally, its download session. Add and
 // Remove pre-resolve, then sync again; handing the same scope to both keeps
 // the request caches warm instead of fetching the same metadata twice.

@@ -17,7 +17,8 @@ internal static class ExternalMaterializer
         string artifactSha,
         List<StoreFileDigest> digests,
         DownloadSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var artifact = manifest.Artifact!;
         var files = artifact.ExternalFiles ?? [];
@@ -33,7 +34,8 @@ internal static class ExternalMaterializer
         {
             throw new SeikoException(
                 $"{sei.Name}: a local source cannot serve external files",
-                "source");
+                "source"
+            );
         }
 
         // The artifact content tree may legitimately contain ".external/...";
@@ -43,7 +45,8 @@ internal static class ExternalMaterializer
         // ADR-0024).
         var staging = Path.Combine(
             stagingRoot,
-            artifactSha + ".ext-" + Guid.NewGuid().ToString("N"));
+            artifactSha + ".ext-" + Guid.NewGuid().ToString("N")
+        );
         var budget = new PackageBudget();
 
         // Every output target counts against the package entry budget, on top
@@ -52,7 +55,8 @@ internal static class ExternalMaterializer
         // precheck runs before the staging directory exists so a rejected
         // package leaves no trace.
         budget.AddEntries(
-            digests.Count + files.Count + archives.Sum(archive => archive.Members.Count));
+            digests.Count + files.Count + archives.Sum(archive => archive.Members.Count)
+        );
         Directory.CreateDirectory(staging);
         try
         {
@@ -82,12 +86,23 @@ internal static class ExternalMaterializer
                 };
                 var slot = Path.Combine(staging, Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(slot);
-                session.Log?.Invoke($"{sei.Name}: fetching external file {Urls.Redact(new Uri(url))}");
+                session.Log?.Invoke(
+                    $"{sei.Name}: fetching external file {Urls.Redact(new Uri(url))}"
+                );
                 sei.Source.DownloadAsync(sei.Name, location, slot, session, cancellationToken)
-                    .GetAwaiter().GetResult();
+                    .GetAwaiter()
+                    .GetResult();
 
                 var downloaded = Path.Combine(slot, "artifact");
-                Verify(downloaded, identity.Sha256, identity.Size, sei.Name, url, ArchiveLimits.MaxEntryBytes);                var length = new FileInfo(downloaded).Length;
+                Verify(
+                    downloaded,
+                    identity.Sha256,
+                    identity.Size,
+                    sei.Name,
+                    url,
+                    ArchiveLimits.MaxEntryBytes
+                );
+                var length = new FileInfo(downloaded).Length;
                 budget.AddDownload(length);
                 var firstDestination = Path.Combine(directory, group[0].Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(firstDestination)!);
@@ -102,12 +117,14 @@ internal static class ExternalMaterializer
                     }
 
                     budget.AddWritten(length);
-                    digests.Add(new StoreFileDigest
-                    {
-                        Path = group[index].Path,
-                        Sha256 = identity.Sha256,
-                        Size = length,
-                    });
+                    digests.Add(
+                        new StoreFileDigest
+                        {
+                            Path = group[index].Path,
+                            Sha256 = identity.Sha256,
+                            Size = length,
+                        }
+                    );
                 }
 
                 Delete(slot);
@@ -116,7 +133,9 @@ internal static class ExternalMaterializer
             // Repeated declarations of one URL describe the same download with
             // more members (ADR-0032: one archive is downloaded once), so merge
             // them before fetching.
-            var groups = new Dictionary<string, List<ExternalArchiveMember>>(StringComparer.Ordinal);
+            var groups = new Dictionary<string, List<ExternalArchiveMember>>(
+                StringComparer.Ordinal
+            );
             var identities = new Dictionary<string, ExternalArchive>(StringComparer.Ordinal);
             foreach (var archive in archives)
             {
@@ -142,9 +161,12 @@ internal static class ExternalMaterializer
                     Sha256 = identity.Sha256,
                     Size = identity.Size,
                 };
-                session.Log?.Invoke($"{sei.Name}: fetching external archive {Urls.Redact(new Uri(identity.Url))}");
+                session.Log?.Invoke(
+                    $"{sei.Name}: fetching external archive {Urls.Redact(new Uri(identity.Url))}"
+                );
                 sei.Source.DownloadAsync(sei.Name, location, slot, session, cancellationToken)
-                    .GetAwaiter().GetResult();
+                    .GetAwaiter()
+                    .GetResult();
                 var downloaded = Path.Combine(slot, "artifact");
                 Verify(
                     downloaded,
@@ -152,7 +174,8 @@ internal static class ExternalMaterializer
                     identity.Size,
                     sei.Name,
                     identity.Url,
-                    ArchiveLimits.MaxTotalBytes);
+                    ArchiveLimits.MaxTotalBytes
+                );
                 budget.AddDownload(new FileInfo(downloaded).Length);
 
                 var merged = new ExternalArchive
@@ -163,7 +186,15 @@ internal static class ExternalMaterializer
                     Size = identity.Size,
                     Members = members,
                 };
-                ExtractMembers(downloaded, merged, directory, sei, digests, budget, cancellationToken);
+                ExtractMembers(
+                    downloaded,
+                    merged,
+                    directory,
+                    sei,
+                    digests,
+                    budget,
+                    cancellationToken
+                );
                 Delete(slot);
             }
         }
@@ -180,14 +211,19 @@ internal static class ExternalMaterializer
         ResolvedSei sei,
         List<StoreFileDigest> digests,
         PackageBudget budget,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
-        var wanted = archive.Members
-            .GroupBy(member => ExternalFiles.NormalizeMember(member.Member), StringComparer.Ordinal)
+        var wanted = archive
+            .Members.GroupBy(
+                member => ExternalFiles.NormalizeMember(member.Member),
+                StringComparer.Ordinal
+            )
             .ToDictionary(
                 group => group.Key,
                 group => group.Select(member => member.Path).ToList(),
-                StringComparer.Ordinal);
+                StringComparer.Ordinal
+            );
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var state = new ArchiveReadState();
 
@@ -222,9 +258,10 @@ internal static class ExternalMaterializer
         else
         {
             using var file = File.OpenRead(downloaded);
-            using Stream tarStream = archive.Format == "tar.gz"
-                ? new GZipStream(file, CompressionMode.Decompress)
-                : file;
+            using Stream tarStream =
+                archive.Format == "tar.gz"
+                    ? new GZipStream(file, CompressionMode.Decompress)
+                    : file;
             using var reader = new TarReader(tarStream);
             while (reader.GetNextEntry(copyData: false) is { } entry)
             {
@@ -270,7 +307,15 @@ internal static class ExternalMaterializer
                 if (wanted.TryGetValue(name, out var targets))
                 {
                     seen.Add(name);
-                    WriteTargets(data, targets, directory, digests, state, budget, cancellationToken);
+                    WriteTargets(
+                        data,
+                        targets,
+                        directory,
+                        digests,
+                        state,
+                        budget,
+                        cancellationToken
+                    );
                 }
                 else if (!ReferenceEquals(data, Stream.Null))
                 {
@@ -287,7 +332,8 @@ internal static class ExternalMaterializer
             {
                 throw new SeikoException(
                     $"{sei.Name}: external archive does not contain '{name}'",
-                    "checksum");
+                    "checksum"
+                );
             }
         }
     }
@@ -298,7 +344,8 @@ internal static class ExternalMaterializer
         {
             throw new SeikoException(
                 $"{sei.Name}: external archive contains duplicate member '{name}'",
-                "checksum");
+                "checksum"
+            );
         }
     }
 
@@ -309,18 +356,22 @@ internal static class ExternalMaterializer
         List<StoreFileDigest> digests,
         ArchiveReadState state,
         PackageBudget budget,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var firstDestination = Path.Combine(directory, targets[0]);
         Directory.CreateDirectory(Path.GetDirectoryName(firstDestination)!);
 
         long size = 0;
         string sha256;
-        using (var output = new FileStream(
-            firstDestination,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None))
+        using (
+            var output = new FileStream(
+                firstDestination,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None
+            )
+        )
         using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
         {
             var buffer = new byte[81920];
@@ -353,16 +404,22 @@ internal static class ExternalMaterializer
             // Copying one member to several targets is write amplification and
             // counts against the package budget each time.
             budget.AddWritten(size);
-            digests.Add(new StoreFileDigest
-            {
-                Path = targets[index],
-                Sha256 = sha256,
-                Size = size,
-            });
+            digests.Add(
+                new StoreFileDigest
+                {
+                    Path = targets[index],
+                    Sha256 = sha256,
+                    Size = size,
+                }
+            );
         }
     }
 
-    private static void Drain(Stream stream, ArchiveReadState state, CancellationToken cancellationToken)
+    private static void Drain(
+        Stream stream,
+        ArchiveReadState state,
+        CancellationToken cancellationToken
+    )
     {
         var buffer = new byte[81920];
         int read;
@@ -415,7 +472,8 @@ internal static class ExternalMaterializer
         long size,
         string name,
         string label,
-        long maxBytes)
+        long maxBytes
+    )
     {
         // Errors may be persisted or handed to MCP callers; the label is a
         // signed URL and must not leak its query (ADR-0024).
@@ -425,14 +483,16 @@ internal static class ExternalMaterializer
         {
             throw new SeikoException(
                 $"{name}: external payload '{label}' is {length} bytes; the limit is {maxBytes}",
-                "checksum");
+                "checksum"
+            );
         }
 
         if (size > 0 && length != size)
         {
             throw new SeikoException(
                 $"{name}: external size mismatch for {label}: expected {size}, got {length}",
-                "checksum");
+                "checksum"
+            );
         }
 
         var actual = Hashing.Sha256File(path);
@@ -440,7 +500,8 @@ internal static class ExternalMaterializer
         {
             throw new SeikoException(
                 $"{name}: external checksum mismatch for {label}: expected {sha256}, got {actual}",
-                "checksum");
+                "checksum"
+            );
         }
     }
 
@@ -453,11 +514,7 @@ internal static class ExternalMaterializer
                 Directory.Delete(path, recursive: true);
             }
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 }

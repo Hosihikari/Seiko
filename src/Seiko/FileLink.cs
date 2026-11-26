@@ -17,10 +17,7 @@ internal static class FileLink
 {
     private const nuint FicLone = 0x40049409;
 
-    public static LinkKind Create(
-        string source,
-        string destination,
-        bool allowHardlink = true)
+    public static LinkKind Create(string source, string destination, bool allowHardlink = true)
     {
         if (TryReflink(source, destination))
         {
@@ -58,17 +55,29 @@ internal static class FileLink
             }
 
             bool cloned;
-            using (var sourceHandle = File.OpenHandle(source, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var destinationHandle = File.OpenHandle(
-                destination,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None))
+            using (
+                var sourceHandle = File.OpenHandle(
+                    source,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read
+                )
+            )
+            using (
+                var destinationHandle = File.OpenHandle(
+                    destination,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None
+                )
+            )
             {
-                cloned = Ioctl(
-                    destinationHandle.DangerousGetHandle().ToInt32(),
-                    FicLone,
-                    sourceHandle.DangerousGetHandle().ToInt32()) == 0;
+                cloned =
+                    Ioctl(
+                        destinationHandle.DangerousGetHandle().ToInt32(),
+                        FicLone,
+                        sourceHandle.DangerousGetHandle().ToInt32()
+                    ) == 0;
             }
 
             if (!cloned)
@@ -80,10 +89,13 @@ internal static class FileLink
             CopyMode(source, destination);
             return true;
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or DllNotFoundException
-            or EntryPointNotFoundException)
+        catch (Exception ex)
+            when (ex
+                    is IOException
+                        or UnauthorizedAccessException
+                        or DllNotFoundException
+                        or EntryPointNotFoundException
+            )
         {
             TryDelete(destination);
             return false;
@@ -118,9 +130,7 @@ internal static class FileLink
         {
             File.SetUnixFileMode(destination, File.GetUnixFileMode(source));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private static void TryDelete(string path)
@@ -132,19 +142,24 @@ internal static class FileLink
                 File.Delete(path);
             }
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     // DllImport keeps the variadic-friendly signatures simple and works under
     // NativeAOT on every supported platform.
 #pragma warning disable SYSLIB1054
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateHardLinkW")]
-    private static extern bool CreateHardLink(string newFileName, string existingFileName, IntPtr securityAttributes);
+    [DllImport(
+        "kernel32.dll",
+        CharSet = CharSet.Unicode,
+        SetLastError = true,
+        EntryPoint = "CreateHardLinkW"
+    )]
+    private static extern bool CreateHardLink(
+        string newFileName,
+        string existingFileName,
+        IntPtr securityAttributes
+    );
 
     [DllImport("libc", SetLastError = true, EntryPoint = "link")]
     private static extern int Link(string oldpath, string newpath);

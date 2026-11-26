@@ -10,8 +10,9 @@ public sealed class OfflineTests
         using var fixture = new Fixture();
         Seed(fixture);
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, offline: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, offline: true)
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Contains("--locked", error.Message);
@@ -30,7 +31,8 @@ public sealed class OfflineTests
             fixture.Root,
             fixture.StoreDirectory,
             mode: SyncMode.Locked,
-            offline: true);
+            offline: true
+        );
 
         Assert.Equal(1, result.SeiInstalled);
         Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
@@ -44,14 +46,16 @@ public sealed class OfflineTests
         Seed(fixture, server.BaseUrl);
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
-        Assert.NotEmpty(Directory.EnumerateFiles(
-            Path.Combine(fixture.StoreDirectory, ".metadata")));
+        Assert.NotEmpty(
+            Directory.EnumerateFiles(Path.Combine(fixture.StoreDirectory, ".metadata"))
+        );
 
         var result = client.Sync(
             fixture.Root,
             fixture.StoreDirectory,
             mode: SyncMode.Locked,
-            offline: true);
+            offline: true
+        );
 
         Assert.Equal(1, result.SeiInstalled);
     }
@@ -61,26 +65,30 @@ public sealed class OfflineTests
     {
         using var fixture = new Fixture();
         using var server = new TestHttpServer(fixture.SourceDirectory);
-        fixture.AddSei("a", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
-        });
-        fixture.AddSei("b", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
-        });
+        fixture.AddSei(
+            "a",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["a.txt"] = "a" } }],
+            }
+        );
+        fixture.AddSei(
+            "b",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["b.txt"] = "b" } }],
+            }
+        );
         fixture.WriteHttpConfig(server.BaseUrl, "win-x64", new SpecFixture("a", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Directory.Delete(Path.Combine(fixture.StoreDirectory, ".metadata"), recursive: true);
 
-        var error = Assert.Throws<SeikoException>(() => client.Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            mode: SyncMode.Locked,
-            offline: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked, offline: true)
+        );
 
         Assert.Equal("source", error.Code);
         // A replay only reads per-name metadata; the root index is not needed.
@@ -98,11 +106,9 @@ public sealed class OfflineTests
         var digest = client.ReadLock(fixture.Root)!.Sei.Single().Artifact.Sha256;
         Directory.Delete(Path.Combine(fixture.StoreDirectory, digest), recursive: true);
 
-        var error = Assert.Throws<SeikoException>(() => client.Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            mode: SyncMode.Locked,
-            offline: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked, offline: true)
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Contains("missing cached artifacts", error.Message);
@@ -120,11 +126,9 @@ public sealed class OfflineTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Directory.Delete(Path.Combine(fixture.StoreDirectory, ".metadata"), recursive: true);
 
-        var error = Assert.Throws<SeikoException>(() => client.Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            mode: SyncMode.Locked,
-            offline: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory, mode: SyncMode.Locked, offline: true)
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Contains("missing cached metadata", error.Message);
@@ -142,7 +146,8 @@ public sealed class OfflineTests
             fixture.Root,
             fixture.StoreDirectory,
             mode: SyncMode.Frozen,
-            offline: true);
+            offline: true
+        );
 
         Assert.Equal(1, result.SeiInstalled);
     }
@@ -153,11 +158,14 @@ public sealed class OfflineTests
         using var fixture = new Fixture();
         Seed(fixture);
 
-        var error = Assert.Throws<SeikoException>(() => new SeikoClient().Add(
-            fixture.Root,
-            "hello",
-            storeRoot: fixture.StoreDirectory,
-            offline: true));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Add(
+                fixture.Root,
+                "hello",
+                storeRoot: fixture.StoreDirectory,
+                offline: true
+            )
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Single(ConfigLoader.Load(fixture.Root).Sei);
@@ -176,7 +184,8 @@ public sealed class OfflineTests
             "hello",
             storeRoot: fixture.StoreDirectory,
             dryRun: true,
-            offline: true);
+            offline: true
+        );
 
         Assert.Contains(result.Preview!.Changes, change => change.Action == "keep");
         Assert.Equal("[1.0.0]", Assert.Single(ConfigLoader.Load(fixture.Root).Sei).Version);
@@ -196,7 +205,8 @@ public sealed class OfflineTests
             fixture.Root,
             "hello",
             offline: true,
-            storeRoot: fixture.StoreDirectory);
+            storeRoot: fixture.StoreDirectory
+        );
 
         Assert.Equal("hello", info.Name);
     }
@@ -219,14 +229,16 @@ public sealed class OfflineTests
             ]
             rid = "win-x64"
             sei = [ { name = "hello", version = "[1.0.0]" } ]
-            """);
+            """
+        );
         // The first source serves an index in a subdirectory that has no sei
         // entries, so the package is a 404 there and comes from the second
         // source; that 404 must not break the offline replay.
         Directory.CreateDirectory(Path.Combine(fixture.SourceDirectory, "subset"));
         File.WriteAllText(
             Path.Combine(fixture.SourceDirectory, "subset", "missing-index.json"),
-            """{"schemaVersion":2,"sei":[]}""");
+            """{"schemaVersion":2,"sei":[]}"""
+        );
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Assert.Equal("second", client.ReadLock(fixture.Root)!.Sei.Single().Source);
@@ -235,7 +247,8 @@ public sealed class OfflineTests
             fixture.Root,
             fixture.StoreDirectory,
             mode: SyncMode.Locked,
-            offline: true);
+            offline: true
+        );
 
         Assert.Equal(1, result.SeiInstalled);
     }
@@ -250,11 +263,9 @@ public sealed class OfflineTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         Directory.Delete(Path.Combine(fixture.StoreDirectory, ".metadata"), recursive: true);
 
-        var error = Assert.Throws<SeikoException>(() => client.Info(
-            fixture.Root,
-            "hello",
-            offline: true,
-            storeRoot: fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Info(fixture.Root, "hello", offline: true, storeRoot: fixture.StoreDirectory)
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Contains("sei/hello.json", error.Message);
@@ -270,22 +281,32 @@ public sealed class OfflineTests
         // source and is not cached. `info` only reads the name, so the local
         // index (resolved against the root, not the process cwd) answers and
         // the uncached dependency does not matter.
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("dep", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("dep", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
-        var relative = Path.GetRelativePath(fixture.Root, fixture.SourceDirectory).Replace('\\', '/');
+        var relative = Path.GetRelativePath(fixture.Root, fixture.SourceDirectory)
+            .Replace('\\', '/');
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             Config(
                 $"{{ id = \"local\", index = \"{relative}/index.json\" }}",
-                $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"));
+                $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"
+            )
+        );
 
         var info = new SeikoClient().Info(
-            fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory);
+            fixture.Root,
+            "app",
+            offline: true,
+            storeRoot: fixture.StoreDirectory
+        );
 
         Assert.Equal("app", info.Name);
     }
@@ -305,29 +326,40 @@ public sealed class OfflineTests
             Path.Combine(empty, "index.json"),
             System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
                 new IndexRoot { Sei = [] },
-                SeikoJsonContext.Default.IndexRoot));
-        fixture.AddSei("app", new VersionFixture
-        {
-            Version = "1.0.0",
-            Dependencies = [new DepFixture("dep", "*")],
-            Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
-        });
+                SeikoJsonContext.Default.IndexRoot
+            )
+        );
+        fixture.AddSei(
+            "app",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Dependencies = [new DepFixture("dep", "*")],
+                Artifacts = [new ArtifactFixture { Files = { ["app.txt"] = "app" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("app", "*"));
         File.WriteAllText(
             Path.Combine(fixture.Root, "seiko.conf"),
             Config(
                 $"{{ id = \"empty\", index = \"{Path.Combine(empty, "index.json").Replace('\\', '/')}\" }}",
                 $"{{ id = \"local\", index = \"{Path.Combine(fixture.SourceDirectory, "index.json").Replace('\\', '/')}\" }}",
-                $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"));
+                $"{{ id = \"http\", index = \"{server.BaseUrl}index.json\" }}"
+            )
+        );
 
         var info = new SeikoClient().Info(
-            fixture.Root, "app", offline: true, storeRoot: fixture.StoreDirectory);
+            fixture.Root,
+            "app",
+            offline: true,
+            storeRoot: fixture.StoreDirectory
+        );
 
         Assert.Equal("app", info.Name);
     }
 
-    private static string Config(params string[] sources)
-        => string.Join(
+    private static string Config(params string[] sources) =>
+        string.Join(
             "\n",
             "schemaVersion = 2",
             "sources = [",
@@ -336,16 +368,19 @@ public sealed class OfflineTests
             "rid = \"win-x64\"",
             "sei = [",
             "  { name = \"app\", version = \"*\" }",
-            "]")
-        + "\n";
+            "]"
+        ) + "\n";
 
     private static void Seed(Fixture fixture, string? httpBaseUrl = null)
     {
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         if (httpBaseUrl is null)
         {
             fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));

@@ -13,14 +13,22 @@ public sealed class ManagedFileTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var deployed = Path.Combine(fixture.Root, "hello.txt");
         File.WriteAllText(deployed, "edited");
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory, updateNames: new HashSet<string> { "hello" }));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(
+                fixture.Root,
+                fixture.StoreDirectory,
+                updateNames: new HashSet<string> { "hello" }
+            )
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("--force", error.Message);
@@ -36,17 +44,21 @@ public sealed class ManagedFileTests
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var deployed = Path.Combine(fixture.Root, "hello.txt");
         File.WriteAllText(deployed, "edited");
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "2.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "two" } }],
+            }
+        );
 
         client.Sync(
             fixture.Root,
             fixture.StoreDirectory,
             updateNames: new HashSet<string> { "hello" },
-            force: true);
+            force: true
+        );
 
         Assert.Equal("two", File.ReadAllText(deployed));
     }
@@ -64,12 +76,14 @@ public sealed class ManagedFileTests
             fixture.Root,
             fixture.StoreDirectory,
             updateNames: new HashSet<string> { "hello" },
-            adopt: true);
+            adopt: true
+        );
 
         Assert.Equal("edited", File.ReadAllText(deployed));
         var state = JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
-            SeikoJsonContext.Default.LocalState)!;
+            SeikoJsonContext.Default.LocalState
+        )!;
         var entry = state.Files["hello.txt"];
         Assert.True(entry.Adopted);
         Assert.Equal(Hashing.Sha256Bytes("edited"u8), entry.Sha256);
@@ -85,10 +99,7 @@ public sealed class ManagedFileTests
         using var fixture = Setup();
         File.WriteAllText(Path.Combine(fixture.Root, "hello.txt"), "mine");
 
-        new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            adopt: true);
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, adopt: true);
 
         Assert.Equal("mine", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
@@ -99,10 +110,7 @@ public sealed class ManagedFileTests
         using var fixture = Setup();
         File.WriteAllText(Path.Combine(fixture.Root, "hello.txt"), "mine");
 
-        new SeikoClient().Sync(
-            fixture.Root,
-            fixture.StoreDirectory,
-            force: true);
+        new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory, force: true);
 
         Assert.Equal("hello", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
     }
@@ -113,8 +121,9 @@ public sealed class ManagedFileTests
         using var fixture = Setup();
         File.WriteAllText(Path.Combine(fixture.Root, "hello.txt"), "mine");
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("deploy", error.Code);
         Assert.Contains("--adopt", error.Message);
@@ -124,11 +133,14 @@ public sealed class ManagedFileTests
     private static Fixture Setup()
     {
         var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "*"));
         return fixture;
     }

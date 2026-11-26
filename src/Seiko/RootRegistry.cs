@@ -19,7 +19,8 @@ internal static class RootRegistry
             throw new SeikoException(
                 $"could not register install root for cache cleanup: {ex.Message}",
                 "io",
-                ex);
+                ex
+            );
         }
 
         var lockPath = Path.Combine(storeRoot, LockName);
@@ -40,7 +41,8 @@ internal static class RootRegistry
 
         if (registryLock is null)
         {
-            var message = $"could not register install root for cache cleanup: {lastError?.Message}";
+            var message =
+                $"could not register install root for cache cleanup: {lastError?.Message}";
             throw lastError is null
                 ? new SeikoException(message, "io")
                 : new SeikoException(message, "io", lastError);
@@ -95,9 +97,13 @@ internal static class RootRegistry
             }
 
             var current = root;
-            foreach (var segment in full[root.Length..]
-                .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-                    StringSplitOptions.RemoveEmptyEntries))
+            foreach (
+                var segment in full[root.Length..]
+                    .Split(
+                        [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                        StringSplitOptions.RemoveEmptyEntries
+                    )
+            )
             {
                 current = Path.Combine(current, segment);
                 current = MatchEntryCase(current, segment);
@@ -113,9 +119,8 @@ internal static class RootRegistry
 
             return current;
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException
-            or PlatformNotSupportedException)
+        catch (Exception ex)
+            when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         {
             return full;
         }
@@ -140,7 +145,8 @@ internal static class RootRegistry
 
         try
         {
-            var entries = Directory.EnumerateFileSystemEntries(parent)
+            var entries = Directory
+                .EnumerateFileSystemEntries(parent)
                 .Select(Path.GetFileName)
                 .Where(name => name is not null)
                 .ToList();
@@ -163,14 +169,15 @@ internal static class RootRegistry
             // genuinely distinct directories alone.
             var normalizedSegment = segment.Normalize(NormalizationForm.FormC);
             var unicodeMatches = entries
-                .Where(name => string.Equals(
-                    name!.Normalize(NormalizationForm.FormC),
-                    normalizedSegment,
-                    StringComparison.OrdinalIgnoreCase))
+                .Where(name =>
+                    string.Equals(
+                        name!.Normalize(NormalizationForm.FormC),
+                        normalizedSegment,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 .ToList();
-            return unicodeMatches.Count == 1
-                ? Path.Combine(parent, unicodeMatches[0]!)
-                : candidate;
+            return unicodeMatches.Count == 1 ? Path.Combine(parent, unicodeMatches[0]!) : candidate;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -190,7 +197,8 @@ internal static class RootRegistry
         {
             var state = JsonSerializer.Deserialize(
                 File.ReadAllBytes(path),
-                SeikoJsonContext.Default.RootRegistryState);
+                SeikoJsonContext.Default.RootRegistryState
+            );
             if (state is null || state.SchemaVersion != 1 || state.Roots is null)
             {
                 throw new SeikoException($"invalid root registry: {path}", "io");
@@ -211,7 +219,8 @@ internal static class RootRegistry
         File.WriteAllText(
             temp,
             JsonSerializer.Serialize(state, SeikoJsonContext.Default.RootRegistryState),
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+        );
         File.Move(temp, path, overwrite: true);
     }
 }

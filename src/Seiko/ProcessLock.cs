@@ -23,11 +23,8 @@ public sealed class ProcessLock : IDisposable
         try
         {
             return new ProcessLock(
-                new FileStream(
-                    path,
-                    FileMode.OpenOrCreate,
-                    FileAccess.ReadWrite,
-                    FileShare.None));
+                new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
+            );
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -39,7 +36,8 @@ public sealed class ProcessLock : IDisposable
         string path,
         string description,
         string code = "lock",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
@@ -59,21 +57,17 @@ public sealed class ProcessLock : IDisposable
                         path,
                         FileMode.OpenOrCreate,
                         FileAccess.ReadWrite,
-                        FileShare.None));
+                        FileShare.None
+                    )
+                );
             }
             catch (UnauthorizedAccessException ex)
             {
-                throw new SeikoException(
-                    $"{description} cannot be locked: {ex.Message}",
-                    "io",
-                    ex);
+                throw new SeikoException($"{description} cannot be locked: {ex.Message}", "io", ex);
             }
             catch (IOException ex) when (!IsContention(path, ex))
             {
-                throw new SeikoException(
-                    $"{description} cannot be locked: {ex.Message}",
-                    "io",
-                    ex);
+                throw new SeikoException($"{description} cannot be locked: {ex.Message}", "io", ex);
             }
             catch (IOException)
             {
@@ -111,7 +105,8 @@ public sealed class ProcessLock : IDisposable
                 path,
                 FileMode.Open,
                 FileAccess.Read,
-                FileShare.ReadWrite);
+                FileShare.ReadWrite
+            );
             return true;
         }
         catch (UnauthorizedAccessException)
@@ -137,11 +132,8 @@ public sealed class ProcessLock : IDisposable
         try
         {
             return new ProcessLock(
-                new FileStream(
-                    path,
-                    FileMode.OpenOrCreate,
-                    FileAccess.ReadWrite,
-                    FileShare.None));
+                new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
+            );
         }
         catch (IOException ex)
         {

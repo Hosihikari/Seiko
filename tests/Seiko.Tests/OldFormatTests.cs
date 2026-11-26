@@ -8,21 +8,26 @@ public sealed class OldFormatTests
     public void Sync_RejectsAnOldLock()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var lockPath = Path.Combine(fixture.Root, "seiko.lock.json");
         File.WriteAllText(
             lockPath,
-            File.ReadAllText(lockPath).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1"));
+            File.ReadAllText(lockPath).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("unsupported lock schemaVersion 1", error.Message);
@@ -34,8 +39,17 @@ public sealed class OldFormatTests
         using var fixture = new Fixture();
         fixture.AddSei(
             "hello",
-            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }] },
-            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }] });
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -44,10 +58,12 @@ public sealed class OldFormatTests
         var snapshot = Path.Combine(fixture.Root, ".seiko", "generations", "1", "lock.json");
         File.WriteAllText(
             snapshot,
-            File.ReadAllText(snapshot).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1"));
+            File.ReadAllText(snapshot).Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Rollback(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Rollback(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("unsupported lock schemaVersion 1", error.Message);
@@ -58,18 +74,26 @@ public sealed class OldFormatTests
     public void Sync_RejectsAnOldIndexSchema()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var index = Path.Combine(fixture.SourceDirectory, "index.json");
         var text = File.ReadAllText(index);
-        File.WriteAllText(index, text.Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1").Replace("\"schemaVersion\":2", "\"schemaVersion\":1"));
+        File.WriteAllText(
+            index,
+            text.Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1")
+                .Replace("\"schemaVersion\":2", "\"schemaVersion\":1")
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("source", error.Code);
         Assert.Contains("unsupported index schemaVersion 1", error.Message);
@@ -87,7 +111,8 @@ public sealed class OldFormatTests
             rid = "win-x64"
             selectors = { carrier = "x" }
             sei = []
-            """);
+            """
+        );
 
         // selectors is unknown at the top level but must be tolerated, so the
         // real old shape is a component group.
@@ -99,21 +124,26 @@ public sealed class OldFormatTests
     public void Sync_RejectsAnOldLocalState()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var stateDirectory = Path.Combine(fixture.Root, ".seiko");
         Directory.CreateDirectory(Path.Combine(stateDirectory, "generations", "7"));
         File.WriteAllText(
             Path.Combine(stateDirectory, "state.json"),
-            """{"schemaVersion":1,"generation":7,"files":{}}""");
+            """{"schemaVersion":1,"generation":7,"files":{}}"""
+        );
         File.WriteAllText(Path.Combine(stateDirectory, "generations", "7", "lock.json"), "{}");
 
-        var error = Assert.Throws<SeikoException>(
-            () => new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            new SeikoClient().Sync(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("unsupported deployment state schemaVersion 1", error.Message);
@@ -125,23 +155,30 @@ public sealed class OldFormatTests
     public void Rollback_RejectsAnOldLocalState()
     {
         using var fixture = new Fixture();
-        fixture.AddSei("hello", new VersionFixture
-        {
-            Version = "1.0.0",
-            Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
-        });
+        fixture.AddSei(
+            "hello",
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "hello" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
         var statePath = Path.Combine(fixture.Root, ".seiko", "state.json");
         File.WriteAllText(
             statePath,
-            File.ReadAllText(statePath).Replace(
-                $"\"schemaVersion\": {LocalState.CurrentSchemaVersion}",
-                "\"schemaVersion\": 1"));
+            File.ReadAllText(statePath)
+                .Replace(
+                    $"\"schemaVersion\": {LocalState.CurrentSchemaVersion}",
+                    "\"schemaVersion\": 1"
+                )
+        );
 
-        var error = Assert.Throws<SeikoException>(
-            () => client.Rollback(fixture.Root, fixture.StoreDirectory));
+        var error = Assert.Throws<SeikoException>(() =>
+            client.Rollback(fixture.Root, fixture.StoreDirectory)
+        );
 
         Assert.Equal("io", error.Code);
         Assert.Contains("unsupported deployment state schemaVersion 1", error.Message);
@@ -153,8 +190,17 @@ public sealed class OldFormatTests
         using var fixture = new Fixture();
         fixture.AddSei(
             "hello",
-            new VersionFixture { Version = "1.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }] },
-            new VersionFixture { Version = "2.0.0", Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }] });
+            new VersionFixture
+            {
+                Version = "1.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v1" } }],
+            },
+            new VersionFixture
+            {
+                Version = "2.0.0",
+                Artifacts = [new ArtifactFixture { Files = { ["hello.txt"] = "v2" } }],
+            }
+        );
         fixture.WriteConfig("win-x64", new SpecFixture("hello", "[1.0.0]"));
         var client = new SeikoClient();
         client.Sync(fixture.Root, fixture.StoreDirectory);
@@ -168,7 +214,8 @@ public sealed class OldFormatTests
         Assert.Equal("v1", File.ReadAllText(Path.Combine(fixture.Root, "hello.txt")));
         var state = System.Text.Json.JsonSerializer.Deserialize(
             File.ReadAllBytes(Path.Combine(fixture.Root, ".seiko", "state.json")),
-            SeikoJsonContext.Default.LocalState)!;
+            SeikoJsonContext.Default.LocalState
+        )!;
         Assert.Equal(2, state.Generation);
     }
 }

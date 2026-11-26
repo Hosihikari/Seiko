@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
@@ -14,5 +13,4 @@
     <InternalsVisibleTo Include="Seiko.Tests" />
     <InternalsVisibleTo Include="seiko-mcp" />
   </ItemGroup>
-
 </Project>
